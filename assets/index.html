@@ -5,12 +5,12 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
   <title>Potion</title>
   <link rel="stylesheet" href="vendor/katex/katex.min.css">
-  <link rel="stylesheet" href="app.css?v=20260824-2">
+  <link rel="stylesheet" href="app.css?v=20260824-3-brand-logo">
 </head>
 <body>
   <header class="app-header">
     <button id="settings" class="square" type="button" title="Settings">&#8801;</button>
-    <div class="brand"><h1>Pot<span>ion</span></h1><p id="status">Starting Potion...</p></div>
+    <div class="brand"><img class="brand-logo" src="potion_logo.png" width="187" height="50" alt="Potion"><p id="status">Starting Potion...</p></div>
     <div class="header-actions">
       <span class="font-buttons"><button id="font-plus">+</button><button id="font-minus">&minus;</button></span>
       <button id="night" class="square" type="button" title="Night mode">&#9789;</button>
@@ -78,6 +78,10 @@
       </div>
       <div class="settings-signout">
         <button id="logout" type="button">Log out</button>
+      </div>
+      <div class="legal-note">
+        <p>Copyright &copy; 2026 Potion contributors. GNU AGPL v3 or later; no warranty.</p>
+        <p>Source and license: github.com/nimamox/Potion_Kindle</p>
       </div>
       <div class="settings-actions">
         <button id="settings-done" type="button">Done</button>

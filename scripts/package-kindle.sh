@@ -10,13 +10,17 @@ STRIP=${CROSS_COMPILE:-arm-linux-gnueabi-}strip
 mkdir -p "$OUTPUT/bin" "$OUTPUT/lib" "$OUTPUT/etc" "$OUTPUT/share/potion" \
   "$OUTPUT/kual-extension/Potion" "$OUTPUT/library-launcher"
 cp "$BUILD/potiond" "$OUTPUT/bin/potiond"
-cp "$ROOT/assets/index.html" "$ROOT/assets/app.css" "$ROOT/assets/app.js" "$ROOT/assets/config.xml" "$OUTPUT/share/potion/"
+cp "$ROOT/assets/index.html" "$ROOT/assets/app.css" "$ROOT/assets/app.js" \
+  "$ROOT/assets/config.xml" "$ROOT/assets/potion_logo.png" "$OUTPUT/share/potion/"
 cp -R "$ROOT/assets/vendor" "$OUTPUT/share/potion/"
 cp "$ROOT/scripts/run-kindle.sh" "$OUTPUT/potion.sh"
 cp "$ROOT/packaging/README-KINDLE.txt" "$OUTPUT/README.txt"
-cp "$ROOT/LICENSE" "$OUTPUT/LICENSE"
+cp "$ROOT/LICENSE" "$ROOT/THIRD_PARTY_NOTICES.md" "$ROOT/SOURCE.md" "$OUTPUT/"
+cp -R "$ROOT/LICENSES" "$OUTPUT/LICENSES"
 cp "$ROOT/assets/kual/config.xml" "$ROOT/assets/kual/menu.json" "$OUTPUT/kual-extension/Potion/"
-cp "$ROOT/packaging/library/Potion.sh" "$OUTPUT/library-launcher/Potion.sh"
+ICON_DATA=$(base64 < "$ROOT/logo/Potion_thumb_library.png" | tr -d '\r\n')
+sed "s|@ICON_DATA@|$ICON_DATA|" "$ROOT/packaging/library/Potion.sh.in" \
+  > "$OUTPUT/library-launcher/Potion.sh"
 cp /etc/ssl/certs/ca-certificates.crt "$OUTPUT/etc/ca-certificates.crt"
 chmod 755 "$OUTPUT/bin/potiond" "$OUTPUT/potion.sh" "$OUTPUT/library-launcher/Potion.sh"
 

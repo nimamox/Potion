@@ -1,6 +1,7 @@
 #!/bin/sh
 # Name: Potion
 # Author: Potion
+# Icon: data:image/png;base64,@ICON_DATA@
 # Description: Open the Potion Notion client.
 # DontUseFBInk
 

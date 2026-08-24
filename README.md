@@ -1,3 +1,5 @@
+![Potion](logo/potion_logo_orig_size.png)
+
 # Potion
 
 Potion is a read-only Notion client for jailbroken Kindles. A C++17 daemon
@@ -95,3 +97,15 @@ tar -C dist -czf Potion-kindle.tar.gz potion extensions documents
 
 `push_over_ssh.sh` is the developer deployment path. It installs all three
 components at their `/mnt/us` locations; it is not required for normal users.
+
+## License and source
+
+Potion is Copyright (C) 2026 Potion contributors and is free software licensed
+under the [GNU Affero General Public License v3.0 or later](LICENSE). The
+official corresponding source is this repository; every binary release must
+identify its exact source tag or commit and provide equivalent access to it.
+See [SOURCE.md](SOURCE.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
+for the source and license details of bundled dependencies.
+
+Potion is an independent project and is not affiliated with or endorsed by
+Notion Labs, Inc. “Notion” is used only to identify service compatibility.

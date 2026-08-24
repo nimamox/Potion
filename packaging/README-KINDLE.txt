@@ -30,3 +30,8 @@ notion-token.txt copy. Settings are also stored under /var/local/potion.
 
 If the token is rejected, Potion leaves notion-token.txt in place and shows an
 error. Reconnect the Kindle to replace or remove that exposed file.
+
+Potion is free software under GNU AGPL v3 or later, without warranty. License,
+source, and third-party notices are included in this directory and at:
+
+    https://github.com/nimamox/Potion_Kindle

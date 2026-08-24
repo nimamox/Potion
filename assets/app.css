@@ -7,6 +7,7 @@ button, input, select { color:#111; font-family:"Amazon Ember", Arial, sans-seri
 .app-header > * { display:table-cell; vertical-align:middle; }
 .app-header > .square { display:inline-block; }
 .brand { width:auto; padding-left:18px; white-space:nowrap; }
+.brand-logo { display:block; width:187px; height:50px; }
 h1,h2,p { margin:0; } h1 { font:bold 50px/1 "Amazon Ember",Arial,sans-serif; letter-spacing:-3px; } h1 span { font-weight:normal; }
 h2 { font:bold 38px/1.15 "Amazon Ember",Arial,sans-serif; }
 #status { margin-top:7px; color:#555; font:17px/1.2 "Amazon Ember",Arial,sans-serif; }
@@ -56,8 +57,12 @@ h2 { font:bold 38px/1.15 "Amazon Ember",Arial,sans-serif; }
 .font-sizes { display:table; width:100%; height:78px; margin:16px 0; table-layout:fixed; }.font-sizes button { display:table-cell; width:12.5%; height:70px; border:2px solid transparent; background:#fff; }.font-sizes button.selected { border-color:#111; background:#111; color:#fff; }
 .font-sizes button:nth-child(1){font-size:14px}.font-sizes button:nth-child(2){font-size:17px}.font-sizes button:nth-child(3){font-size:20px}.font-sizes button:nth-child(4){font-size:23px}.font-sizes button:nth-child(5){font-size:27px}.font-sizes button:nth-child(6){font-size:32px}.font-sizes button:nth-child(7){font-size:38px}.font-sizes button:nth-child(8){font-size:45px}
 .settings-signout { margin-top:22px; }.settings-signout button { display:block; width:100%; min-height:60px; border:2px solid #777; background:transparent; color:#555; font:19px "Amazon Ember",Arial,sans-serif; }.settings-actions { margin-top:32px; }.settings-actions button { display:block; width:100%; min-height:72px; border:3px solid #111; background:#fff; font:bold 19px "Amazon Ember",Arial,sans-serif; }
+.legal-note { margin-top:24px; padding-top:18px; border-top:2px solid #aaa; color:#555; font:15px/1.35 "Amazon Ember",Arial,sans-serif; }
+.legal-note p + p { margin-top:6px; }
 .confirm { margin-top:160px; }.confirm-actions { display:table; width:100%; margin-top:30px; }.confirm-actions button { display:table-cell; width:50%; height:65px; border:2px solid #111; background:#fff; }
 .night-mode body,.night-mode .app-header,.night-mode .panel,.night-mode .view,.night-mode .reader-toolbar,.night-mode .page-row,.night-mode .square,.night-mode .font-buttons button,.night-mode .overlay,.night-mode .dialog,.night-mode input,.night-mode select,.night-mode button { background:#111; color:#eee; border-color:#eee; }
 .night-mode #status,.night-mode .eyebrow,.night-mode .page-name small { color:#bbb; }.night-mode .page-content pre,.night-mode .page-content code,.night-mode .page-content .callout { background:#222; }.night-mode .scroll-button { background:#111; color:#eee; border-color:#eee; }
 .night-mode .child-page,.night-mode .toggle-summary { background:#111; color:#eee; border-color:#eee; }
+.night-mode .brand-logo { -webkit-filter:invert(1); filter:invert(1); }
 .night-mode .settings-section { border-color:#777; }.night-mode .setting-help { color:#eee; }.night-mode .settings-tooltip { border-color:#eee; background:#111; color:#eee; }.night-mode .settings-actions button { background:#111; color:#eee; border-color:#eee; }.night-mode .settings-signout button { border-color:#999; color:#ccc; }
+.night-mode .legal-note { border-color:#777; color:#bbb; }
