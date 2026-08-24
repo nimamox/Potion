@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
   <title>Potion</title>
   <link rel="stylesheet" href="vendor/katex/katex.min.css">
-  <link rel="stylesheet" href="app.css?v=20260824-5-about-dialog">
+  <link rel="stylesheet" href="app.css?v=20260824-6-about-copy">
 </head>
 <body>
   <header class="app-header">
@@ -79,11 +79,8 @@
       <div class="settings-signout">
         <button id="logout" type="button">Log out</button>
       </div>
-      <div class="legal-note">
-        <p>Copyright &copy; 2026 Potion contributors. GNU AGPL v3 or later; no warranty.</p>
-        <p>Source and license: github.com/nimamox/Potion_Kindle</p>
-      </div>
       <div class="settings-actions">
+        <button id="settings-about" type="button">About Potion</button>
         <button id="settings-done" type="button">Done</button>
       </div>
     </div>
@@ -96,12 +93,13 @@
   <div id="about-dialog" class="overlay hidden" role="dialog" aria-modal="true" aria-label="About Potion">
     <div class="dialog about-dialog">
       <img class="about-logo" src="potion_logo_orig_size.png" width="1638" height="437" alt="Potion">
-      <p class="about-tagline">Notion, distilled for E-Ink.</p>
       <p class="about-mark"></p>
+      <p class="about-message">Made for quiet reading,<br>thoughtful wandering,<br>and ideas worth keeping.<br>Enjoy!</p>
+      <p class="about-mark">❦</p>
       <p class="about-credit">Created by Nima Mohammadi</p>
-      <p class="about-quote">Some ideas deserve a quieter place<br>to be read.</p>
-      <p class="about-mark">⸎</p>
-      <p class="about-license">Open source &middot; GNU AGPL v3</p>
+      <p class="about-legal">Copyright &copy; 2026 Potion contributors &middot; No warranty</p>
+      <p class="about-legal">You may share and modify Potion under GNU AGPL v3 or later.</p>
+      <p class="about-legal">Source, license, and third-party notices:<br>github.com/nimamox/Potion_Kindle</p>
       <div class="about-actions"><button id="about-done" type="button">Done</button></div>
     </div>
   </div>
@@ -111,6 +109,6 @@
     <button id="scroll-down" class="scroll-button hidden" title="Scroll down">&#9660;</button>
   </div>
   <script src="vendor/katex/katex.min.js"></script>
-  <script src="app.js?v=20260824-3-about-dialog"></script>
+  <script src="app.js?v=20260824-4-about-copy"></script>
 </body>
 </html>
