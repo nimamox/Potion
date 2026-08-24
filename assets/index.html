@@ -1,0 +1,90 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <title>Potion</title>
+  <link rel="stylesheet" href="vendor/katex/katex.min.css">
+  <link rel="stylesheet" href="app.css?v=20260823-3">
+</head>
+<body>
+  <header class="app-header">
+    <button id="settings" class="square" type="button" title="Settings">&#8801;</button>
+    <div class="brand"><h1>Pot<span>ion</span></h1><p id="status">Starting Potion...</p></div>
+    <div class="header-actions">
+      <span class="font-buttons"><button id="font-plus">+</button><button id="font-minus">&minus;</button></span>
+      <button id="night" class="square" type="button" title="Night mode">&#9789;</button>
+      <button id="refresh" class="square" type="button" title="Full refresh">&#8635;</button>
+      <button id="close" class="square" type="button" title="Close">&times;</button>
+    </div>
+  </header>
+  <div id="warning" class="warning hidden"></div>
+
+  <section id="connect-view" class="panel hidden">
+    <p class="eyebrow">NOTION CONNECTION</p>
+    <h2>Connect Potion</h2>
+    <p>Potion uses a read-only Notion integration token. In Notion, create a connection with read-content access and share the pages you want to read with it.</p>
+    <label for="token">Notion access token</label>
+    <input id="token" type="password" autocomplete="off">
+    <button id="connect" class="primary" type="button">Connect</button>
+  </section>
+
+  <section id="pages-view" class="view hidden">
+    <div class="section-heading">
+      <p class="eyebrow">NOTION</p><h2>Pages</h2>
+      <div class="search-row"><input id="search" type="text" placeholder="Search accessible pages"><button id="search-button" type="button">Search</button></div>
+    </div>
+    <div id="pages" class="page-list"></div>
+  </section>
+
+  <section id="reader-view" class="view hidden">
+    <div class="reader-toolbar">
+      <button id="back" type="button">&laquo;&nbsp; Pages</button>
+      <h2 id="page-title">Page</h2>
+    </div>
+    <article id="page-content" class="page-content"></article>
+  </section>
+
+  <div id="settings-dialog" class="overlay hidden">
+    <div class="dialog">
+      <p class="eyebrow">POTION</p><h2>Settings</h2>
+      <label class="setting"><strong>Page font</strong>
+        <select id="page-font">
+          <option>Amazon Ember</option><option>Baskerville</option><option selected>Bookerly</option>
+          <option>Caecilia</option><option>Caecilia Condensed</option><option>Futura</option>
+          <option>Helvetica</option><option>OpenDyslexic</option><option>Palatino</option>
+        </select>
+      </label>
+      <div id="font-sizes" class="font-sizes">
+        <button data-scale="0.7">Aa</button><button data-scale="0.8">Aa</button>
+        <button data-scale="0.9">Aa</button><button data-scale="1">Aa</button>
+        <button data-scale="1.1">Aa</button><button data-scale="1.25">Aa</button>
+        <button data-scale="1.4">Aa</button><button data-scale="1.6">Aa</button>
+      </div>
+      <div class="night-page-settings">
+        <strong>Night-mode pages</strong>
+        <label><input type="radio" name="night-page-mode" value="standard"> Standard</label>
+        <small>Keep Notion highlight colors and images unchanged.</small>
+        <label><input type="radio" name="night-page-mode" value="palette"> Adapt colors</label>
+        <small>Adjust text and highlights for the dark background.</small>
+        <label><input type="radio" name="night-page-mode" value="palette-images"> Adapt colors and invert images</label>
+        <small>Also invert image pixels for diagrams with light backgrounds.</small>
+      </div>
+      <button id="logout" class="logout" type="button">Log out</button>
+      <button id="settings-done" class="primary" type="button">Done</button>
+    </div>
+  </div>
+  <div id="logout-dialog" class="overlay hidden">
+    <div class="dialog confirm"><h2>Log out of Potion?</h2><p>The stored Notion token will be removed from this device.</p>
+      <div class="confirm-actions"><button id="logout-cancel">Cancel</button><button id="logout-confirm">Log out</button></div>
+    </div>
+  </div>
+
+  <div id="scroll-controls">
+    <button id="scroll-up" class="scroll-button hidden" title="Scroll up">&#9650;</button>
+    <button id="scroll-down" class="scroll-button hidden" title="Scroll down">&#9660;</button>
+  </div>
+  <script src="vendor/katex/katex.min.js"></script>
+  <script src="app.js?v=20260823-3"></script>
+</body>
+</html>

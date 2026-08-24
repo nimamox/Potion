@@ -1,0 +1,30 @@
+#pragma once
+#include "potion/json.hpp"
+#include <string>
+#include <vector>
+namespace potion {
+struct PageSummary { std::string id, title, icon, edited; };
+struct PageDocument { std::string id, title, icon, markdown; bool truncated{}; };
+struct BinaryResponse { std::string content_type, body; };
+class NotionClient {
+public:
+  struct Response { long status{}; std::string content_type, body; };
+  explicit NotionClient(std::string api_version = "2026-03-11",
+                        std::string ca_bundle = {});
+  bool validate_token(const std::string &token, std::string &error) const;
+  std::vector<PageSummary> search_pages(const std::string &token,
+                                        const std::string &query,
+                                        std::string &error) const;
+  bool retrieve_page(const std::string &token, const std::string &page_id,
+                     PageDocument &page, std::string &error) const;
+  bool retrieve_image(const std::string &url, BinaryResponse &image,
+                      std::string &error) const;
+private:
+  Response api_get(const std::string &token, const std::string &path) const;
+  Response api_search(const std::string &token, const std::string &query,
+                      const std::string &cursor) const;
+  static std::string error_message(const Response &response);
+  std::string api_version_;
+  std::string ca_bundle_;
+};
+}

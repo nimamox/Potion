@@ -1,0 +1,12 @@
+.git
+.idea
+.potion-simulator
+build*
+cmake-build-*
+dist
+user_pass.txt
+token
+token.tmp
+state.conf
+state.conf.tmp
+*.log
