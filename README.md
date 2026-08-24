@@ -9,6 +9,8 @@ search accessible pages, retrieve page metadata/Markdown, and fetch images.
 The reader supports navigable child pages, parent-page Back navigation, regular
 toggles, toggle headings, and Notion text/background highlights. Night mode can
 preserve page colors, adapt them for a dark background, or also invert images.
+The settings dialog also supports normal or reversed Kindle physical page-button
+scrolling and provides contextual help for these display/input choices.
 Authentication and settings are stored by `potiond`, not Mesquite. On Kindle
 the token is `/var/local/potion/token` (mode 0600); on the simulator state is
 kept in `.potion-simulator/`. Both locations are ignored by Git.

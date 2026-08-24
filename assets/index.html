@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
   <title>Potion</title>
   <link rel="stylesheet" href="vendor/katex/katex.min.css">
-  <link rel="stylesheet" href="app.css?v=20260823-3">
+  <link rel="stylesheet" href="app.css?v=20260823-4">
 </head>
 <body>
   <header class="app-header">
@@ -46,32 +46,41 @@
   </section>
 
   <div id="settings-dialog" class="overlay hidden">
-    <div class="dialog">
+    <div class="dialog settings-dialog">
       <p class="eyebrow">POTION</p><h2>Settings</h2>
-      <label class="setting"><strong>Page font</strong>
-        <select id="page-font">
-          <option>Amazon Ember</option><option>Baskerville</option><option selected>Bookerly</option>
-          <option>Caecilia</option><option>Caecilia Condensed</option><option>Futura</option>
-          <option>Helvetica</option><option>OpenDyslexic</option><option>Palatino</option>
-        </select>
-      </label>
-      <div id="font-sizes" class="font-sizes">
-        <button data-scale="0.7">Aa</button><button data-scale="0.8">Aa</button>
-        <button data-scale="0.9">Aa</button><button data-scale="1">Aa</button>
-        <button data-scale="1.1">Aa</button><button data-scale="1.25">Aa</button>
-        <button data-scale="1.4">Aa</button><button data-scale="1.6">Aa</button>
+      <div id="settings-tooltip" class="settings-tooltip hidden" role="tooltip"></div>
+      <div class="settings-section">
+        <h3>Physical page buttons</h3>
+        <div class="setting-choice-row"><label class="setting-choice"><input type="radio" name="page-buttons" value="normal"> <strong>Normal direction</strong></label><button class="setting-help" type="button" aria-label="Explain normal page buttons" data-help="Forward scrolls down. Backward scrolls up.">ⓘ</button></div>
+        <div class="setting-choice-row"><label class="setting-choice"><input type="radio" name="page-buttons" value="reversed"> <strong>Reverse page buttons</strong></label><button class="setting-help" type="button" aria-label="Explain reversed page buttons" data-help="Backward scrolls down. Forward scrolls up.">ⓘ</button></div>
       </div>
-      <div class="night-page-settings">
-        <strong>Night-mode pages</strong>
-        <label><input type="radio" name="night-page-mode" value="standard"> Standard</label>
-        <small>Keep Notion highlight colors and images unchanged.</small>
-        <label><input type="radio" name="night-page-mode" value="palette"> Adapt colors</label>
-        <small>Adjust text and highlights for the dark background.</small>
-        <label><input type="radio" name="night-page-mode" value="palette-images"> Adapt colors and invert images</label>
-        <small>Also invert image pixels for diagrams with light backgrounds.</small>
+      <div class="settings-section">
+        <label class="setting-select" for="page-font"><strong>Page font</strong>
+          <select id="page-font">
+            <option>Amazon Ember</option><option>Baskerville</option><option selected>Bookerly</option>
+            <option>Caecilia</option><option>Caecilia Condensed</option><option>Futura</option>
+            <option>Helvetica</option><option>OpenDyslexic</option><option>Palatino</option>
+          </select>
+        </label>
+        <div id="font-sizes" class="font-sizes">
+          <button data-scale="0.7">Aa</button><button data-scale="0.8">Aa</button>
+          <button data-scale="0.9">Aa</button><button data-scale="1">Aa</button>
+          <button data-scale="1.1">Aa</button><button data-scale="1.25">Aa</button>
+          <button data-scale="1.4">Aa</button><button data-scale="1.6">Aa</button>
+        </div>
       </div>
-      <button id="logout" class="logout" type="button">Log out</button>
-      <button id="settings-done" class="primary" type="button">Done</button>
+      <div class="settings-section">
+        <h3>Night-mode pages</h3>
+        <div class="setting-choice-row"><label class="setting-choice"><input type="radio" name="night-page-mode" value="standard"> <strong>Standard</strong></label><button class="setting-help" type="button" aria-label="Explain standard night pages" data-help="Keep Notion text, highlight colors, and images unchanged.">ⓘ</button></div>
+        <div class="setting-choice-row"><label class="setting-choice"><input type="radio" name="night-page-mode" value="palette"> <strong>Adapt colors</strong></label><button class="setting-help" type="button" aria-label="Explain adapted night colors" data-help="Lighten dark text and darken bright highlights. Images remain unchanged.">ⓘ</button></div>
+        <div class="setting-choice-row"><label class="setting-choice"><input type="radio" name="night-page-mode" value="palette-images"> <strong>Adapt colors and invert images</strong></label><button class="setting-help" type="button" aria-label="Explain inverted night images" data-help="Also invert image pixels using Canvas. This may take a moment on large images.">ⓘ</button></div>
+      </div>
+      <div class="settings-signout">
+        <button id="logout" type="button">Log out</button>
+      </div>
+      <div class="settings-actions">
+        <button id="settings-done" type="button">Done</button>
+      </div>
     </div>
   </div>
   <div id="logout-dialog" class="overlay hidden">
@@ -85,6 +94,6 @@
     <button id="scroll-down" class="scroll-button hidden" title="Scroll down">&#9660;</button>
   </div>
   <script src="vendor/katex/katex.min.js"></script>
-  <script src="app.js?v=20260823-3"></script>
+  <script src="app.js?v=20260823-4"></script>
 </body>
 </html>

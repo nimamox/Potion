@@ -8,6 +8,7 @@ struct Settings {
   std::string card_font{"Bookerly"};
   bool night_mode{};
   std::string night_page_mode{"standard"};
+  std::string page_button_mode{"normal"};
 };
 class AppState {
 public:

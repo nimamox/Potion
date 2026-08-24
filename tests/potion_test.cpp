@@ -113,6 +113,8 @@ int main() {
       require(state.set_setting("cardFont", "Palatino", error), "save setting");
       require(state.set_setting("nightPageMode", "palette-images", error), "save night page mode");
       require(state.settings_json().find("\"nightPageMode\":\"palette-images\"") != std::string::npos, "night page mode JSON");
+      require(state.set_setting("pageButtonMode", "reversed", error), "save page button mode");
+      require(state.settings_json().find("\"pageButtonMode\":\"reversed\"") != std::string::npos, "page button mode JSON");
     }
     require(potion::AppState(directory).token() == "test-token", "reload token");
 
