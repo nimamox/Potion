@@ -242,11 +242,8 @@ void HttpServer::handle_client(int client) noexcept {
       for (const auto &page : pages) {
         if (!first_page) body += ',';
         first_page = false;
-        const bool image = page.icon.compare(0, 8, "https://") == 0;
         body += R"({"id":)" + json_escape(page.id) +
                 R"(,"title":)" + json_escape(page.title) +
-                R"(,"icon":)" + json_escape(image ? "" : page.icon) +
-                R"(,"iconImage":)" + json_escape(image ? images_.register_url(page.icon) : "") +
                 R"(,"edited":)" + json_escape(page.edited) + "}";
       }
       body += "]}"; respond(client, 200, "OK", "application/json", body);
@@ -258,11 +255,8 @@ void HttpServer::handle_client(int client) noexcept {
       if (!notion_.retrieve_page(state_.token(), id, page, error))
         throw std::runtime_error(error);
       images_.clear();
-      const bool image = page.icon.compare(0, 8, "https://") == 0;
       const std::string body = R"({"type":"page","id":)" + json_escape(page.id) +
         R"(,"title":)" + json_escape(page.title) +
-        R"(,"icon":)" + json_escape(image ? "" : page.icon) +
-        R"(,"iconImage":)" + json_escape(image ? images_.register_url(page.icon) : "") +
         R"(,"html":)" + json_escape(renderer_.render(page.markdown)) +
         R"(,"truncated":)" + (page.truncated ? "true" : "false") + "}";
       respond(client, 200, "OK", "application/json", body);

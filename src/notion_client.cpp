@@ -15,13 +15,6 @@ std::string title_of(const Json &page) {
   }
   return "Untitled";
 }
-std::string icon_of(const Json &page) {
-  const Json &icon = page.get("icon"); const std::string type = icon.get("type").string();
-  if (type == "emoji") return icon.get("emoji").string();
-  if (type == "external") return icon.get("external").get("url").string();
-  if (type == "file") return icon.get("file").get("url").string();
-  return {};
-}
 }
 
 NotionClient::NotionClient(std::string api_version, std::string ca_bundle)
@@ -72,7 +65,7 @@ std::vector<PageSummary> NotionClient::search_pages(const std::string &token, co
       const Json root = Json::parse(response.body);
       for (const auto &value : root.get("results").items()) {
         if (value.get("object").string() != "page" || value.get("in_trash").boolean()) continue;
-        pages.push_back({value.get("id").string(), title_of(value), icon_of(value), value.get("last_edited_time").string()});
+        pages.push_back({value.get("id").string(), title_of(value), {}, value.get("last_edited_time").string()});
       }
       cursor = root.get("has_more").boolean() ? root.get("next_cursor").string() : std::string{};
     } while (!cursor.empty() && pages.size() < 1000);
@@ -80,7 +73,7 @@ std::vector<PageSummary> NotionClient::search_pages(const std::string &token, co
   return pages;
 }
 bool NotionClient::retrieve_page(const std::string &token, const std::string &page_id, PageDocument &page, std::string &error) const {
-  try { auto metadata = api_get(token, "/v1/pages/" + page_id); if (metadata.status != 200) { error = error_message(metadata); return false; } auto markdown = api_get(token, "/v1/pages/" + page_id + "/markdown"); if (markdown.status != 200) { error = error_message(markdown); return false; } Json meta = Json::parse(metadata.body), content = Json::parse(markdown.body); page = {page_id, title_of(meta), icon_of(meta), content.get("markdown").string(), content.get("truncated").boolean()}; return true; } catch (const std::exception &e) { error = e.what(); return false; }
+  try { auto metadata = api_get(token, "/v1/pages/" + page_id); if (metadata.status != 200) { error = error_message(metadata); return false; } auto markdown = api_get(token, "/v1/pages/" + page_id + "/markdown"); if (markdown.status != 200) { error = error_message(markdown); return false; } Json meta = Json::parse(metadata.body), content = Json::parse(markdown.body); page = {page_id, title_of(meta), {}, content.get("markdown").string(), content.get("truncated").boolean()}; return true; } catch (const std::exception &e) { error = e.what(); return false; }
 }
 bool NotionClient::retrieve_image(const std::string &url, BinaryResponse &image, std::string &error) const {
   if (url.compare(0, 8, "https://") != 0) { error = "Only HTTPS Notion images are allowed"; return false; }

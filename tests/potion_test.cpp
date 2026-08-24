@@ -88,6 +88,8 @@ int main() {
     require(notion_blocks.find("data-page-id=\"5908cc548ef342b6b84e254fa1785a21\"") != std::string::npos, "child page link");
     require(notion_blocks.find("Unsupported Notion content") == std::string::npos, "supported Notion blocks");
     require(notion_blocks.find("heading-toggle") != std::string::npos, "toggle heading");
+    require(notion_blocks.find("heading-toggle\"><button type=\"button\" class=\"toggle-summary\" aria-expanded=\"true\"") != std::string::npos, "toggle heading expanded");
+    require(notion_blocks.find("toggle-heading-1\">Toggle heading</span></button><div class=\"toggle-content\">") != std::string::npos, "toggle heading content visible");
     require(notion_blocks.find("Regular toggle") != std::string::npos && notion_blocks.find("toggle-content hidden") != std::string::npos, "regular toggle");
 
     const std::string highlighted = renderer.render(
