@@ -20,7 +20,7 @@ h2 { font:bold 38px/1.15 "Amazon Ember",Arial,sans-serif; }
 .panel h2 { margin-bottom:24px; }.panel p { margin-bottom:22px; }.panel label { display:block; margin:20px 0 8px; font:bold 19px "Amazon Ember",Arial,sans-serif; }
 .panel input { width:100%; height:68px; padding:8px 14px; border:3px solid #111; background:#fff; font-size:20px; }
 .primary { width:100%; min-height:70px; margin-top:25px; border:3px solid #111; background:#111; color:#fff; font:bold 20px "Amazon Ember",Arial,sans-serif; }
-.view { position:fixed; top:125px; right:4%; bottom:0; left:4%; overflow:hidden; }
+.view { position:fixed; top:125px; right:1%; bottom:0; left:1%; overflow:hidden; }
 .section-heading { padding:32px 0 22px; }.eyebrow { margin-bottom:7px; color:#555; font:bold 13px "Amazon Ember",Arial,sans-serif; letter-spacing:4px; }
 .search-row { display:table; width:100%; margin-top:22px; }.search-row input,.search-row button { height:62px; border:2px solid #111; font-size:19px; }
 .search-row input { display:table-cell; width:78%; padding:8px 12px; }.search-row button { display:table-cell; width:22%; background:#fff; }

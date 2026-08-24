@@ -9,13 +9,16 @@ cmake -S "$WORKSPACE" -B "$BUILD" -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE="$WORKSPACE/cmake/kindle-toolchain.cmake" \
   -DPOTION_BUILD_TESTS=OFF -DPOTION_BUILD_SIMULATOR=OFF
 cmake --build "$BUILD" --target potiond --parallel
-rm -rf "$STAGE" "$OUTPUT/potion" "$OUTPUT/extensions/Potion"
+rm -rf "$STAGE" "$OUTPUT/potion" "$OUTPUT/extensions/Potion" "$OUTPUT/documents/Potion.sh"
 "$WORKSPACE/scripts/package-kindle.sh" "$KINDLE_SDK_ROOT/armel" "$BUILD" "$STAGE"
 qemu-arm -r 3.0.35 "$STAGE/lib/ld-linux.so.3" --library-path "$STAGE/lib" "$STAGE/bin/potiond" --help >/dev/null
-mkdir -p "$OUTPUT/extensions"
+mkdir -p "$OUTPUT/extensions" "$OUTPUT/documents"
 mv "$STAGE" "$OUTPUT/potion"
 mv "$OUTPUT/potion/kual-extension/Potion" "$OUTPUT/extensions/Potion"
 rmdir "$OUTPUT/potion/kual-extension"
+mv "$OUTPUT/potion/library-launcher/Potion.sh" "$OUTPUT/documents/Potion.sh"
+rmdir "$OUTPUT/potion/library-launcher"
 (cd "$OUTPUT/potion" && sha256sum bin/potiond > potiond.sha256)
 echo "Built Kindle bundle: $OUTPUT/potion"
 echo "Built KUAL extension: $OUTPUT/extensions/Potion"
+echo "Built Library launcher: $OUTPUT/documents/Potion.sh"

@@ -7,7 +7,8 @@ READELF=${CROSS_COMPILE:-arm-linux-gnueabi-}readelf
 STRIP=${CROSS_COMPILE:-arm-linux-gnueabi-}strip
 [ -x "$BUILD/potiond" ] || { echo "Missing $BUILD/potiond" >&2; exit 1; }
 [ ! -e "$OUTPUT" ] || { echo "Output already exists: $OUTPUT" >&2; exit 1; }
-mkdir -p "$OUTPUT/bin" "$OUTPUT/lib" "$OUTPUT/etc" "$OUTPUT/share/potion" "$OUTPUT/kual-extension/Potion"
+mkdir -p "$OUTPUT/bin" "$OUTPUT/lib" "$OUTPUT/etc" "$OUTPUT/share/potion" \
+  "$OUTPUT/kual-extension/Potion" "$OUTPUT/library-launcher"
 cp "$BUILD/potiond" "$OUTPUT/bin/potiond"
 cp "$ROOT/assets/index.html" "$ROOT/assets/app.css" "$ROOT/assets/app.js" "$ROOT/assets/config.xml" "$OUTPUT/share/potion/"
 cp -R "$ROOT/assets/vendor" "$OUTPUT/share/potion/"
@@ -15,8 +16,9 @@ cp "$ROOT/scripts/run-kindle.sh" "$OUTPUT/potion.sh"
 cp "$ROOT/packaging/README-KINDLE.txt" "$OUTPUT/README.txt"
 cp "$ROOT/LICENSE" "$OUTPUT/LICENSE"
 cp "$ROOT/assets/kual/config.xml" "$ROOT/assets/kual/menu.json" "$OUTPUT/kual-extension/Potion/"
+cp "$ROOT/packaging/library/Potion.sh" "$OUTPUT/library-launcher/Potion.sh"
 cp /etc/ssl/certs/ca-certificates.crt "$OUTPUT/etc/ca-certificates.crt"
-chmod 755 "$OUTPUT/bin/potiond" "$OUTPUT/potion.sh"
+chmod 755 "$OUTPUT/bin/potiond" "$OUTPUT/potion.sh" "$OUTPUT/library-launcher/Potion.sh"
 
 QUEUE=$(mktemp "${TMPDIR:-/tmp}/potion-queue.XXXXXX")
 SEEN=$(mktemp "${TMPDIR:-/tmp}/potion-seen.XXXXXX")

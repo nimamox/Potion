@@ -1,14 +1,30 @@
 Potion is a read-only Notion client for jailbroken Kindle.
 
-Copy this directory to /mnt/us/potion and copy the Potion KUAL extension to
-/mnt/us/extensions/Potion.
+USB installation
+================
+
+This release archive is laid out like the Kindle USB drive. Extract it on your
+computer, then copy the archive's CONTENTS (potion, extensions, and documents)
+to the top level of the mounted Kindle drive. Do not copy the enclosing dist or
+release directory.
+
+After copying, the Kindle drive must contain:
+
+    potion/potion.sh
+    extensions/Potion/config.xml
+    documents/Potion.sh
+
+Safely eject the Kindle. Potion then appears as "Potion" in the Kindle Library
+and as "Launch Potion" in KUAL. The Library entry requires PEKI, the same
+launcher support used by a Library-installed KUAL.sh. KUAL remains an optional
+second way to launch Potion.
 
 To connect without typing on the Kindle, create this file from your computer:
 
-    /mnt/us/potion/notion-token.txt
+    potion/notion-token.txt
 
 Put only the Notion access token in the file (no "Bearer", quotes, or label),
-safely eject the Kindle, and launch Potion from KUAL. Potion validates and
+safely eject the Kindle, and launch Potion from the Library or KUAL. Potion validates and
 stores the token privately under /var/local/potion, then deletes the temporary
 notion-token.txt copy. Settings are also stored under /var/local/potion.
 

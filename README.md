@@ -30,7 +30,7 @@ To connect without typing the token on a Kindle:
 1. Copy the Potion installation to `/mnt/us/potion` as usual.
 2. On the computer, create `/mnt/us/potion/notion-token.txt` containing only
    the token. Do not add `Bearer`, quotes, a label, or any other text.
-3. Safely eject the Kindle and launch Potion from KUAL.
+3. Safely eject the Kindle and launch Potion from the Library or KUAL.
 
 Potion validates the token with Notion, stores it privately as
 `/var/local/potion/token` with mode 0600, and removes `notion-token.txt` after a
@@ -68,5 +68,30 @@ the same cache volume, while retaining independent Dockerfiles and scripts.
     ./build_on_docker.sh
     ./push_over_ssh.sh root@192.168.15.244
 
-The build produces `dist/potion/` for `/mnt/us/potion` and
-`dist/extensions/Potion/` for `/mnt/us/extensions/Potion`. Launch it from KUAL.
+The build produces a USB-root layout:
+
+```text
+dist/
+├── potion/                 # /mnt/us/potion
+├── extensions/
+│   └── Potion/             # /mnt/us/extensions/Potion (KUAL)
+└── documents/
+    └── Potion.sh           # /mnt/us/documents/Potion.sh (Library)
+```
+
+For a user release, archive the **contents** of `dist/`, preserving those three
+top-level directories. After extracting the archive on a computer, the user
+copies `potion`, `extensions`, and `documents` to the top level of the mounted
+Kindle USB drive and safely ejects it. Copying the enclosing `dist` directory is
+incorrect. Potion can then be launched either from its Library item or KUAL.
+The direct Library item requires PEKI, the same script-launcher support used by
+a Library-installed `KUAL.sh`.
+
+For example, after building:
+
+```sh
+tar -C dist -czf Potion-kindle.tar.gz potion extensions documents
+```
+
+`push_over_ssh.sh` is the developer deployment path. It installs all three
+components at their `/mnt/us` locations; it is not required for normal users.
