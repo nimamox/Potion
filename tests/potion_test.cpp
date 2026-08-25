@@ -92,6 +92,13 @@ int main() {
       "Impulse response $`h[n]`$\n");
     require(figure_first.find("<p>Impulse response") == std::string::npos, "deduplicated caption after figure");
 
+    const std::string caption_boundary = renderer.render(
+      "# Toggle {toggle=\"true\"}\n"
+      "\tCaption\n"
+      "![Caption](https://example.com/image.png)\n");
+    require(caption_boundary.find("<p>Caption</p></div></div><figure>") != std::string::npos,
+            "caption deduplication preserves toggle closure");
+
     const std::string notion_blocks = renderer.render(
       "<page url=\"https://www.notion.so/Books-5908cc548ef342b6b84e254fa1785a21\">A child page</page>\n"
       "# Toggle heading {toggle=\"true\"}\n\tHidden under heading\n"
@@ -114,6 +121,57 @@ int main() {
     require(nested_blocks.find("<ul><li>Ping</li><li>Predict</li><li>Profile</li></ul>") != std::string::npos, "toggle-relative bullet list");
     require(nested_blocks.find("<ol><li>Delay the input</li><li>Delay the output</li><li>Compare</li></ol>") != std::string::npos, "toggle-relative numbered list");
     require(nested_blocks.find("<table><tr><td>Symbol</td><td>Meaning</td></tr></table></div></div></div></div><div class=\"toggle heading-toggle\"") != std::string::npos, "table does not break sibling toggles");
+
+    const std::string sibling_table = renderer.render(
+      "# Toggle {toggle=\"true\"}\n"
+      "\tInside toggle\n"
+      "<table>\n<tr>\n<td>Outside</td>\n</tr>\n</table>\n");
+    require(sibling_table.find("<p>Inside toggle</p></div></div><table>") != std::string::npos,
+            "sibling table remains outside toggle");
+
+    potion::ImageRegistry edge_images;
+    potion::MarkdownRenderer edge_renderer(edge_images);
+    const std::string parenthesized = edge_renderer.render(
+      "[link](https://example.com/path_(v1)/item?q=(x))\n"
+      "![plot](https://example.com/plot(a).png)\n");
+    require(parenthesized.find("href=\"https://example.com/path_(v1)/item?q=(x)\"") != std::string::npos,
+            "balanced parentheses in link URL");
+    std::string image_url;
+    require(edge_images.resolve("1", image_url) && image_url == "https://example.com/plot(a).png",
+            "balanced parentheses in image URL");
+
+    potion::ImageRegistry http_images;
+    potion::MarkdownRenderer http_renderer(http_images);
+    const std::string http_image = http_renderer.render(
+      "![HTTP-only image](http://example.com/image.png)\n");
+    require(http_image.find("data-src=") == std::string::npos &&
+            http_image.find("<p>HTTP-only image</p>") != std::string::npos,
+            "HTTP image does not register a guaranteed-broken image");
+    require(!http_images.resolve("1", image_url), "HTTP image registry remains empty");
+
+    const std::string query_page = renderer.render(
+      "<page url=\"https://www.notion.so/Books-5908cc548ef342b6b84e254fa1785a21?pvs=4\">Query page</page>\n"
+      "<page url=\"https://www.notion.so/Books-5908cc548ef342b6b84e254fa1785a21#fragment\">Fragment page</page>\n");
+    require(query_page.find("data-page-id=\"5908cc548ef342b6b84e254fa1785a21\"") != std::string::npos,
+            "page ID survives query or fragment");
+    require(query_page.find("Fragment page") != std::string::npos, "fragment page rendered");
+    const std::string self_closing_page = renderer.render(
+      "<mention-page url=\"https://www.notion.so/5908cc548ef342b6b84e254fa1785a21?pvs=4\"/>\n");
+    require(self_closing_page.find("data-page-id=\"5908cc548ef342b6b84e254fa1785a21\"") != std::string::npos &&
+            self_closing_page.find("&lt;mention-page") == std::string::npos,
+            "self-closing page mention is clickable");
+
+    const std::string backslashes = renderer.render(
+      "Windows path: C:\\Users\\Nima\\Potion\n"
+      "Escaped punctuation: \\*literal asterisks\\* and \\[literal brackets\\].\n"
+      "| Path | Value |\n|---|---|\n| Windows | C:\\Users\\Nima |\n");
+    require(backslashes.find("C:\\Users\\Nima\\Potion") != std::string::npos,
+            "ordinary backslashes preserved");
+    require(backslashes.find("literal asterisks") != std::string::npos &&
+            backslashes.find("<em>literal asterisks</em>") == std::string::npos,
+            "Markdown punctuation remains escapable");
+    require(backslashes.find("C:\\Users\\Nima</td>") != std::string::npos,
+            "ordinary backslashes preserved in table");
 
     const std::string highlighted = renderer.render(
       "<span color=\"yellow_bg\">Highlighted text</span>\n"
