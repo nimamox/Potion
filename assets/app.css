@@ -1,18 +1,25 @@
+
 * { box-sizing: border-box; }
 html, body { width:100%; height:100%; margin:0; overflow:hidden; background:#fff; color:#111; }
 body { padding:0 4%; font:24px/1.45 Bookerly, Georgia, serif; }
 button, input, select { color:#111; font-family:"Amazon Ember", Arial, sans-serif; }
 .hidden { display:none !important; }
-.app-header { position:fixed; z-index:100; top:0; right:4%; left:4%; display:table; width:92%; height:125px; table-layout:fixed; border-bottom:4px solid #111; background:#fff; }
-.app-header > * { display:table-cell; vertical-align:middle; }
-.app-header > .square { display:inline-block; }
-.brand { width:auto; padding-left:18px; border:0; background:transparent; text-align:left; white-space:nowrap; }
+.app-header { position:fixed; z-index:100; top:0; right:4%; left:4%; display:table; width:92%; height:85px; table-layout:fixed; border-bottom:4px solid #111; background:#fff; }
+.header-settings { display:table-cell; width:88px; vertical-align:top; white-space:nowrap; }
+.brand { display:table-cell; vertical-align:top; white-space:nowrap; }
+.brand-layout { width:100%; }
+/* Potion has one fewer 72px header icon and a 187px logo. This offset keeps
+   the logo centered between Settings and the +/- control on Mesquite. */
+.brand-button { position:fixed; z-index:101; top:0; left:50%; display:block; margin:0 0 0 -202px; padding:0; border:0; background:transparent; }
 .brand-logo { display:block; width:187px; height:50px; }
 h1,h2,p { margin:0; } h1 { font:bold 50px/1 "Amazon Ember",Arial,sans-serif; letter-spacing:-3px; } h1 span { font-weight:normal; }
 h2 { font:bold 38px/1.15 "Amazon Ember",Arial,sans-serif; }
-#status { margin-top:7px; color:#555; font:17px/1.2 "Amazon Ember",Arial,sans-serif; }
-.header-actions { width:300px; text-align:right; white-space:nowrap; }
-.square { width:62px; height:72px; margin-left:7px; padding:0; border:2px solid #111; background:#fff; vertical-align:middle; font:bold 34px/1 Arial,sans-serif; }
+#status { position:fixed; z-index:101; top:50px; left:50%; width:187px; margin:0 0 0 -202px; overflow:hidden; color:#555; text-align:center; text-overflow:ellipsis; white-space:nowrap; font:13px/1.15 "Amazon Ember",Arial,sans-serif; }
+.header-actions { display:table-cell; width:290px; vertical-align:top; text-align:right; white-space:nowrap; }
+.header-button { display:inline-block; width:140px; height:72px; margin-left:8px; border:3px solid #111; background:#fff; vertical-align:middle; font:bold 20px "Amazon Ember",Arial,sans-serif; }
+.header-button.icon-button { width:72px; padding:0; font:40px/1 Arial,sans-serif; }
+.settings-button { display:inline-block; width:72px; height:72px; margin:0; padding:0; border:2px solid #111; background:#fff; vertical-align:middle; font:37px/1 "Amazon Ember",Arial,sans-serif; }
+.mode-button { display:inline-block; width:54px; height:72px; padding:0; border:2px solid #111; background:#fff; vertical-align:middle; font:30px/1 "Amazon Ember",Arial,sans-serif; }
 .font-buttons { display:inline-block; width:54px; height:72px; vertical-align:middle; }
 .font-buttons button { display:block; width:54px; height:36px; padding:0; border:2px solid #111; background:#fff; font:bold 25px/1 Arial,sans-serif; }
 .font-buttons button + button { border-top:0; }
@@ -21,17 +28,19 @@ h2 { font:bold 38px/1.15 "Amazon Ember",Arial,sans-serif; }
 .panel h2 { margin-bottom:24px; }.panel p { margin-bottom:22px; }.panel label { display:block; margin:20px 0 8px; font:bold 19px "Amazon Ember",Arial,sans-serif; }
 .panel input { width:100%; height:68px; padding:8px 14px; border:3px solid #111; background:#fff; font-size:20px; }
 .primary { width:100%; min-height:70px; margin-top:25px; border:3px solid #111; background:#111; color:#fff; font:bold 20px "Amazon Ember",Arial,sans-serif; }
-.view { position:fixed; top:125px; right:1%; bottom:0; left:1%; overflow:hidden; }
-.section-heading { padding:32px 0 22px; }.eyebrow { margin-bottom:7px; color:#555; font:bold 13px "Amazon Ember",Arial,sans-serif; letter-spacing:4px; }
+.view { position:fixed; top:92px; right:1%; bottom:0; left:2%; overflow:hidden; }
+.section-heading { padding:12px 0 22px; }.eyebrow { margin-bottom:7px; color:#555; font:bold 13px "Amazon Ember",Arial,sans-serif; letter-spacing:4px; }
 .search-row { display:table; width:100%; margin-top:22px; }.search-row input,.search-row button { height:62px; border:2px solid #111; font-size:19px; }
 .search-row input { display:table-cell; width:78%; padding:8px 12px; }.search-row button { display:table-cell; width:22%; background:#fff; }
 .page-list { position:absolute; top:190px; right:0; bottom:0; left:0; overflow-y:auto; border-top:2px solid #111; }
 .page-row { display:table; width:100%; min-height:96px; padding:12px 10px; border:0; border-bottom:2px solid #aaa; background:#fff; text-align:left; }
 .page-icon,.page-name,.page-arrow { display:table-cell; vertical-align:middle; }.page-icon { width:55px; font:31px/1 "Kindle Symbol","Amazon Ember",Arial,sans-serif; }
 .page-name { font:bold 23px Bookerly,Georgia,serif; }.page-name small { display:block; margin-top:6px; color:#666; font:14px "Amazon Ember",Arial,sans-serif; }.page-arrow { width:35px; text-align:right; font:bold 38px Arial; }
-.reader-toolbar { position:absolute; top:0; right:0; left:0; display:table; width:100%; height:88px; table-layout:fixed; border-bottom:2px solid #aaa; background:#fff; }
-.reader-toolbar > * { display:table-cell; vertical-align:middle; }.reader-toolbar button { width:150px; height:64px; border:2px solid #111; background:#fff; font:bold 19px "Amazon Ember",Arial,sans-serif; }
-.reader-toolbar h2 { padding:0 20px; overflow:hidden; text-align:center; text-overflow:ellipsis; white-space:nowrap; }
+.reader-toolbar { position:fixed; z-index:90; top:90px; right:4%; left:4%; width:92%; height:88px; border-bottom:2px solid #aaa; background:#fff; }
+.reader-toolbar button { position:absolute; top:12px; width:150px; height:64px; border:2px solid #111; background:#fff; font:bold 19px "Amazon Ember",Arial,sans-serif; }
+#back { left:0; }
+#pages-home { right:0; }
+.reader-toolbar h2 { position:absolute; top:0; right:152px; left:152px; height:88px; margin:0; padding:0 8px; overflow:hidden; text-align:center; text-overflow:ellipsis; white-space:nowrap; font:bold 38px/88px "Amazon Ember",Arial,sans-serif; }
 .page-content { position:absolute; top:88px; right:0; bottom:0; left:0; overflow-y:auto; font-size:30px; }
 .page-content p,.page-content ul,.page-content ol,.page-content blockquote,.page-content pre,.page-content table,.page-content aside,.page-content details { margin:0 0 24px; }
 .page-content h1,.page-content h2,.page-content h3,.page-content h4 { margin:34px 0 18px; font-family:"Amazon Ember",Arial,sans-serif; }

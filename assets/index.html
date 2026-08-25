@@ -5,17 +5,24 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
   <title>Potion</title>
   <link rel="stylesheet" href="vendor/katex/katex.min.css">
-  <link rel="stylesheet" href="app.css?v=20260824-6-about-copy">
+  <link rel="stylesheet" href="app.css?v=20260824-8-reader-toolbar">
 </head>
 <body>
   <header class="app-header">
-    <button id="settings" class="square" type="button" title="Settings">&#8801;</button>
-    <button id="about" class="brand" type="button" aria-label="About Potion"><img class="brand-logo" src="potion_logo.png" width="187" height="50" alt="Potion"><p id="status">Starting Potion...</p></button>
+    <div class="header-settings">
+      <button id="settings" class="settings-button" type="button" title="Settings">⎈</button>
+    </div>
+    <div class="brand">
+      <div class="brand-layout">
+        <button id="about" class="brand-button" type="button" aria-label="About Potion"><img class="brand-logo" src="potion_logo.png" width="187" height="50" alt="Potion"></button>
+        <p id="status">Starting Potion...</p>
+      </div>
+    </div>
     <div class="header-actions">
       <span class="font-buttons"><button id="font-plus">+</button><button id="font-minus">&minus;</button></span>
-      <button id="night" class="square" type="button" title="Night mode">&#9789;</button>
-      <button id="refresh" class="square" type="button" title="Full refresh">&#8635;</button>
-      <button id="close" class="square" type="button" title="Close">&times;</button>
+      <button id="night" class="mode-button" type="button" title="Night mode">&#9789;</button>
+      <button id="refresh" class="header-button icon-button" type="button" title="Full refresh">&#8635;</button>
+      <button id="close" class="header-button icon-button" type="button" title="Close">&times;</button>
     </div>
   </header>
   <div id="warning" class="warning hidden"></div>
