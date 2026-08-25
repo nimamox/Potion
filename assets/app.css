@@ -357,14 +357,14 @@ h2 {
   padding: 20px;
   overflow-x: auto;
   border: 2px solid #aaa;
-  background: #eee;
+  background: #faf8fb;
   text-align: left;
   font: 18px/1.4 monospace;
   white-space: pre-wrap;
 }
 .page-content code {
   padding: 2px 6px;
-  background: #eee;
+  background: #faf8fb;
   font-family: monospace;
 }
 .page-content blockquote {
