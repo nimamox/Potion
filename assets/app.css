@@ -830,6 +830,7 @@ h2 {
   background: #fff;
   font: bold 20px "Amazon Ember", Arial, sans-serif;
 }
+.night-mode,
 .night-mode body,
 .night-mode .app-header,
 .night-mode .panel,
@@ -843,7 +844,7 @@ h2 {
 .night-mode input,
 .night-mode select,
 .night-mode button {
-  background: #111;
+  background: #000;
   color: #eee;
   border-color: #eee;
 }
@@ -858,17 +859,16 @@ h2 {
   background: #222;
 }
 .night-mode .scroll-button {
-  background: #111;
+  background: #000;
   color: #eee;
   border-color: #eee;
 }
 .night-mode .child-page,
 .night-mode .toggle-summary {
-  background: #111;
+  background: #000;
   color: #eee;
   border-color: #eee;
 }
-.night-mode .brand-logo,
 .night-mode .about-logo,
 .night-mode .about-logo-canvas {
   -webkit-filter: invert(1);
@@ -882,11 +882,11 @@ h2 {
 }
 .night-mode .settings-tooltip {
   border-color: #eee;
-  background: #111;
+  background: #000;
   color: #eee;
 }
 .night-mode .settings-actions button {
-  background: #111;
+  background: #000;
   color: #eee;
   border-color: #eee;
 }
@@ -895,7 +895,7 @@ h2 {
   color: #ccc;
 }
 .night-mode .about-actions button {
-  background: #111;
+  background: #000;
   color: #eee;
   border-color: #eee;
 }

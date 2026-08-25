@@ -11,7 +11,7 @@ mkdir -p "$OUTPUT/bin" "$OUTPUT/lib" "$OUTPUT/etc" "$OUTPUT/share/potion" \
   "$OUTPUT/kual-extension/Potion" "$OUTPUT/library-launcher"
 cp "$BUILD/potiond" "$OUTPUT/bin/potiond"
 cp "$ROOT/assets/index.html" "$ROOT/assets/app.css" "$ROOT/assets/app.js" \
-  "$ROOT/assets/config.xml" "$ROOT/assets/potion_logo.png" "$ROOT/logo/potion_logo_orig_size.png" "$OUTPUT/share/potion/"
+  "$ROOT/assets/config.xml" "$ROOT/assets/potion_logo.png" "$ROOT/assets/potion_logo_night.png" "$ROOT/logo/potion_logo_orig_size.png" "$OUTPUT/share/potion/"
 cp -R "$ROOT/assets/vendor" "$OUTPUT/share/potion/"
 cp "$ROOT/scripts/run-kindle.sh" "$OUTPUT/potion.sh"
 cp "$ROOT/packaging/README-KINDLE.txt" "$OUTPUT/README.txt"

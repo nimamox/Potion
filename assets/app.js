@@ -25,7 +25,8 @@
         pageFont = "Bookerly",
         night = false,
         nightPageMode = "standard",
-        pageButtonMode = "normal";
+        pageButtonMode = "normal",
+        brandLogoDaySrc = null;
     var fonts = {
         "Amazon Ember": '"Amazon Ember",Arial,sans-serif',
         "Baskerville": "Baskerville,Georgia,serif",
@@ -294,6 +295,14 @@
             document.documentElement.className =
                 document.documentElement.className.replace(/(^|\s)night-mode(?=\s|$)/g, "");
             id("night").innerHTML = "&#9789;";
+        }
+
+        var brandLogo = id("brand-logo"), brandNightSrc;
+        if (brandLogo) {
+            if (!brandLogoDaySrc) brandLogoDaySrc = brandLogo.getAttribute("src");
+            brandNightSrc = brandLogo.getAttribute("data-night-src");
+            if (brandNightSrc)
+                brandLogo.src = night ? brandNightSrc : brandLogoDaySrc;
         }
 
         id("page-font").value = pageFont;
