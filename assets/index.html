@@ -4,7 +4,6 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
   <title>Potion</title>
-  <link rel="stylesheet" href="vendor/katex/katex.min.css">
   <link rel="stylesheet" href="app.css?v=20260825-1-about-static">
 </head>
 <body>
@@ -100,7 +99,7 @@
   <div id="about-dialog" class="overlay hidden" role="dialog" aria-modal="true" aria-label="About Potion">
     <div class="dialog about-dialog">
       <div class="about-logo-stage">
-        <img id="about-logo" class="about-logo" src="potion_logo_orig_size.png" width="1638" height="437" alt="Potion">
+        <img id="about-logo" class="about-logo" data-src="potion_logo_orig_size.png" width="1638" height="437" alt="Potion">
         <canvas id="about-logo-static" class="about-logo-canvas hidden" width="700" height="187" role="img" aria-label="Potion"></canvas>
       </div>
       <p class="about-mark"></p>
@@ -118,7 +117,6 @@
     <button id="scroll-up" class="scroll-button hidden" title="Scroll up">&#9650;</button>
     <button id="scroll-down" class="scroll-button hidden" title="Scroll down">&#9660;</button>
   </div>
-  <script src="vendor/katex/katex.min.js"></script>
-  <script src="app.js?v=20260825-2-reading-position"></script>
+  <script src="app.js?v=20260825-3-deferred-assets"></script>
 </body>
 </html>
