@@ -19,6 +19,7 @@ struct ServerOptions {
   std::string simulator_asset_dir{"simulator"};
   std::string token_import_path;
   std::string ca_bundle_path;
+  std::string start_page_id;
   std::uint16_t port{8766};
   bool simulator{};
   std::size_t worker_count{4};

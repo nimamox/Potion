@@ -13,13 +13,65 @@ std::string html_escape(const std::string &text) {
   return out;
 }
 std::string trim(std::string s) { auto a = s.find_first_not_of(" \t\r"); if (a == std::string::npos) return {}; auto b = s.find_last_not_of(" \t\r"); return s.substr(a, b - a + 1); }
-std::string strip_attrs(std::string s) { auto at = s.rfind(" {"); if (at != std::string::npos && s.back() == '}') s.resize(at); return s; }
+struct NotionAttributes { std::size_t start{std::string::npos}; std::string text; bool toggle{}; };
+bool known_notion_attribute(const std::string &name) { return name == "color" || name == "toggle" || name == "underline"; }
+NotionAttributes trailing_notion_attributes(const std::string &source) {
+  NotionAttributes result; const auto at = source.rfind(" {");
+  if (at == std::string::npos || source.empty() || source.back() != '}') return result;
+  const std::string attributes = source.substr(at + 2, source.size() - at - 3); std::size_t pos = 0; bool found = false;
+  while (pos < attributes.size()) {
+    while (pos < attributes.size() && attributes[pos] == ' ') ++pos;
+    const auto name_start = pos;
+    while (pos < attributes.size() && (std::isalnum(static_cast<unsigned char>(attributes[pos])) || attributes[pos] == '_' || attributes[pos] == '-')) ++pos;
+    if (name_start == pos || pos + 2 > attributes.size() || attributes[pos] != '=' || attributes[pos + 1] != '"') return {};
+    const std::string name = attributes.substr(name_start, pos - name_start); if (!known_notion_attribute(name)) return {};
+    pos += 2; const auto value_start = pos; const auto value_end = attributes.find('"', pos); if (value_end == std::string::npos) return {};
+    if (name == "toggle" && attributes.substr(value_start, value_end - value_start) == "true") result.toggle = true;
+    pos = value_end + 1; found = true;
+  }
+  if (!found) return {};
+  result.start = at; result.text = attributes; return result;
+}
+std::string strip_attrs(std::string s) { const auto attributes = trailing_notion_attributes(s); if (attributes.start != std::string::npos) s.resize(attributes.start); return s; }
 std::string attribute(const std::string &line, const std::string &name) { std::string needle = name + "=\""; auto a = line.find(needle); if (a == std::string::npos) return {}; a += needle.size(); auto b = line.find('"', a); return b == std::string::npos ? std::string{} : line.substr(a, b - a); }
 bool starts(const std::string &s, const std::string &prefix) { return s.compare(0, prefix.size(), prefix) == 0; }
-bool markdown_escapable(char c) {
-  static const std::string punctuation = "\\*~`$[]<>{}|^";
-  return punctuation.find(c) != std::string::npos;
+bool contains_rtl_text(const std::string &text) {
+  for (std::size_t i = 0; i < text.size();) {
+    const unsigned char first = static_cast<unsigned char>(text[i]);
+    unsigned codepoint = first;
+    std::size_t length = 1;
+    if ((first & 0xe0) == 0xc0 && i + 1 < text.size()) {
+      codepoint = ((first & 0x1f) << 6) |
+                  (static_cast<unsigned char>(text[i + 1]) & 0x3f);
+      length = 2;
+    } else if ((first & 0xf0) == 0xe0 && i + 2 < text.size()) {
+      codepoint = ((first & 0x0f) << 12) |
+                  ((static_cast<unsigned char>(text[i + 1]) & 0x3f) << 6) |
+                  (static_cast<unsigned char>(text[i + 2]) & 0x3f);
+      length = 3;
+    } else if ((first & 0xf8) == 0xf0 && i + 3 < text.size()) {
+      codepoint = ((first & 0x07) << 18) |
+                  ((static_cast<unsigned char>(text[i + 1]) & 0x3f) << 12) |
+                  ((static_cast<unsigned char>(text[i + 2]) & 0x3f) << 6) |
+                  (static_cast<unsigned char>(text[i + 3]) & 0x3f);
+      length = 4;
+    }
+    if ((codepoint >= 0x0590 && codepoint <= 0x08ff) ||
+        (codepoint >= 0xfb1d && codepoint <= 0xfdff) ||
+        (codepoint >= 0xfe70 && codepoint <= 0xfeff) ||
+        (codepoint >= 0x10800 && codepoint <= 0x10fff) ||
+        (codepoint >= 0x1e800 && codepoint <= 0x1edff))
+      return true;
+    i += length;
+  }
+  return false;
 }
+std::string direction_attribute(const std::string &text) {
+  return contains_rtl_text(text) ? " dir=\"rtl\"" : std::string{};
+}
+bool markdown_escapable(char c) { return c == '\\' || std::ispunct(static_cast<unsigned char>(c)); }
+bool escaped_at(const std::string &text, std::size_t at) { std::size_t slashes = 0; while (at > slashes && text[at - slashes - 1] == '\\') ++slashes; return (slashes & 1) != 0; }
+std::size_t markdown_delimiter_end(const std::string &text, const std::string &delimiter, std::size_t start) { std::size_t at = text.find(delimiter, start); while (at != std::string::npos && escaped_at(text, at)) at = text.find(delimiter, at + 1); return at; }
 std::size_t markdown_url_end(const std::string &text, std::size_t start) {
   std::size_t nested = 0;
   for (std::size_t i = start; i < text.size(); ++i) {
@@ -59,9 +111,8 @@ std::string notion_color_class(const std::string &source) {
   return {};
 }
 std::string notion_block_color_class(const std::string &source) {
-  const auto at = source.rfind(" {");
-  if (at == std::string::npos || source.empty() || source.back() != '}') return {};
-  return notion_color_class(source.substr(at));
+  const auto attributes = trailing_notion_attributes(source);
+  return attributes.start == std::string::npos ? std::string{} : notion_color_class(" {" + attributes.text + "}");
 }
 std::string color_attribute(const std::string &source) {
   const std::string color = notion_block_color_class(source);
@@ -113,7 +164,7 @@ bool table_separator(const std::string &line) {
 
 std::string ImageRegistry::register_url(const std::string &url) { std::lock_guard<std::mutex> lock(mutex_); const std::string key = std::to_string(next_++); urls_[key] = url; return key; }
 bool ImageRegistry::resolve(const std::string &key, std::string &url) const { std::lock_guard<std::mutex> lock(mutex_); auto it = urls_.find(key); if (it == urls_.end()) return false; url = it->second; return true; }
-void ImageRegistry::clear() { std::lock_guard<std::mutex> lock(mutex_); urls_.clear(); next_ = 1; }
+void ImageRegistry::clear() { std::lock_guard<std::mutex> lock(mutex_); urls_.clear(); }
 
 std::string MarkdownRenderer::sanitize_url(const std::string &url) {
   std::string lower = url; std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
@@ -138,7 +189,7 @@ std::string MarkdownRenderer::inline_html(const std::string &text) const {
     struct Marker { const char *open; const char *close; const char *a; const char *b; };
     static const Marker markers[] = {{"**", "**", "<strong>", "</strong>"}, {"~~", "~~", "<del>", "</del>"}, {"`", "`", "<code>", "</code>"}, {"*", "*", "<em>", "</em>"}, {"$", "$", "<span class=\"math\" data-expr=\"", "</span>"}};
     bool matched = false;
-    for (const auto &m : markers) if (text.compare(i, std::strlen(m.open), m.open) == 0) { auto end = text.find(m.close, i + std::strlen(m.open)); if (end != std::string::npos) { std::string body = text.substr(i + std::strlen(m.open), end - i - std::strlen(m.open)); if (m.open[0] == '$') { if (body.size() >= 2 && body.front() == '`' && body.back() == '`') body = body.substr(1, body.size() - 2); out += std::string(m.a) + html_escape(body) + "\">" + html_escape(body) + m.b; } else if (m.open[0] == '`') out += std::string(m.a) + html_escape(body) + m.b; else out += std::string(m.a) + inline_html(body) + m.b; i = end + std::strlen(m.close); matched = true; break; } }
+    for (const auto &m : markers) if (text.compare(i, std::strlen(m.open), m.open) == 0) { auto end = markdown_delimiter_end(text, m.close, i + std::strlen(m.open)); if (end != std::string::npos) { std::string body = text.substr(i + std::strlen(m.open), end - i - std::strlen(m.open)); if (m.open[0] == '$') { if (body.size() >= 2 && body.front() == '`' && body.back() == '`') body = body.substr(1, body.size() - 2); out += std::string(m.a) + html_escape(body) + "\">" + html_escape(body) + m.b; } else if (m.open[0] == '`') out += std::string(m.a) + html_escape(body) + m.b; else out += std::string(m.a) + inline_html(body) + m.b; i = end + std::strlen(m.close); matched = true; break; } }
     if (matched) continue;
     if (starts(text.substr(i), "<br>")) { out += "<br>"; i += 4; continue; }
     if (starts(text.substr(i), "<span ")) { auto gt = text.find('>', i), end = text.find("</span>", gt); if (gt != std::string::npos && end != std::string::npos) { std::string tag = text.substr(i, gt - i + 1), body = inline_html(text.substr(gt + 1, end - gt - 1)), color = notion_color_class(tag); if (tag.find("underline=\"true\"") != std::string::npos) body = "<u>" + body + "</u>"; out += color.empty() ? body : "<span class=\"" + color + "\">" + body + "</span>"; i = end + 7; continue; } }
@@ -149,7 +200,7 @@ std::string MarkdownRenderer::inline_html(const std::string &text) const {
 }
 
 std::string MarkdownRenderer::render(const std::string &markdown) const {
-  std::istringstream input(markdown); std::string line, out; bool code = false, equation = false, pipe_table = false, notion_table = false, last_plain_paragraph = false, last_image = false; std::string code_text, equation_text, table_header, last_plain_source, last_image_caption; std::vector<std::string> lists; std::vector<std::size_t> heading_toggles; std::size_t list_base_depth = 0, last_plain_output = 0, last_plain_depth = 0;
+  std::istringstream input(markdown); std::string line, out; bool code = false, equation = false, pipe_table = false, notion_table = false, last_plain_paragraph = false, last_image = false; std::string code_text, equation_text, table_header, last_plain_source, last_image_caption; std::vector<std::string> lists; std::vector<std::size_t> heading_toggles; std::size_t list_base_depth = 0, last_plain_output = 0, last_plain_depth = 0, last_image_depth = 0;
   auto close_lists = [&] { while (!lists.empty()) { out += "</li></" + lists.back() + ">"; lists.pop_back(); } list_base_depth = 0; };
   auto close_heading_toggles = [&](std::size_t depth) { if (!heading_toggles.empty() && depth <= heading_toggles.back()) close_lists(); while (!heading_toggles.empty() && depth <= heading_toggles.back()) { out += "</div></div>"; heading_toggles.pop_back(); } };
   auto table_row = [&](const std::string &row, const char *cell_tag) { out += "<tr>"; for (const auto &cell : table_cells(row)) out += std::string("<") + cell_tag + ">" + inline_html(cell) + "</" + cell_tag + ">"; out += "</tr>"; };
@@ -173,20 +224,20 @@ std::string MarkdownRenderer::render(const std::string &markdown) const {
       out += "<p>" + inline_html(strip_attrs(table_header)) + "</p>"; table_header.clear();
     }
     if (pipe_row) { close_lists(); table_header = body; continue; }
-    bool bullet = starts(body, "- ") || starts(body, "* "); std::size_t dot = body.find(". "); bool numbered = dot > 0 && dot < 5 && std::all_of(body.begin(), body.begin() + static_cast<long>(dot), [](unsigned char c){ return std::isdigit(c); });
+    bool bullet = starts(body, "- ") || starts(body, "* "); std::size_t dot = body.find(". "); bool numbered = dot != std::string::npos && dot > 0 && std::all_of(body.begin(), body.begin() + static_cast<long>(dot), [](unsigned char c){ return std::isdigit(c); });
     if (bullet || numbered) {
-      std::string tag = numbered ? "ol" : "ul", item = bullet ? body.substr(2) : body.substr(dot + 2);
+      std::string tag = numbered ? "ol" : "ul", item = bullet ? body.substr(2) : body.substr(dot + 2), start = numbered ? body.substr(0, dot) : std::string{};
       if (lists.empty()) list_base_depth = depth;
       else if (depth < list_base_depth) { close_lists(); list_base_depth = depth; }
       const std::size_t wanted = depth - list_base_depth + 1;
       while (lists.size() > wanted) { out += "</li></" + lists.back() + ">"; lists.pop_back(); }
       if (lists.size() == wanted && lists.back() != tag) {
-        out += "</li></" + lists.back() + "><" + tag + "><li>";
+        out += "</li></" + lists.back() + "><" + tag + (tag == "ol" && start != "1" ? " start=\"" + start + "\"" : "") + "><li>";
         lists.back() = tag;
       } else if (lists.size() == wanted) {
         out += "</li><li>";
       } else {
-        while (lists.size() < wanted) { out += "<" + tag + "><li>"; lists.push_back(tag); }
+        while (lists.size() < wanted) { out += "<" + tag + (tag == "ol" && start != "1" ? " start=\"" + start + "\"" : "") + "><li>"; lists.push_back(tag); }
       }
       bool todo = starts(item, "[ ] ") || starts(item, "[x] ") || starts(item, "[X] "); if (todo) { bool checked = item[1] != ' '; item = item.substr(4); out += "<span class=\"todo-box\">" + std::string(checked ? "&#9745;" : "&#9744;") + "</span> "; }
       out += colored_inline(item, inline_html(strip_attrs(item))); continue;
@@ -194,7 +245,7 @@ std::string MarkdownRenderer::render(const std::string &markdown) const {
     close_lists(); body = trim(body); if (body.empty() || body == "<empty-block/>") { out += "<div class=\"empty-block\"></div>"; continue; }
     if (body == "---") { out += "<hr>"; continue; }
     std::size_t hashes = 0; while (hashes < body.size() && body[hashes] == '#') ++hashes;
-    if (hashes && hashes <= 6 && hashes < body.size() && body[hashes] == ' ') { unsigned level = std::min<unsigned>(4, hashes); const bool toggle = body.find("toggle=\"true\"") != std::string::npos; const std::string heading = colored_inline(body, inline_html(strip_attrs(body.substr(hashes + 1)))); if (toggle) { out += "<div class=\"toggle heading-toggle\"><button type=\"button\" class=\"toggle-summary\" aria-expanded=\"true\"><span class=\"toggle-arrow\">&#9662;</span><span class=\"toggle-heading toggle-heading-" + std::to_string(level) + "\">" + heading + "</span></button><div class=\"toggle-content\">"; heading_toggles.push_back(depth); } else out += "<h" + std::to_string(level) + ">" + heading + "</h" + std::to_string(level) + ">"; continue; }
+    if (hashes && hashes <= 6 && hashes < body.size() && body[hashes] == ' ') { unsigned level = std::min<unsigned>(4, hashes); const std::string heading_source = body.substr(hashes + 1); const bool toggle = trailing_notion_attributes(heading_source).toggle; const std::string heading = colored_inline(heading_source, inline_html(strip_attrs(heading_source))); if (toggle) { out += "<div class=\"toggle heading-toggle\"><button type=\"button\" class=\"toggle-summary\" aria-expanded=\"true\"><span class=\"toggle-arrow\">&#9662;</span><span class=\"toggle-heading toggle-heading-" + std::to_string(level) + "\">" + heading + "</span></button><div class=\"toggle-content\">"; heading_toggles.push_back(depth); } else out += "<h" + std::to_string(level) + ">" + heading + "</h" + std::to_string(level) + ">"; continue; }
     if (starts(body, "> ")) { out += "<blockquote" + color_attribute(body) + ">" + inline_html(strip_attrs(body.substr(2))) + "</blockquote>"; continue; }
     if (starts(body, "<callout")) { const std::string color = notion_color_class(body); out += "<aside class=\"callout" + (color.empty() ? std::string{} : " " + color) + "\"><span class=\"callout-icon\">" + html_escape(attribute(body, "icon")) + "</span>"; continue; }
     if (body == "</callout>") { out += "</aside>"; continue; }
@@ -215,12 +266,12 @@ std::string MarkdownRenderer::render(const std::string &markdown) const {
         const std::string caption = body.substr(2, mid - 2), url = body.substr(mid + 2, end - mid - 2);
         if (https_url(url)) {
           if (preceding_plain_paragraph && depth == last_plain_depth && caption == last_plain_source) out.resize(last_plain_output);
-          out += inline_html(body.substr(0, end + 1)); last_image = true; last_image_caption = caption; continue;
+          out += inline_html(body.substr(0, end + 1)); last_image = true; last_image_caption = caption; last_image_depth = depth; continue;
         }
       }
     }
     if (body[0] == '<' && body.find('>') != std::string::npos) { out += "<div class=\"unsupported\">Unsupported Notion content</div>"; continue; }
-    last_plain_source = strip_attrs(body); if (preceding_image && last_plain_source == last_image_caption) continue; last_plain_output = out.size(); last_plain_depth = depth; last_plain_paragraph = true; out += "<p" + color_attribute(body) + ">" + inline_html(last_plain_source) + "</p>";
+    last_plain_source = strip_attrs(body); if (preceding_image && depth == last_image_depth && last_plain_source == last_image_caption) continue; last_plain_output = out.size(); last_plain_depth = depth; last_plain_paragraph = true; out += "<p" + color_attribute(body) + direction_attribute(last_plain_source) + ">" + inline_html(last_plain_source) + "</p>";
   }
   close_lists(); close_pipe_table(); while (!heading_toggles.empty()) { out += "</div></div>"; heading_toggles.pop_back(); } if (!table_header.empty()) out += "<p>" + inline_html(strip_attrs(table_header)) + "</p>"; if (code) out += "<pre><code>" + html_escape(code_text) + "</code></pre>"; if (equation) out += "<div class=\"unsupported\">Incomplete equation</div>"; return out;
 }

@@ -48,9 +48,10 @@ std::string request(unsigned port, const std::string &path,
 struct RunningServer {
   potion::HttpServer server;
   std::thread thread;
-  explicit RunningServer(const std::string &state)
+  explicit RunningServer(const std::string &state, const std::string &start_page = {})
       : server([&] { potion::ServerOptions options; options.data_dir = state;
           options.port = 0; options.simulator = true; options.worker_count = 4;
+          options.start_page_id = start_page;
           options.input_timeout = std::chrono::milliseconds(120); return options; }()),
         thread([this] { server.run(); }) {
     for (int i = 0; i < 100 && server.bound_port() == 0; ++i)
@@ -173,6 +174,56 @@ int main() {
     require(backslashes.find("C:\\Users\\Nima</td>") != std::string::npos,
             "ordinary backslashes preserved in table");
 
+    const std::string attributes = renderer.render(
+      "Set S = {1, 2, 3}\n"
+      "The possible states are {idle, running, stopped}\n"
+      "# Why toggle=\"true\" matters\n"
+      "# Actual toggle {toggle=\"true\"}\n"
+      "Visible text {color=\"orange\"}\n");
+    require(attributes.find("Set S = {1, 2, 3}") != std::string::npos &&
+            attributes.find("{idle, running, stopped}") != std::string::npos,
+            "ordinary brace text is preserved");
+    require(attributes.find("<h1>Why toggle=&quot;true&quot; matters</h1>") != std::string::npos &&
+            attributes.find("toggle-heading-1\">Actual toggle") != std::string::npos,
+            "only trailing Notion attributes create toggles");
+    require(attributes.find("<p class=\"notion-color notion-color-orange\">Visible text</p>") != std::string::npos,
+            "recognized trailing attributes are removed");
+
+    const std::string escaped_markdown = renderer.render(
+      "[link](https://example.com/a\\)b)\n"
+      "*a \\* b*\n");
+    require(escaped_markdown.find("href=\"https://example.com/a\\)b\"") != std::string::npos,
+            "escaped closing parenthesis remains in URL");
+    require(escaped_markdown.find("<em>a * b</em>") != std::string::npos,
+            "escaped emphasis delimiter does not close emphasis");
+
+    const std::string numbered_list = renderer.render("5. Fifth item\n6. Sixth item\n\n10000. Large item\n");
+    require(numbered_list.find("<ol start=\"5\"><li>Fifth item</li><li>Sixth item</li>") != std::string::npos &&
+            numbered_list.find("<ol start=\"10000\"><li>Large item</li>") != std::string::npos,
+            "ordered list starts and long indices are preserved");
+
+    const std::string reverse_caption_depth = renderer.render(
+      "# Toggle {toggle=\"true\"}\n"
+      "\t![Caption](https://example.com/a.png)\n"
+      "Caption\n");
+    require(reverse_caption_depth.find("</div></div><p>Caption</p>") != std::string::npos,
+            "caption outside image depth is retained");
+
+    potion::ImageRegistry registry_lifetime;
+    const std::string first_image = registry_lifetime.register_url("https://example.com/first.png");
+    registry_lifetime.clear();
+    const std::string second_image = registry_lifetime.register_url("https://example.com/second.png");
+    require(first_image != second_image && registry_lifetime.resolve(second_image, image_url) &&
+            image_url == "https://example.com/second.png", "image keys are never reused");
+
+    const std::string rtl = renderer.render(
+      "سلام عرض میکنم خدمت شما!\n"
+      "Left-to-right paragraph.\n");
+    require(rtl.find("<p dir=\"rtl\">سلام عرض میکنم خدمت شما!</p>") != std::string::npos,
+            "right-to-left paragraph direction");
+    require(rtl.find("<p dir=\"rtl\">Left-to-right") == std::string::npos,
+            "left-to-right paragraph direction unchanged");
+
     const std::string highlighted = renderer.render(
       "<span color=\"yellow_bg\">Highlighted text</span>\n"
       "A highlighted paragraph {color=\"blue_background\"}\n");
@@ -230,8 +281,11 @@ int main() {
     }
 
     {
-      RunningServer running(directory);
+      RunningServer running(directory, "3c5d2870a15280b48d7fe83c9f24b96e");
       const unsigned port = running.server.bound_port();
+      require(potion::Json::parse(request(port, "/api/status")).get("startPageId").string() ==
+                  "3c5d2870a15280b48d7fe83c9f24b96e",
+              "startup page status");
       const auto start = std::chrono::steady_clock::now();
       const auto idle = potion::Json::parse(request(port, "/api/input"));
       require(idle.get("action").string().empty(), "idle long-poll action");

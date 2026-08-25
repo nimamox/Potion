@@ -152,6 +152,8 @@ int open_page_keys() {
 HttpServer::HttpServer(ServerOptions options)
     : options_(std::move(options)), state_(options_.data_dir),
       notion_("2026-03-11", options_.ca_bundle_path), renderer_(images_) {
+  if (!options_.start_page_id.empty() && !valid_page_id(options_.start_page_id))
+    throw std::runtime_error("Invalid startup page id");
   if (!options_.token_import_path.empty()) {
     const auto result = import_token_file(
         options_.token_import_path, state_,
@@ -213,6 +215,8 @@ void HttpServer::handle_client(int client) noexcept {
                          (state_.authenticated() ? "true" : "false");
       if (!token_import_message_.empty())
         body += R"(,"tokenImportMessage":)" + json_escape(token_import_message_);
+      if (!options_.start_page_id.empty())
+        body += R"(,"startPageId":)" + json_escape(options_.start_page_id);
       respond(client, 200, "OK", "application/json", body + "}");
     }
     else if (request.method == "GET" && request.target == "/api/settings")
@@ -254,7 +258,6 @@ void HttpServer::handle_client(int client) noexcept {
       PageDocument page; std::string error;
       if (!notion_.retrieve_page(state_.token(), id, page, error))
         throw std::runtime_error(error);
-      images_.clear();
       const std::string body = R"({"type":"page","id":)" + json_escape(page.id) +
         R"(,"title":)" + json_escape(page.title) +
         R"(,"html":)" + json_escape(renderer_.render(page.markdown)) +

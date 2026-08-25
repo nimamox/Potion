@@ -62,6 +62,14 @@ Command-line equivalent:
     cmake -S . -B cmake-build-debug -DPOTION_BUILD_SIMULATOR=ON
     cmake --build cmake-build-debug --target potion_simulator
 
+For debugging, append `?page=PAGE_ID` to Potion's URL to open that Notion page
+directly. The packaged Kindle launcher accepts the same page ID as its optional
+first argument:
+
+    /mnt/us/potion/potion.sh 3c5d2870a15280b48d7fe83c9f24b96e
+
+Normal Library and KUAL launches still open the main Pages view.
+
 ## Build and deploy to Kindle
 
 Both Potion and AnkINK use the same `kindle-dev-builder:local` Docker image and
