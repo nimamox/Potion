@@ -81,6 +81,11 @@ int main() {
     require(html.find("display-math") != std::string::npos, "equation");
     require(html.find("<table><thead><tr><th>Name</th><th>Value</th></tr></thead><tbody><tr><td>Safe</td><td><strong>bold</strong></td></tr></tbody></table>") != std::string::npos, "pipe table");
 
+    const std::string figure = renderer.render(
+      "![Impulse response $`h[n]`$](https://example.com/impulse.png)\n");
+    require(figure.find("<img data-src=\"http://127.0.0.1:8766/api/images/") != std::string::npos, "lazy image source");
+    require(figure.find("<figcaption>Impulse response <span class=\"math\" data-expr=\"h[n]\">h[n]</span></figcaption>") != std::string::npos, "caption math");
+
     const std::string notion_blocks = renderer.render(
       "<page url=\"https://www.notion.so/Books-5908cc548ef342b6b84e254fa1785a21\">A child page</page>\n"
       "# Toggle heading {toggle=\"true\"}\n\tHidden under heading\n"
