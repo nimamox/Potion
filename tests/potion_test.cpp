@@ -82,9 +82,15 @@ int main() {
     require(html.find("<table><thead><tr><th>Name</th><th>Value</th></tr></thead><tbody><tr><td>Safe</td><td><strong>bold</strong></td></tr></tbody></table>") != std::string::npos, "pipe table");
 
     const std::string figure = renderer.render(
+      "Impulse response $`h[n]`$\n"
       "![Impulse response $`h[n]`$](https://example.com/impulse.png)\n");
     require(figure.find("<img data-src=\"http://127.0.0.1:8766/api/images/") != std::string::npos, "lazy image source");
     require(figure.find("<figcaption>Impulse response <span class=\"math\" data-expr=\"h[n]\">h[n]</span></figcaption>") != std::string::npos, "caption math");
+    require(figure.find("<p>Impulse response") == std::string::npos && figure.find("<p><figure>") == std::string::npos, "deduplicated standalone figure");
+    const std::string figure_first = renderer.render(
+      "![Impulse response $`h[n]`$](https://example.com/impulse.png)\n"
+      "Impulse response $`h[n]`$\n");
+    require(figure_first.find("<p>Impulse response") == std::string::npos, "deduplicated caption after figure");
 
     const std::string notion_blocks = renderer.render(
       "<page url=\"https://www.notion.so/Books-5908cc548ef342b6b84e254fa1785a21\">A child page</page>\n"
@@ -96,6 +102,18 @@ int main() {
     require(notion_blocks.find("heading-toggle\"><button type=\"button\" class=\"toggle-summary\" aria-expanded=\"true\"") != std::string::npos, "toggle heading expanded");
     require(notion_blocks.find("toggle-heading-1\">Toggle heading</span></button><div class=\"toggle-content\">") != std::string::npos, "toggle heading content visible");
     require(notion_blocks.find("Regular toggle") != std::string::npos && notion_blocks.find("toggle-content hidden") != std::string::npos, "regular toggle");
+
+    const std::string nested_blocks = renderer.render(
+      "# First section {toggle=\"true\"}\n"
+      "\t## Review {toggle=\"true\"}\n"
+      "\t\t- Ping\n\t\t- Predict\n\t\t- Profile\n"
+      "\t\tThe standard test is:\n"
+      "\t\t1. Delay the input\n\t\t2. Delay the output\n\t\t3. Compare\n"
+      "\t\t<table>\n<tr>\n<td>Symbol</td>\n<td>Meaning</td>\n</tr>\n\t\t</table>\n"
+      "# Second section {toggle=\"true\"}\n\tSecond content\n");
+    require(nested_blocks.find("<ul><li>Ping</li><li>Predict</li><li>Profile</li></ul>") != std::string::npos, "toggle-relative bullet list");
+    require(nested_blocks.find("<ol><li>Delay the input</li><li>Delay the output</li><li>Compare</li></ol>") != std::string::npos, "toggle-relative numbered list");
+    require(nested_blocks.find("<table><tr><td>Symbol</td><td>Meaning</td></tr></table></div></div></div></div><div class=\"toggle heading-toggle\"") != std::string::npos, "table does not break sibling toggles");
 
     const std::string highlighted = renderer.render(
       "<span color=\"yellow_bg\">Highlighted text</span>\n"

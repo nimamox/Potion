@@ -116,17 +116,17 @@ std::string MarkdownRenderer::inline_html(const std::string &text) const {
 }
 
 std::string MarkdownRenderer::render(const std::string &markdown) const {
-  std::istringstream input(markdown); std::string line, out; bool code = false, equation = false, pipe_table = false; std::string code_text, equation_text, table_header; std::vector<std::string> lists; std::vector<std::size_t> heading_toggles;
-  auto close_lists = [&] { while (!lists.empty()) { out += "</li></" + lists.back() + ">"; lists.pop_back(); } };
+  std::istringstream input(markdown); std::string line, out; bool code = false, equation = false, pipe_table = false, notion_table = false, last_plain_paragraph = false, last_image = false; std::string code_text, equation_text, table_header, last_plain_source, last_image_caption; std::vector<std::string> lists; std::vector<std::size_t> heading_toggles; std::size_t list_base_depth = 0, last_plain_output = 0;
+  auto close_lists = [&] { while (!lists.empty()) { out += "</li></" + lists.back() + ">"; lists.pop_back(); } list_base_depth = 0; };
   auto close_heading_toggles = [&](std::size_t depth) { if (!heading_toggles.empty() && depth <= heading_toggles.back()) close_lists(); while (!heading_toggles.empty() && depth <= heading_toggles.back()) { out += "</div></div>"; heading_toggles.pop_back(); } };
   auto table_row = [&](const std::string &row, const char *cell_tag) { out += "<tr>"; for (const auto &cell : table_cells(row)) out += std::string("<") + cell_tag + ">" + inline_html(cell) + "</" + cell_tag + ">"; out += "</tr>"; };
   auto close_pipe_table = [&] { if (pipe_table) { out += "</tbody></table>"; pipe_table = false; } };
   while (std::getline(input, line)) {
     if (!line.empty() && line.back() == '\r') line.pop_back();
-    std::size_t depth = 0; while (depth < line.size() && line[depth] == '\t') ++depth; std::string body = line.substr(depth);
+    std::size_t depth = 0; while (depth < line.size() && line[depth] == '\t') ++depth; std::string body = line.substr(depth); const bool preceding_plain_paragraph = last_plain_paragraph, preceding_image = last_image; last_plain_paragraph = false; last_image = false;
     if (code) { if (starts(body, "```")) { out += "<pre><code>" + html_escape(code_text) + "</code></pre>"; code = false; code_text.clear(); } else code_text += body + "\n"; continue; }
     if (equation) { if (trim(body) == "$$") { out += "<div class=\"math display-math\" data-expr=\"" + html_escape(trim(equation_text)) + "\">" + html_escape(trim(equation_text)) + "</div>"; equation = false; equation_text.clear(); } else equation_text += body + "\n"; continue; }
-    close_heading_toggles(depth);
+    if (!notion_table && !starts(body, "<table>") && !starts(body, "<table ")) close_heading_toggles(depth);
     if (starts(body, "```")) { close_lists(); code = true; continue; }
     if (trim(body) == "$$") { close_lists(); equation = true; continue; }
     const bool pipe_row = body.size() >= 2 && body.find('|') != std::string::npos && trim(body).front() == '|';
@@ -143,7 +143,9 @@ std::string MarkdownRenderer::render(const std::string &markdown) const {
     bool bullet = starts(body, "- ") || starts(body, "* "); std::size_t dot = body.find(". "); bool numbered = dot > 0 && dot < 5 && std::all_of(body.begin(), body.begin() + static_cast<long>(dot), [](unsigned char c){ return std::isdigit(c); });
     if (bullet || numbered) {
       std::string tag = numbered ? "ol" : "ul", item = bullet ? body.substr(2) : body.substr(dot + 2);
-      const std::size_t wanted = depth + 1;
+      if (lists.empty()) list_base_depth = depth;
+      else if (depth < list_base_depth) { close_lists(); list_base_depth = depth; }
+      const std::size_t wanted = depth - list_base_depth + 1;
       while (lists.size() > wanted) { out += "</li></" + lists.back() + ">"; lists.pop_back(); }
       if (lists.size() == wanted && lists.back() != tag) {
         out += "</li></" + lists.back() + "><" + tag + "><li>";
@@ -166,14 +168,15 @@ std::string MarkdownRenderer::render(const std::string &markdown) const {
     if (starts(body, "<details")) { const std::string color = notion_color_class(body); out += "<div class=\"toggle" + (color.empty() ? std::string{} : " " + color) + "\">"; continue; }
     if (starts(body, "<summary>") && body.find("</summary>") != std::string::npos) { out += "<button type=\"button\" class=\"toggle-summary\" aria-expanded=\"false\"><span class=\"toggle-arrow\">&#9656;</span><span>" + inline_html(body.substr(9, body.size() - 19)) + "</span></button><div class=\"toggle-content hidden\">"; continue; }
     if (body == "</details>") { out += "</div></div>"; continue; }
-    if (starts(body, "<table")) { out += "<table>"; continue; } if (body == "</table>") { out += "</table>"; continue; }
+    if (starts(body, "<table")) { notion_table = true; out += "<table>"; continue; } if (body == "</table>") { out += "</table>"; notion_table = false; continue; }
     if (starts(body, "<tr")) { out += "<tr>"; continue; } if (body == "</tr>") { out += "</tr>"; continue; }
     if (starts(body, "<td")) { auto gt = body.find('>'), end = body.rfind("</td>"); out += "<td" + color_attribute(body) + ">" + (gt != std::string::npos && end != std::string::npos ? inline_html(body.substr(gt + 1, end - gt - 1)) : std::string("Unsupported cell")) + "</td>"; continue; }
     if (body == "<columns>" || body == "</columns>" || body == "<column>" || body == "</column>" || starts(body, "<col") || body == "</colgroup>") continue;
     if ((starts(body, "<page ") || starts(body, "<database ") || starts(body, "<mention-")) && body.find('>') != std::string::npos) { out += "<div class=\"notion-reference-row\">" + inline_html(body) + "</div>"; continue; }
     if (starts(body, "<span ") && body.find("</span>") != std::string::npos) { out += "<p>" + inline_html(body) + "</p>"; continue; }
+    if (starts(body, "![")) { const auto mid = body.find("](", 2), end = mid == std::string::npos ? mid : body.rfind(')'); if (mid != std::string::npos && end == body.size() - 1) { const std::string caption = body.substr(2, mid - 2); if (preceding_plain_paragraph && caption == last_plain_source) out.resize(last_plain_output); out += inline_html(body); last_image = true; last_image_caption = caption; continue; } }
     if (body[0] == '<' && body.find('>') != std::string::npos) { out += "<div class=\"unsupported\">Unsupported Notion content</div>"; continue; }
-    out += "<p" + color_attribute(body) + ">" + inline_html(strip_attrs(body)) + "</p>";
+    last_plain_source = strip_attrs(body); if (preceding_image && last_plain_source == last_image_caption) continue; last_plain_output = out.size(); last_plain_paragraph = true; out += "<p" + color_attribute(body) + ">" + inline_html(last_plain_source) + "</p>";
   }
   close_lists(); close_pipe_table(); while (!heading_toggles.empty()) { out += "</div></div>"; heading_toggles.pop_back(); } if (!table_header.empty()) out += "<p>" + inline_html(strip_attrs(table_header)) + "</p>"; if (code) out += "<pre><code>" + html_escape(code_text) + "</code></pre>"; if (equation) out += "<div class=\"unsupported\">Incomplete equation</div>"; return out;
 }
