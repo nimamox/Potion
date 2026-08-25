@@ -1,75 +1,905 @@
-
-* { box-sizing: border-box; }
-html, body { width:100%; height:100%; margin:0; overflow:hidden; background:#fff; color:#111; }
-body { padding:0 4%; font:24px/1.45 Bookerly, Georgia, serif; }
-button, input, select { color:#111; font-family:"Amazon Ember", Arial, sans-serif; }
-.hidden { display:none !important; }
-.app-header { position:fixed; z-index:100; top:0; right:4%; left:4%; display:table; width:92%; height:85px; table-layout:fixed; border-bottom:4px solid #111; background:#fff; }
-.header-settings { display:table-cell; width:88px; vertical-align:top; white-space:nowrap; }
-.brand { display:table-cell; vertical-align:top; white-space:nowrap; }
-.brand-layout { width:100%; }
+* {
+  box-sizing: border-box;
+}
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: #fff;
+  color: #111;
+}
+body {
+  padding: 0 4%;
+  font: 24px/1.45 Bookerly, Georgia, serif;
+}
+button,
+input,
+select {
+  color: #111;
+  font-family: "Amazon Ember", Arial, sans-serif;
+}
+.hidden {
+  display: none !important;
+}
+.app-header {
+  position: fixed;
+  z-index: 100;
+  top: 0;
+  right: 4%;
+  left: 4%;
+  display: table;
+  width: 92%;
+  height: 85px;
+  table-layout: fixed;
+  border-bottom: 4px solid #111;
+  background: #fff;
+}
+.header-settings {
+  display: table-cell;
+  width: 88px;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.brand {
+  display: table-cell;
+  vertical-align: top;
+  white-space: nowrap;
+}
+.brand-layout {
+  width: 100%;
+}
 /* Potion has one fewer 72px header icon and a 187px logo. This offset keeps
    the logo centered between Settings and the +/- control on Mesquite. */
-.brand-button { position:fixed; z-index:101; top:0; left:50%; display:block; margin:0 0 0 -202px; padding:0; border:0; background:transparent; }
-.brand-logo { display:block; width:187px; height:50px; }
-h1,h2,p { margin:0; } h1 { font:bold 50px/1 "Amazon Ember",Arial,sans-serif; letter-spacing:-3px; } h1 span { font-weight:normal; }
-h2 { font:bold 38px/1.15 "Amazon Ember",Arial,sans-serif; }
-#status { position:fixed; z-index:101; top:50px; left:50%; width:187px; margin:0 0 0 -202px; overflow:hidden; color:#555; text-align:center; text-overflow:ellipsis; white-space:nowrap; font:13px/1.15 "Amazon Ember",Arial,sans-serif; }
-.header-actions { display:table-cell; width:290px; vertical-align:top; text-align:right; white-space:nowrap; }
-.header-button { display:inline-block; width:140px; height:72px; margin-left:8px; border:3px solid #111; background:#fff; vertical-align:middle; font:bold 20px "Amazon Ember",Arial,sans-serif; }
-.header-button.icon-button { width:72px; padding:0; font:40px/1 Arial,sans-serif; }
-.settings-button { display:inline-block; width:72px; height:72px; margin:0; padding:0; border:2px solid #111; background:#fff; vertical-align:middle; font:37px/1 "Amazon Ember",Arial,sans-serif; }
-.mode-button { display:inline-block; width:54px; height:72px; padding:0; border:2px solid #111; background:#fff; vertical-align:middle; font:30px/1 "Amazon Ember",Arial,sans-serif; }
-.font-buttons { display:inline-block; width:54px; height:72px; vertical-align:middle; }
-.font-buttons button { display:block; width:54px; height:36px; padding:0; border:2px solid #111; background:#fff; font:bold 25px/1 Arial,sans-serif; }
-.font-buttons button + button { border-top:0; }
-.warning { position:fixed; z-index:600; top:136px; right:4%; left:4%; padding:16px; border:3px solid #111; background:#eee; font:bold 18px "Amazon Ember",Arial,sans-serif; }
-.panel { position:fixed; top:165px; right:16%; left:16%; padding:38px; border:4px solid #111; background:#fff; }
-.panel h2 { margin-bottom:24px; }.panel p { margin-bottom:22px; }.panel label { display:block; margin:20px 0 8px; font:bold 19px "Amazon Ember",Arial,sans-serif; }
-.panel input { width:100%; height:68px; padding:8px 14px; border:3px solid #111; background:#fff; font-size:20px; }
-.primary { width:100%; min-height:70px; margin-top:25px; border:3px solid #111; background:#111; color:#fff; font:bold 20px "Amazon Ember",Arial,sans-serif; }
-.view { position:fixed; top:92px; right:1%; bottom:0; left:2%; overflow:hidden; }
-.section-heading { padding:12px 0 22px; }.eyebrow { margin-bottom:7px; color:#555; font:bold 13px "Amazon Ember",Arial,sans-serif; letter-spacing:4px; }
-.search-row { display:table; width:100%; margin-top:22px; }.search-row input,.search-row button { height:62px; border:2px solid #111; font-size:19px; }
-.search-row input { display:table-cell; width:78%; padding:8px 12px; }.search-row button { display:table-cell; width:22%; background:#fff; }
-.page-list { position:absolute; top:190px; right:0; bottom:0; left:0; overflow-y:auto; border-top:2px solid #111; }
-.page-row { display:table; width:100%; min-height:96px; padding:12px 10px; border:0; border-bottom:2px solid #aaa; background:#fff; text-align:left; }
-.page-icon,.page-name,.page-arrow { display:table-cell; vertical-align:middle; }.page-icon { width:55px; font:31px/1 "Kindle Symbol","Amazon Ember",Arial,sans-serif; }
-.page-name { font:bold 23px Bookerly,Georgia,serif; }.page-name small { display:block; margin-top:6px; color:#666; font:14px "Amazon Ember",Arial,sans-serif; }.page-arrow { width:35px; text-align:right; font:bold 38px Arial; }
-.reader-toolbar { position:fixed; z-index:90; top:90px; right:4%; left:4%; width:92%; height:88px; border-bottom:2px solid #aaa; background:#fff; }
-.reader-toolbar button { position:absolute; top:12px; width:150px; height:64px; border:2px solid #111; background:#fff; font:bold 19px "Amazon Ember",Arial,sans-serif; }
-#back { left:0; }
-#pages-home { right:0; }
-.reader-toolbar h2 { position:absolute; top:0; right:152px; left:152px; height:88px; margin:0; padding:0 8px; overflow:hidden; text-align:center; text-overflow:ellipsis; white-space:nowrap; font:bold 38px/88px "Amazon Ember",Arial,sans-serif; }
-.page-content { position:absolute; top:88px; right:0; bottom:0; left:0; overflow-y:auto; font-size:30px; }
-.page-content p,.page-content ul,.page-content ol,.page-content blockquote,.page-content pre,.page-content table,.page-content aside,.page-content details { margin:0 0 24px; }
-.page-content h1,.page-content h2,.page-content h3,.page-content h4 { margin:34px 0 18px; font-family:"Amazon Ember",Arial,sans-serif; }
-.page-content pre { padding:20px; overflow-x:auto; border:2px solid #aaa; background:#eee; text-align:left; font:18px/1.4 monospace; white-space:pre-wrap; }
-.page-content code { padding:2px 6px; background:#eee; font-family:monospace; }.page-content blockquote { padding-left:22px; border-left:6px solid #777; }
-.page-content table { width:100%; border-collapse:collapse; font-size:22px; }.page-content td,.page-content th { padding:10px; border:2px solid #777; }
-.page-content .callout { padding:20px; border:2px solid #777; background:#eee; }.callout-icon { margin-right:12px; }.unsupported { padding:16px; border:2px dashed #999; color:#666; }
-.page-content img { max-width:100%; max-height:430px; }.page-content img.expanded { width:100%; height:auto; max-height:none; }.page-content figure { margin:20px 0; }.page-content figcaption { color:#666; font-size:17px; }
-.page-content a { color:#111; text-decoration:underline; }.page-content [dir="rtl"] { direction:rtl; text-align:right; unicode-bidi:embed; }.empty-block { min-height:22px; }.display-math { overflow-x:auto; padding:12px 0; }.potion-boxed-math { text-align:center; }.potion-box-frame { display:table; margin:0 auto; padding:.3em; border:.04em solid; }.potion-box-frame .katex-display { margin:0; }.potion-script { display:inline-block; line-height:1; }.potion-script-sub-only { margin-right:.05em; vertical-align:-.3em; }.potion-script-sup-only { margin-right:.05em; vertical-align:.55em; }.potion-script-both { position:relative; height:1em; margin-right:.05em; vertical-align:middle; }.potion-script-both .potion-script-sup,.potion-script-both .potion-script-sub { position:absolute; }.potion-script-both .potion-script-sup { top:-.45em; }.potion-script-both .potion-script-sub { top:.5em; }.potion-fraction { position:relative; top:.45em; display:inline-block; margin:0 .04em; vertical-align:middle; text-align:center; line-height:.9; }.potion-fraction>span { display:block; }.potion-frac-numerator,.potion-frac-denominator { line-height:.9; }.potion-frac-rule { height:2px; min-height:2px; margin:.08em 0; background:#111; }.night-mode .potion-frac-rule { background:#eee; }
-.notion-color { padding:1px 3px; }.notion-color-gray{color:#787774}.notion-color-brown{color:#9f6b53}.notion-color-orange{color:#d9730d}.notion-color-yellow{color:#a87800}.notion-color-green{color:#448361}.notion-color-blue{color:#337ea9}.notion-color-purple{color:#9065b0}.notion-color-pink{color:#c14c8a}.notion-color-red{color:#d44c47}
-.notion-color-gray-bg{background-color:#e3e2e0}.notion-color-brown-bg{background-color:#eee0da}.notion-color-orange-bg{background-color:#fadec9}.notion-color-yellow-bg{background-color:#fdecc8}.notion-color-green-bg{background-color:#dbeddb}.notion-color-blue-bg{background-color:#d3e5ef}.notion-color-purple-bg{background-color:#e8deee}.notion-color-pink-bg{background-color:#f5e0e9}.notion-color-red-bg{background-color:#ffe2dd}
-.notion-reference-row { margin:0 0 18px; }.child-page { display:table; width:100%; min-height:62px; padding:8px 12px; border:0; border-bottom:2px solid #aaa; background:#fff; text-align:left; font:bold 25px Bookerly,Georgia,serif; }.child-page-arrow { float:right; font:bold 36px/24px Arial,sans-serif; }.notion-reference { color:#111; text-decoration:underline; }
-.toggle { margin:0 0 24px; }.toggle-summary { display:block; width:100%; min-height:52px; padding:6px 0; border:0; background:#fff; text-align:left; font:inherit; }.toggle-arrow { display:inline-block; width:34px; vertical-align:middle; text-align:center; font:28px Arial,sans-serif; }.toggle-heading { vertical-align:middle; font-family:"Amazon Ember",Arial,sans-serif; font-weight:bold; }.toggle-heading-1 { font-size:1.5em; }.toggle-heading-2 { font-size:1.3em; }.toggle-heading-3 { font-size:1.15em; }.toggle-heading-4 { font-size:1em; }.toggle-content { margin-left:15px; padding:10px 0 1px 28px; border-left:3px solid #eee; }
-.scroll-button { position:fixed; z-index:350; right:5.5%; width:68px; height:68px; padding:0; border:4px solid #111; border-radius:12px; background:#fff; font:bold 42px/1 Arial; }
-#scroll-up { top:275px; } #scroll-down { bottom:22px; }
-.overlay { position:fixed; z-index:1000; top:0; right:0; bottom:0; left:0; padding-top:90px; overflow-y:auto; background:rgba(255,255,255,.94); }
-.dialog { width:760px; margin:0 auto 80px; padding:38px; border:4px solid #111; background:#fff; }.dialog h2 { margin-bottom:25px; }
-.settings-section { margin-top:26px; padding-top:22px; border-top:2px solid #aaa; }.settings-section h3 { margin:0 0 16px; font:bold 21px "Amazon Ember",Arial,sans-serif; }
-.setting-choice { display:block; margin:14px 0; font:19px/1.25 "Amazon Ember",Arial,sans-serif; }.setting-choice input { width:23px; height:23px; margin:0 10px 0 0; vertical-align:middle; }.setting-choice-row { min-height:46px; white-space:nowrap; }.setting-choice-row .setting-choice { display:inline-block; margin:5px 0; padding:7px 0; vertical-align:middle; }
-.setting-help { display:inline-block; width:44px; height:44px; padding:0; border:0; background:transparent; color:#111; vertical-align:middle; font:28px/1 "Kindle Symbol","Amazon Ember",sans-serif; }.settings-tooltip { position:fixed; z-index:1100; width:560px; padding:18px 22px; border:3px solid #111; background:#fff; color:#111; font:17px/1.35 "Amazon Ember",Arial,sans-serif; }
-.setting-select { display:block; font:19px/1.25 "Amazon Ember",Arial,sans-serif; }.setting-select strong { display:block; margin-bottom:10px; }.setting-select select { display:block; width:100%; height:58px; padding:6px 12px; border:2px solid #111; background:#fff; color:#111; font:20px "Amazon Ember",Arial,sans-serif; }
-.font-sizes { display:table; width:100%; height:78px; margin:16px 0; table-layout:fixed; }.font-sizes button { display:table-cell; width:12.5%; height:70px; border:2px solid transparent; background:#fff; }.font-sizes button.selected { border-color:#111; background:#111; color:#fff; }
-.font-sizes button:nth-child(1){font-size:14px}.font-sizes button:nth-child(2){font-size:17px}.font-sizes button:nth-child(3){font-size:20px}.font-sizes button:nth-child(4){font-size:23px}.font-sizes button:nth-child(5){font-size:27px}.font-sizes button:nth-child(6){font-size:32px}.font-sizes button:nth-child(7){font-size:38px}.font-sizes button:nth-child(8){font-size:45px}
-.settings-signout { margin-top:22px; }.settings-signout button { display:block; width:100%; min-height:60px; border:2px solid #777; background:transparent; color:#555; font:19px "Amazon Ember",Arial,sans-serif; }.settings-actions { margin-top:32px; }.settings-actions button { display:block; width:100%; min-height:72px; border:3px solid #111; background:#fff; font:bold 19px "Amazon Ember",Arial,sans-serif; }.settings-actions button + button { margin-top:14px; }
-.confirm { margin-top:160px; }.confirm-actions { display:table; width:100%; margin-top:30px; }.confirm-actions button { display:table-cell; width:50%; height:65px; border:2px solid #111; background:#fff; }
-.about-dialog { width:700px; margin-top:40px; padding:48px 52px 42px; text-align:center; }.about-logo-stage { width:440px; max-width:100%; margin:0 auto; }.about-logo,.about-logo-canvas { display:block; width:100%; height:auto; margin:0; }.about-logo-canvas { background:#fff; }.about-mark { margin:28px 0; font:20pt "Kindle Symbol","Amazon Ember",Arial,sans-serif; }.about-message { font:23px/1.35 Bookerly,Georgia,serif; }.about-credit { margin-top:32px; font:bold 22px/1.3 "Amazon Ember",Arial,sans-serif; }.about-legal { margin-top:12px; font:16px/1.32 "Amazon Ember",Arial,sans-serif; }.about-credit + .about-legal { margin-top:26px; }.about-actions { width:240px; margin:34px auto 0; }.about-actions button { display:block; width:100%; min-height:66px; border:3px solid #111; background:#fff; font:bold 20px "Amazon Ember",Arial,sans-serif; }
-.night-mode body,.night-mode .app-header,.night-mode .panel,.night-mode .view,.night-mode .reader-toolbar,.night-mode .page-row,.night-mode .square,.night-mode .font-buttons button,.night-mode .overlay,.night-mode .dialog,.night-mode input,.night-mode select,.night-mode button { background:#111; color:#eee; border-color:#eee; }
-.night-mode #status,.night-mode .eyebrow,.night-mode .page-name small { color:#bbb; }.night-mode .page-content pre,.night-mode .page-content code,.night-mode .page-content .callout { background:#222; }.night-mode .scroll-button { background:#111; color:#eee; border-color:#eee; }
-.night-mode .child-page,.night-mode .toggle-summary { background:#111; color:#eee; border-color:#eee; }
-.night-mode .brand-logo,.night-mode .about-logo,.night-mode .about-logo-canvas { -webkit-filter:invert(1); filter:invert(1); }
-.night-mode .settings-section { border-color:#777; }.night-mode .setting-help { color:#eee; }.night-mode .settings-tooltip { border-color:#eee; background:#111; color:#eee; }.night-mode .settings-actions button { background:#111; color:#eee; border-color:#eee; }.night-mode .settings-signout button { border-color:#999; color:#ccc; }
-.night-mode .about-actions button { background:#111; color:#eee; border-color:#eee; }
+.brand-button {
+  position: fixed;
+  z-index: 101;
+  top: 0;
+  left: 50%;
+  display: block;
+  margin: 0 0 0 -202px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.brand-logo {
+  display: block;
+  width: 187px;
+  height: 50px;
+}
+h1,
+h2,
+p {
+  margin: 0;
+}
+h1 {
+  font: bold 50px/1 "Amazon Ember", Arial, sans-serif;
+  letter-spacing: -3px;
+}
+h1 span {
+  font-weight: normal;
+}
+h2 {
+  font: bold 38px/1.15 "Amazon Ember", Arial, sans-serif;
+}
+#status {
+  position: fixed;
+  z-index: 101;
+  top: 50px;
+  left: 50%;
+  width: 187px;
+  margin: 0 0 0 -202px;
+  overflow: hidden;
+  color: #555;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: 13px/1.15 "Amazon Ember", Arial, sans-serif;
+}
+.header-actions {
+  display: table-cell;
+  width: 290px;
+  vertical-align: top;
+  text-align: right;
+  white-space: nowrap;
+}
+.header-button {
+  display: inline-block;
+  width: 140px;
+  height: 72px;
+  margin-left: 8px;
+  border: 3px solid #111;
+  background: #fff;
+  vertical-align: middle;
+  font: bold 20px "Amazon Ember", Arial, sans-serif;
+}
+.header-button.icon-button {
+  width: 72px;
+  padding: 0;
+  font: 40px/1 Arial, sans-serif;
+}
+.settings-button {
+  display: inline-block;
+  width: 72px;
+  height: 72px;
+  margin: 0;
+  padding: 0;
+  border: 2px solid #111;
+  background: #fff;
+  vertical-align: middle;
+  font: 37px/1 "Amazon Ember", Arial, sans-serif;
+}
+.mode-button {
+  display: inline-block;
+  width: 54px;
+  height: 72px;
+  padding: 0;
+  border: 2px solid #111;
+  background: #fff;
+  vertical-align: middle;
+  font: 30px/1 "Amazon Ember", Arial, sans-serif;
+}
+.font-buttons {
+  display: inline-block;
+  width: 54px;
+  height: 72px;
+  vertical-align: middle;
+}
+.font-buttons button {
+  display: block;
+  width: 54px;
+  height: 36px;
+  padding: 0;
+  border: 2px solid #111;
+  background: #fff;
+  font: bold 25px/1 Arial, sans-serif;
+}
+.font-buttons button + button {
+  border-top: 0;
+}
+.warning {
+  position: fixed;
+  z-index: 600;
+  top: 136px;
+  right: 4%;
+  left: 4%;
+  padding: 16px;
+  border: 3px solid #111;
+  background: #eee;
+  font: bold 18px "Amazon Ember", Arial, sans-serif;
+}
+.panel {
+  position: fixed;
+  top: 165px;
+  right: 16%;
+  left: 16%;
+  padding: 38px;
+  border: 4px solid #111;
+  background: #fff;
+}
+.panel h2 {
+  margin-bottom: 24px;
+}
+.panel p {
+  margin-bottom: 22px;
+}
+.panel label {
+  display: block;
+  margin: 20px 0 8px;
+  font: bold 19px "Amazon Ember", Arial, sans-serif;
+}
+.panel input {
+  width: 100%;
+  height: 68px;
+  padding: 8px 14px;
+  border: 3px solid #111;
+  background: #fff;
+  font-size: 20px;
+}
+.primary {
+  width: 100%;
+  min-height: 70px;
+  margin-top: 25px;
+  border: 3px solid #111;
+  background: #111;
+  color: #fff;
+  font: bold 20px "Amazon Ember", Arial, sans-serif;
+}
+.view {
+  position: fixed;
+  top: 92px;
+  right: 1%;
+  bottom: 0;
+  left: 2%;
+  overflow: hidden;
+}
+.section-heading {
+  padding: 12px 0 22px;
+}
+.eyebrow {
+  margin-bottom: 7px;
+  color: #555;
+  font: bold 13px "Amazon Ember", Arial, sans-serif;
+  letter-spacing: 4px;
+}
+.search-row {
+  display: table;
+  width: 100%;
+  margin-top: 22px;
+}
+.search-row input,
+.search-row button {
+  height: 62px;
+  border: 2px solid #111;
+  font-size: 19px;
+}
+.search-row input {
+  display: table-cell;
+  width: 78%;
+  padding: 8px 12px;
+}
+.search-row button {
+  display: table-cell;
+  width: 22%;
+  background: #fff;
+}
+.page-list {
+  position: absolute;
+  top: 190px;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  overflow-y: auto;
+  border-top: 2px solid #111;
+}
+.page-row {
+  display: table;
+  width: 100%;
+  min-height: 96px;
+  padding: 12px 10px;
+  border: 0;
+  border-bottom: 2px solid #aaa;
+  background: #fff;
+  text-align: left;
+}
+.page-icon,
+.page-name,
+.page-arrow {
+  display: table-cell;
+  vertical-align: middle;
+}
+.page-icon {
+  width: 55px;
+  font: 31px/1 "Kindle Symbol", "Amazon Ember", Arial, sans-serif;
+}
+.page-name {
+  font: bold 23px Bookerly, Georgia, serif;
+}
+.page-name small {
+  display: block;
+  margin-top: 6px;
+  color: #666;
+  font: 14px "Amazon Ember", Arial, sans-serif;
+}
+.page-arrow {
+  width: 35px;
+  text-align: right;
+  font: bold 38px Arial;
+}
+.reader-toolbar {
+  position: fixed;
+  z-index: 90;
+  top: 90px;
+  right: 4%;
+  left: 4%;
+  width: 92%;
+  height: 88px;
+  border-bottom: 2px solid #aaa;
+  background: #fff;
+}
+.reader-toolbar button {
+  position: absolute;
+  top: 12px;
+  width: 150px;
+  height: 64px;
+  border: 2px solid #111;
+  background: #fff;
+  font: bold 19px "Amazon Ember", Arial, sans-serif;
+}
+#back {
+  left: 0;
+}
+#pages-home {
+  right: 0;
+}
+.reader-toolbar h2 {
+  position: absolute;
+  top: 0;
+  right: 152px;
+  left: 152px;
+  height: 88px;
+  margin: 0;
+  padding: 0 8px;
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: bold 38px/88px "Amazon Ember", Arial, sans-serif;
+}
+.page-content {
+  position: absolute;
+  top: 88px;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  overflow-y: auto;
+  font-size: 30px;
+}
+.page-content p,
+.page-content ul,
+.page-content ol,
+.page-content blockquote,
+.page-content pre,
+.page-content table,
+.page-content aside,
+.page-content details {
+  margin: 0 0 24px;
+}
+.page-content h1,
+.page-content h2,
+.page-content h3,
+.page-content h4 {
+  margin: 34px 0 18px;
+  font-family: "Amazon Ember", Arial, sans-serif;
+}
+.page-content pre {
+  padding: 20px;
+  overflow-x: auto;
+  border: 2px solid #aaa;
+  background: #eee;
+  text-align: left;
+  font: 18px/1.4 monospace;
+  white-space: pre-wrap;
+}
+.page-content code {
+  padding: 2px 6px;
+  background: #eee;
+  font-family: monospace;
+}
+.page-content blockquote {
+  padding-left: 22px;
+  border-left: 6px solid #777;
+}
+.page-content table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 22px;
+}
+.page-content td,
+.page-content th {
+  padding: 10px;
+  border: 2px solid #777;
+}
+.page-content .callout {
+  padding: 20px;
+  border: 2px solid #777;
+  background: #eee;
+}
+.callout-icon {
+  margin-right: 12px;
+}
+.unsupported {
+  padding: 16px;
+  border: 2px dashed #999;
+  color: #666;
+}
+.page-content img {
+  max-width: 100%;
+  max-height: 430px;
+}
+.page-content img.expanded {
+  width: 100%;
+  height: auto;
+  max-height: none;
+}
+.page-content figure {
+  margin: 20px 0;
+}
+.page-content figcaption {
+  color: #666;
+  font-size: 17px;
+}
+.page-content a {
+  color: #111;
+  text-decoration: underline;
+}
+.page-content [dir="rtl"] {
+  direction: rtl;
+  text-align: right;
+  unicode-bidi: embed;
+}
+.empty-block {
+  min-height: 22px;
+}
+.display-math {
+  overflow-x: auto;
+  padding: 12px 0;
+}
+.potion-boxed-math {
+  text-align: center;
+}
+.potion-box-frame {
+  display: table;
+  margin: 0 auto;
+  padding: 0.3em;
+  border: 0.04em solid;
+}
+.potion-box-frame .katex-display {
+  margin: 0;
+}
+.potion-script {
+  display: inline-block;
+  line-height: 1;
+}
+.potion-script-sub-only {
+  margin-right: 0.05em;
+  vertical-align: -0.3em;
+}
+.potion-script-sup-only {
+  margin-right: 0.05em;
+  vertical-align: 0.55em;
+}
+.potion-script-both {
+  position: relative;
+  height: 1em;
+  margin-right: 0.05em;
+  vertical-align: middle;
+}
+.potion-script-both .potion-script-sup,
+.potion-script-both .potion-script-sub {
+  position: absolute;
+}
+.potion-script-both .potion-script-sup {
+  top: -0.45em;
+}
+.potion-script-both .potion-script-sub {
+  top: 0.5em;
+}
+.notion-color {
+  padding: 1px 3px;
+}
+.notion-color-gray {
+  color: #787774;
+}
+.notion-color-brown {
+  color: #9f6b53;
+}
+.notion-color-orange {
+  color: #d9730d;
+}
+.notion-color-yellow {
+  color: #a87800;
+}
+.notion-color-green {
+  color: #448361;
+}
+.notion-color-blue {
+  color: #337ea9;
+}
+.notion-color-purple {
+  color: #9065b0;
+}
+.notion-color-pink {
+  color: #c14c8a;
+}
+.notion-color-red {
+  color: #d44c47;
+}
+.notion-color-gray-bg {
+  background-color: #e3e2e0;
+}
+.notion-color-brown-bg {
+  background-color: #eee0da;
+}
+.notion-color-orange-bg {
+  background-color: #fadec9;
+}
+.notion-color-yellow-bg {
+  background-color: #fdecc8;
+}
+.notion-color-green-bg {
+  background-color: #dbeddb;
+}
+.notion-color-blue-bg {
+  background-color: #d3e5ef;
+}
+.notion-color-purple-bg {
+  background-color: #e8deee;
+}
+.notion-color-pink-bg {
+  background-color: #f5e0e9;
+}
+.notion-color-red-bg {
+  background-color: #ffe2dd;
+}
+.notion-reference-row {
+  margin: 0 0 18px;
+}
+.child-page {
+  display: table;
+  width: 100%;
+  min-height: 62px;
+  padding: 8px 12px;
+  border: 0;
+  border-bottom: 2px solid #aaa;
+  background: #fff;
+  text-align: left;
+  font: bold 25px Bookerly, Georgia, serif;
+}
+.child-page-arrow {
+  float: right;
+  font: bold 36px/24px Arial, sans-serif;
+}
+.notion-reference {
+  color: #111;
+  text-decoration: underline;
+}
+.toggle {
+  margin: 0 0 24px;
+}
+.toggle-summary {
+  display: block;
+  width: 100%;
+  min-height: 52px;
+  padding: 6px 0;
+  border: 0;
+  background: #fff;
+  text-align: left;
+  font: inherit;
+}
+.toggle-arrow {
+  display: inline-block;
+  width: 34px;
+  vertical-align: middle;
+  text-align: center;
+  font: 28px Arial, sans-serif;
+}
+.toggle-heading {
+  vertical-align: middle;
+  font-family: "Amazon Ember", Arial, sans-serif;
+  font-weight: bold;
+}
+.toggle-heading-1 {
+  font-size: 1.5em;
+}
+.toggle-heading-2 {
+  font-size: 1.3em;
+}
+.toggle-heading-3 {
+  font-size: 1.15em;
+}
+.toggle-heading-4 {
+  font-size: 1em;
+}
+.toggle-content {
+  margin-left: 15px;
+  padding: 10px 0 1px 28px;
+  border-left: 3px solid #eee;
+}
+.scroll-button {
+  position: fixed;
+  z-index: 350;
+  right: 5.5%;
+  width: 68px;
+  height: 68px;
+  padding: 0;
+  border: 4px solid #111;
+  border-radius: 12px;
+  background: #fff;
+  font: bold 42px/1 Arial;
+}
+#scroll-up {
+  top: 275px;
+}
+#scroll-down {
+  bottom: 22px;
+}
+.overlay {
+  position: fixed;
+  z-index: 1000;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding-top: 90px;
+  overflow-y: auto;
+  background: rgba(255, 255, 255, 0.94);
+}
+.dialog {
+  width: 760px;
+  margin: 0 auto 80px;
+  padding: 38px;
+  border: 4px solid #111;
+  background: #fff;
+}
+.dialog h2 {
+  margin-bottom: 25px;
+}
+.settings-section {
+  margin-top: 26px;
+  padding-top: 22px;
+  border-top: 2px solid #aaa;
+}
+.settings-section h3 {
+  margin: 0 0 16px;
+  font: bold 21px "Amazon Ember", Arial, sans-serif;
+}
+.setting-choice {
+  display: block;
+  margin: 14px 0;
+  font: 19px/1.25 "Amazon Ember", Arial, sans-serif;
+}
+.setting-choice input {
+  width: 23px;
+  height: 23px;
+  margin: 0 10px 0 0;
+  vertical-align: middle;
+}
+.setting-choice-row {
+  min-height: 46px;
+  white-space: nowrap;
+}
+.setting-choice-row .setting-choice {
+  display: inline-block;
+  margin: 5px 0;
+  padding: 7px 0;
+  vertical-align: middle;
+}
+.setting-help {
+  display: inline-block;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #111;
+  vertical-align: middle;
+  font: 28px/1 "Kindle Symbol", "Amazon Ember", sans-serif;
+}
+.settings-tooltip {
+  position: fixed;
+  z-index: 1100;
+  width: 560px;
+  padding: 18px 22px;
+  border: 3px solid #111;
+  background: #fff;
+  color: #111;
+  font: 17px/1.35 "Amazon Ember", Arial, sans-serif;
+}
+.setting-select {
+  display: block;
+  font: 19px/1.25 "Amazon Ember", Arial, sans-serif;
+}
+.setting-select strong {
+  display: block;
+  margin-bottom: 10px;
+}
+.setting-select select {
+  display: block;
+  width: 100%;
+  height: 58px;
+  padding: 6px 12px;
+  border: 2px solid #111;
+  background: #fff;
+  color: #111;
+  font: 20px "Amazon Ember", Arial, sans-serif;
+}
+.font-sizes {
+  display: table;
+  width: 100%;
+  height: 78px;
+  margin: 16px 0;
+  table-layout: fixed;
+}
+.font-sizes button {
+  display: table-cell;
+  width: 12.5%;
+  height: 70px;
+  border: 2px solid transparent;
+  background: #fff;
+}
+.font-sizes button.selected {
+  border-color: #111;
+  background: #111;
+  color: #fff;
+}
+.font-sizes button:nth-child(1) {
+  font-size: 14px;
+}
+.font-sizes button:nth-child(2) {
+  font-size: 17px;
+}
+.font-sizes button:nth-child(3) {
+  font-size: 20px;
+}
+.font-sizes button:nth-child(4) {
+  font-size: 23px;
+}
+.font-sizes button:nth-child(5) {
+  font-size: 27px;
+}
+.font-sizes button:nth-child(6) {
+  font-size: 32px;
+}
+.font-sizes button:nth-child(7) {
+  font-size: 38px;
+}
+.font-sizes button:nth-child(8) {
+  font-size: 45px;
+}
+.settings-signout {
+  margin-top: 22px;
+}
+.settings-signout button {
+  display: block;
+  width: 100%;
+  min-height: 60px;
+  border: 2px solid #777;
+  background: transparent;
+  color: #555;
+  font: 19px "Amazon Ember", Arial, sans-serif;
+}
+.settings-actions {
+  margin-top: 32px;
+}
+.settings-actions button {
+  display: block;
+  width: 100%;
+  min-height: 72px;
+  border: 3px solid #111;
+  background: #fff;
+  font: bold 19px "Amazon Ember", Arial, sans-serif;
+}
+.settings-actions button + button {
+  margin-top: 14px;
+}
+.confirm {
+  margin-top: 160px;
+}
+.confirm-actions {
+  display: table;
+  width: 100%;
+  margin-top: 30px;
+}
+.confirm-actions button {
+  display: table-cell;
+  width: 50%;
+  height: 65px;
+  border: 2px solid #111;
+  background: #fff;
+}
+.about-dialog {
+  width: 700px;
+  margin-top: 40px;
+  padding: 48px 52px 42px;
+  text-align: center;
+}
+.about-logo-stage {
+  width: 440px;
+  max-width: 100%;
+  margin: 0 auto;
+}
+.about-logo,
+.about-logo-canvas {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin: 0;
+}
+.about-logo-canvas {
+  background: #fff;
+}
+.about-mark {
+  margin: 28px 0;
+  font: 20pt "Kindle Symbol", "Amazon Ember", Arial, sans-serif;
+}
+.about-message {
+  font: 23px/1.35 Bookerly, Georgia, serif;
+}
+.about-credit {
+  margin-top: 32px;
+  font: bold 22px/1.3 "Amazon Ember", Arial, sans-serif;
+}
+.about-legal {
+  margin-top: 12px;
+  font: 16px/1.32 "Amazon Ember", Arial, sans-serif;
+}
+.about-credit + .about-legal {
+  margin-top: 26px;
+}
+.about-actions {
+  width: 240px;
+  margin: 34px auto 0;
+}
+.about-actions button {
+  display: block;
+  width: 100%;
+  min-height: 66px;
+  border: 3px solid #111;
+  background: #fff;
+  font: bold 20px "Amazon Ember", Arial, sans-serif;
+}
+.night-mode body,
+.night-mode .app-header,
+.night-mode .panel,
+.night-mode .view,
+.night-mode .reader-toolbar,
+.night-mode .page-row,
+.night-mode .square,
+.night-mode .font-buttons button,
+.night-mode .overlay,
+.night-mode .dialog,
+.night-mode input,
+.night-mode select,
+.night-mode button {
+  background: #111;
+  color: #eee;
+  border-color: #eee;
+}
+.night-mode #status,
+.night-mode .eyebrow,
+.night-mode .page-name small {
+  color: #bbb;
+}
+.night-mode .page-content pre,
+.night-mode .page-content code,
+.night-mode .page-content .callout {
+  background: #222;
+}
+.night-mode .scroll-button {
+  background: #111;
+  color: #eee;
+  border-color: #eee;
+}
+.night-mode .child-page,
+.night-mode .toggle-summary {
+  background: #111;
+  color: #eee;
+  border-color: #eee;
+}
+.night-mode .brand-logo,
+.night-mode .about-logo,
+.night-mode .about-logo-canvas {
+  -webkit-filter: invert(1);
+  filter: invert(1);
+}
+.night-mode .settings-section {
+  border-color: #777;
+}
+.night-mode .setting-help {
+  color: #eee;
+}
+.night-mode .settings-tooltip {
+  border-color: #eee;
+  background: #111;
+  color: #eee;
+}
+.night-mode .settings-actions button {
+  background: #111;
+  color: #eee;
+  border-color: #eee;
+}
+.night-mode .settings-signout button {
+  border-color: #999;
+  color: #ccc;
+}
+.night-mode .about-actions button {
+  background: #111;
+  color: #eee;
+  border-color: #eee;
+}
+/* Do not let KaTeX fraction rules collapse onto fractional device pixels. */
+.katex .mfrac .frac-line {
+  border-bottom-width: 2px;
+}

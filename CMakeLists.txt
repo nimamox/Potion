@@ -75,6 +75,9 @@ if(POTION_BUILD_TESTS)
               "${CMAKE_SOURCE_DIR}/tests/frontend_contract_test.js"
               "${CMAKE_SOURCE_DIR}/assets/app.js"
               "${CMAKE_SOURCE_DIR}/assets/index.html"
-              "${CMAKE_SOURCE_DIR}/assets/vendor/katex/katex.min.js")
+              "${CMAKE_SOURCE_DIR}/assets/vendor/katex/katex.min.js"
+              "${CMAKE_SOURCE_DIR}/assets/vendor/katex/katex.min.css"
+              "${CMAKE_SOURCE_DIR}/assets/vendor/katex/fonts"
+              "${CMAKE_SOURCE_DIR}/assets/app.css")
   endif()
 endif()

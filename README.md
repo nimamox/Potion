@@ -20,8 +20,9 @@ the token is `/var/local/potion/token` (mode 0600); on the simulator state is
 kept in `.potion-simulator/`. Both locations are ignored by Git.
 
 Notion mathematics is rendered to HTML inside `potiond` by native Rust
-`katex-rs` 0.2.4. Mesquite loads the matching KaTeX 0.16.25 CSS and fonts, but
-no KaTeX JavaScript and no TeX parser. Repeated expressions use a bounded native
+`katex-rs` 0.2.4. Mesquite loads the matching KaTeX 0.16.25 CSS and the
+Mesquite-verified WOFF fonts, but no KaTeX JavaScript and no TeX parser.
+Repeated expressions use a bounded native
 LRU cache, and equations continue to scale with reader text because the result
 uses KaTeX's relative HTML/CSS sizing. Nothing extra is installed on Kindle.
 
