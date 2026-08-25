@@ -15,7 +15,8 @@ option(POTION_BUILD_TESTS "Build Potion tests" ON)
 option(POTION_BUILD_SIMULATOR "Build the browser-based Kindle simulator" OFF)
 
 add_library(potion_core
-  src/json.cpp src/app_state.cpp src/markdown.cpp src/notion_client.cpp src/http_server.cpp)
+  src/json.cpp src/app_state.cpp src/reading_positions.cpp src/markdown.cpp
+  src/notion_client.cpp src/http_server.cpp)
 target_include_directories(potion_core PUBLIC include)
 target_link_libraries(potion_core PUBLIC CURL::libcurl OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
@@ -45,4 +46,3 @@ if(POTION_BUILD_TESTS)
   target_link_libraries(potion_tests PRIVATE potion_core)
   add_test(NAME potion_tests COMMAND potion_tests)
 endif()
-

@@ -118,6 +118,10 @@ std::string color_attribute(const std::string &source) {
   const std::string color = notion_block_color_class(source);
   return color.empty() ? std::string{} : " class=\"" + color + "\"";
 }
+std::string block_class_attribute(const std::string &source) {
+  const std::string color = notion_block_color_class(source);
+  return " class=\"potion-block" + (color.empty() ? std::string{} : " " + color) + "\"";
+}
 std::string colored_inline(const std::string &source, const std::string &html) {
   const std::string color = notion_block_color_class(source);
   return color.empty() ? html : "<span class=\"" + color + "\">" + html + "</span>";
@@ -180,7 +184,7 @@ std::string MarkdownRenderer::inline_html(const std::string &text) const {
       auto mid = text.find("](", i + 2), end = mid == std::string::npos ? mid : markdown_url_end(text, mid + 2);
       if (mid != std::string::npos && end != std::string::npos) {
         const std::string url = text.substr(mid + 2, end - mid - 2), caption = text.substr(i + 2, mid - i - 2);
-        if (https_url(url)) { const std::string key = images_.register_url(url); out += "<figure><img data-src=\"http://127.0.0.1:8766/api/images/" + key + "\" alt=\"" + html_escape(caption) + "\"><figcaption>" + inline_html(caption) + "</figcaption></figure>"; }
+        if (https_url(url)) { const std::string key = images_.register_url(url); out += "<figure class=\"potion-block\"><img data-src=\"http://127.0.0.1:8766/api/images/" + key + "\" alt=\"" + html_escape(caption) + "\"><figcaption>" + inline_html(caption) + "</figcaption></figure>"; }
         else out += inline_html(caption);
         i = end + 1; continue;
       }
@@ -208,8 +212,8 @@ std::string MarkdownRenderer::render(const std::string &markdown) const {
   while (std::getline(input, line)) {
     if (!line.empty() && line.back() == '\r') line.pop_back();
     std::size_t depth = 0; while (depth < line.size() && line[depth] == '\t') ++depth; std::string body = line.substr(depth); const bool preceding_plain_paragraph = last_plain_paragraph, preceding_image = last_image; last_plain_paragraph = false; last_image = false;
-    if (code) { if (starts(body, "```")) { out += "<pre><code>" + html_escape(code_text) + "</code></pre>"; code = false; code_text.clear(); } else code_text += body + "\n"; continue; }
-    if (equation) { if (trim(body) == "$$") { out += "<div class=\"math display-math\" data-expr=\"" + html_escape(trim(equation_text)) + "\">" + html_escape(trim(equation_text)) + "</div>"; equation = false; equation_text.clear(); } else equation_text += body + "\n"; continue; }
+    if (code) { if (starts(body, "```")) { out += "<pre class=\"potion-block\"><code>" + html_escape(code_text) + "</code></pre>"; code = false; code_text.clear(); } else code_text += body + "\n"; continue; }
+    if (equation) { if (trim(body) == "$$") { out += "<div class=\"potion-block math display-math\" data-expr=\"" + html_escape(trim(equation_text)) + "\">" + html_escape(trim(equation_text)) + "</div>"; equation = false; equation_text.clear(); } else equation_text += body + "\n"; continue; }
     if (!notion_table) close_heading_toggles(depth);
     if (starts(body, "```")) { close_lists(); code = true; continue; }
     if (trim(body) == "$$") { close_lists(); equation = true; continue; }
@@ -218,10 +222,10 @@ std::string MarkdownRenderer::render(const std::string &markdown) const {
     close_pipe_table();
     if (!table_header.empty()) {
       if (pipe_row && table_separator(body)) {
-        close_lists(); out += "<table><thead>"; table_row(table_header, "th"); out += "</thead><tbody>";
+        close_lists(); out += "<table class=\"potion-block\"><thead>"; table_row(table_header, "th"); out += "</thead><tbody>";
         table_header.clear(); pipe_table = true; continue;
       }
-      out += "<p>" + inline_html(strip_attrs(table_header)) + "</p>"; table_header.clear();
+      out += "<p class=\"potion-block\">" + inline_html(strip_attrs(table_header)) + "</p>"; table_header.clear();
     }
     if (pipe_row) { close_lists(); table_header = body; continue; }
     bool bullet = starts(body, "- ") || starts(body, "* "); std::size_t dot = body.find(". "); bool numbered = dot != std::string::npos && dot > 0 && std::all_of(body.begin(), body.begin() + static_cast<long>(dot), [](unsigned char c){ return std::isdigit(c); });
@@ -232,32 +236,32 @@ std::string MarkdownRenderer::render(const std::string &markdown) const {
       const std::size_t wanted = depth - list_base_depth + 1;
       while (lists.size() > wanted) { out += "</li></" + lists.back() + ">"; lists.pop_back(); }
       if (lists.size() == wanted && lists.back() != tag) {
-        out += "</li></" + lists.back() + "><" + tag + (tag == "ol" && start != "1" ? " start=\"" + start + "\"" : "") + "><li>";
+        out += "</li></" + lists.back() + "><" + tag + (tag == "ol" && start != "1" ? " start=\"" + start + "\"" : "") + "><li class=\"potion-block\">";
         lists.back() = tag;
       } else if (lists.size() == wanted) {
-        out += "</li><li>";
+        out += "</li><li class=\"potion-block\">";
       } else {
-        while (lists.size() < wanted) { out += "<" + tag + (tag == "ol" && start != "1" ? " start=\"" + start + "\"" : "") + "><li>"; lists.push_back(tag); }
+        while (lists.size() < wanted) { out += "<" + tag + (tag == "ol" && start != "1" ? " start=\"" + start + "\"" : "") + "><li class=\"potion-block\">"; lists.push_back(tag); }
       }
       bool todo = starts(item, "[ ] ") || starts(item, "[x] ") || starts(item, "[X] "); if (todo) { bool checked = item[1] != ' '; item = item.substr(4); out += "<span class=\"todo-box\">" + std::string(checked ? "&#9745;" : "&#9744;") + "</span> "; }
       out += colored_inline(item, inline_html(strip_attrs(item))); continue;
     }
-    close_lists(); body = trim(body); if (body.empty() || body == "<empty-block/>") { out += "<div class=\"empty-block\"></div>"; continue; }
-    if (body == "---") { out += "<hr>"; continue; }
+    close_lists(); body = trim(body); if (body.empty() || body == "<empty-block/>") { out += "<div class=\"potion-block empty-block\"></div>"; continue; }
+    if (body == "---") { out += "<hr class=\"potion-block\">"; continue; }
     std::size_t hashes = 0; while (hashes < body.size() && body[hashes] == '#') ++hashes;
-    if (hashes && hashes <= 6 && hashes < body.size() && body[hashes] == ' ') { unsigned level = std::min<unsigned>(4, hashes); const std::string heading_source = body.substr(hashes + 1); const bool toggle = trailing_notion_attributes(heading_source).toggle; const std::string heading = colored_inline(heading_source, inline_html(strip_attrs(heading_source))); if (toggle) { out += "<div class=\"toggle heading-toggle\"><button type=\"button\" class=\"toggle-summary\" aria-expanded=\"true\"><span class=\"toggle-arrow\">&#9662;</span><span class=\"toggle-heading toggle-heading-" + std::to_string(level) + "\">" + heading + "</span></button><div class=\"toggle-content\">"; heading_toggles.push_back(depth); } else out += "<h" + std::to_string(level) + ">" + heading + "</h" + std::to_string(level) + ">"; continue; }
-    if (starts(body, "> ")) { out += "<blockquote" + color_attribute(body) + ">" + inline_html(strip_attrs(body.substr(2))) + "</blockquote>"; continue; }
+    if (hashes && hashes <= 6 && hashes < body.size() && body[hashes] == ' ') { unsigned level = std::min<unsigned>(4, hashes); const std::string heading_source = body.substr(hashes + 1); const bool toggle = trailing_notion_attributes(heading_source).toggle; const std::string heading = colored_inline(heading_source, inline_html(strip_attrs(heading_source))); if (toggle) { out += "<div class=\"toggle heading-toggle\"><button type=\"button\" class=\"potion-block toggle-summary\" aria-expanded=\"true\"><span class=\"toggle-arrow\">&#9662;</span><span class=\"toggle-heading toggle-heading-" + std::to_string(level) + "\">" + heading + "</span></button><div class=\"toggle-content\">"; heading_toggles.push_back(depth); } else out += "<h" + std::to_string(level) + " class=\"potion-block\">" + heading + "</h" + std::to_string(level) + ">"; continue; }
+    if (starts(body, "> ")) { out += "<blockquote" + block_class_attribute(body) + ">" + inline_html(strip_attrs(body.substr(2))) + "</blockquote>"; continue; }
     if (starts(body, "<callout")) { const std::string color = notion_color_class(body); out += "<aside class=\"callout" + (color.empty() ? std::string{} : " " + color) + "\"><span class=\"callout-icon\">" + html_escape(attribute(body, "icon")) + "</span>"; continue; }
     if (body == "</callout>") { out += "</aside>"; continue; }
     if (starts(body, "<details")) { const std::string color = notion_color_class(body); out += "<div class=\"toggle" + (color.empty() ? std::string{} : " " + color) + "\">"; continue; }
-    if (starts(body, "<summary>") && body.find("</summary>") != std::string::npos) { out += "<button type=\"button\" class=\"toggle-summary\" aria-expanded=\"false\"><span class=\"toggle-arrow\">&#9656;</span><span>" + inline_html(body.substr(9, body.size() - 19)) + "</span></button><div class=\"toggle-content hidden\">"; continue; }
+    if (starts(body, "<summary>") && body.find("</summary>") != std::string::npos) { out += "<button type=\"button\" class=\"potion-block toggle-summary\" aria-expanded=\"false\"><span class=\"toggle-arrow\">&#9656;</span><span>" + inline_html(body.substr(9, body.size() - 19)) + "</span></button><div class=\"toggle-content hidden\">"; continue; }
     if (body == "</details>") { out += "</div></div>"; continue; }
-    if (starts(body, "<table")) { notion_table = true; out += "<table>"; continue; } if (body == "</table>") { out += "</table>"; notion_table = false; continue; }
+    if (starts(body, "<table")) { notion_table = true; out += "<table class=\"potion-block\">"; continue; } if (body == "</table>") { out += "</table>"; notion_table = false; continue; }
     if (starts(body, "<tr")) { out += "<tr>"; continue; } if (body == "</tr>") { out += "</tr>"; continue; }
     if (starts(body, "<td")) { auto gt = body.find('>'), end = body.rfind("</td>"); out += "<td" + color_attribute(body) + ">" + (gt != std::string::npos && end != std::string::npos ? inline_html(body.substr(gt + 1, end - gt - 1)) : std::string("Unsupported cell")) + "</td>"; continue; }
     if (body == "<columns>" || body == "</columns>" || body == "<column>" || body == "</column>" || starts(body, "<col") || body == "</colgroup>") continue;
-    if ((starts(body, "<page ") || starts(body, "<database ") || starts(body, "<mention-")) && body.find('>') != std::string::npos) { out += "<div class=\"notion-reference-row\">" + inline_html(body) + "</div>"; continue; }
-    if (starts(body, "<span ") && body.find("</span>") != std::string::npos) { out += "<p>" + inline_html(body) + "</p>"; continue; }
+    if ((starts(body, "<page ") || starts(body, "<database ") || starts(body, "<mention-")) && body.find('>') != std::string::npos) { out += "<div class=\"potion-block notion-reference-row\">" + inline_html(body) + "</div>"; continue; }
+    if (starts(body, "<span ") && body.find("</span>") != std::string::npos) { out += "<p class=\"potion-block\">" + inline_html(body) + "</p>"; continue; }
     if (starts(body, "![")) {
       const auto mid = body.find("](", 2), end = mid == std::string::npos ? mid : markdown_url_end(body, mid + 2);
       const std::string trailing = end == std::string::npos ? std::string{} : trim(body.substr(end + 1));
@@ -270,9 +274,9 @@ std::string MarkdownRenderer::render(const std::string &markdown) const {
         }
       }
     }
-    if (body[0] == '<' && body.find('>') != std::string::npos) { out += "<div class=\"unsupported\">Unsupported Notion content</div>"; continue; }
-    last_plain_source = strip_attrs(body); if (preceding_image && depth == last_image_depth && last_plain_source == last_image_caption) continue; last_plain_output = out.size(); last_plain_depth = depth; last_plain_paragraph = true; out += "<p" + color_attribute(body) + direction_attribute(last_plain_source) + ">" + inline_html(last_plain_source) + "</p>";
+    if (body[0] == '<' && body.find('>') != std::string::npos) { out += "<div class=\"potion-block unsupported\">Unsupported Notion content</div>"; continue; }
+    last_plain_source = strip_attrs(body); if (preceding_image && depth == last_image_depth && last_plain_source == last_image_caption) continue; last_plain_output = out.size(); last_plain_depth = depth; last_plain_paragraph = true; out += "<p" + block_class_attribute(body) + direction_attribute(last_plain_source) + ">" + inline_html(last_plain_source) + "</p>";
   }
-  close_lists(); close_pipe_table(); while (!heading_toggles.empty()) { out += "</div></div>"; heading_toggles.pop_back(); } if (!table_header.empty()) out += "<p>" + inline_html(strip_attrs(table_header)) + "</p>"; if (code) out += "<pre><code>" + html_escape(code_text) + "</code></pre>"; if (equation) out += "<div class=\"unsupported\">Incomplete equation</div>"; return out;
+  close_lists(); close_pipe_table(); while (!heading_toggles.empty()) { out += "</div></div>"; heading_toggles.pop_back(); } if (!table_header.empty()) out += "<p class=\"potion-block\">" + inline_html(strip_attrs(table_header)) + "</p>"; if (code) out += "<pre class=\"potion-block\"><code>" + html_escape(code_text) + "</code></pre>"; if (equation) out += "<div class=\"potion-block unsupported\">Incomplete equation</div>"; return out;
 }
 }

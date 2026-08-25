@@ -2,6 +2,7 @@
 #include "potion/app_state.hpp"
 #include "potion/markdown.hpp"
 #include "potion/notion_client.hpp"
+#include "potion/reading_positions.hpp"
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
@@ -40,6 +41,7 @@ private:
   void wake_listener() noexcept;
   ServerOptions options_;
   AppState state_;
+  ReadingPositionStore positions_;
   NotionClient notion_;
   ImageRegistry images_;
   MarkdownRenderer renderer_;

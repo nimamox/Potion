@@ -133,9 +133,8 @@ std::string mime_type(const std::string &path) {
   return "application/octet-stream";
 }
 bool valid_page_id(const std::string &id) {
-  if (id.size() < 32 || id.size() > 36) return false;
-  for (char c : id) if (!std::isxdigit(static_cast<unsigned char>(c)) && c != '-') return false;
-  return true;
+  PageUuid uuid;
+  return parse_page_uuid(id, uuid);
 }
 #ifdef __linux__
 int open_page_keys() {
@@ -150,7 +149,7 @@ int open_page_keys() {
 }
 
 HttpServer::HttpServer(ServerOptions options)
-    : options_(std::move(options)), state_(options_.data_dir),
+    : options_(std::move(options)), state_(options_.data_dir), positions_(options_.data_dir),
       notion_("2026-03-11", options_.ca_bundle_path), renderer_(images_) {
   if (!options_.start_page_id.empty() && !valid_page_id(options_.start_page_id))
     throw std::runtime_error("Invalid startup page id");
@@ -235,6 +234,7 @@ void HttpServer::handle_client(int client) noexcept {
       respond(client, 200, "OK", "application/json", R"({"type":"authenticated"})");
     } else if (request.method == "POST" && request.target == "/api/auth/logout") {
       std::string error; if (!state_.clear_token(error)) throw std::runtime_error(error);
+      if (!positions_.clear(error)) throw std::runtime_error(error);
       images_.clear();
       respond(client, 200, "OK", "application/json", R"({"type":"logged-out"})");
     } else if (request.method == "GET" && request.target == "/api/pages") {
@@ -251,6 +251,39 @@ void HttpServer::handle_client(int client) noexcept {
                 R"(,"edited":)" + json_escape(page.edited) + "}";
       }
       body += "]}"; respond(client, 200, "OK", "application/json", body);
+    } else if ((request.method == "GET" || request.method == "POST") &&
+               request.target.compare(0, 11, "/api/pages/") == 0 &&
+               request.target.size() > 20 &&
+               request.target.compare(request.target.size() - 9, 9, "/position") == 0) {
+      const std::string id = request.target.substr(11, request.target.size() - 20);
+      if (!valid_page_id(id)) throw std::runtime_error("Invalid page id");
+      if (request.method == "POST") {
+        std::string error;
+        const std::string index_text = parameter(request.body, "blockIndex");
+        const std::string fraction_text = parameter(request.body, "blockFraction");
+        std::size_t used = 0;
+        unsigned long long index = 0, fraction = 0;
+        try {
+          index = std::stoull(index_text, &used);
+          if (used != index_text.size()) throw std::runtime_error("number");
+          fraction = std::stoull(fraction_text, &used);
+          if (used != fraction_text.size()) throw std::runtime_error("number");
+        } catch (...) { throw std::runtime_error("Invalid reading position"); }
+        index = std::min<unsigned long long>(index, 0xffffffffull);
+        fraction = std::min<unsigned long long>(fraction, 65535ull);
+        if (!positions_.update(id, static_cast<std::uint32_t>(index),
+                               static_cast<std::uint16_t>(fraction),
+                               unix_timestamp(), error))
+          throw std::runtime_error(error);
+      }
+      const auto position = positions_.get(id);
+      std::string body = R"({"type":"position","position":)";
+      if (position)
+        body += R"({"blockIndex":)" + std::to_string(position->block_index) +
+                R"(,"blockFraction":)" + std::to_string(position->block_fraction) +
+                R"(,"lastSeen":)" + std::to_string(position->last_seen) + "}";
+      else body += "null";
+      respond(client, 200, "OK", "application/json", body + "}");
     } else if (request.method == "GET" &&
                request.target.compare(0, 11, "/api/pages/") == 0) {
       const std::string id = request.target.substr(11);
@@ -258,10 +291,18 @@ void HttpServer::handle_client(int client) noexcept {
       PageDocument page; std::string error;
       if (!notion_.retrieve_page(state_.token(), id, page, error))
         throw std::runtime_error(error);
-      const std::string body = R"({"type":"page","id":)" + json_escape(page.id) +
+      const auto position = positions_.visit(page.id, unix_timestamp(), error);
+      if (!error.empty()) std::cerr << "Reading position: " << error << '\n';
+      std::string body = R"({"type":"page","id":)" + json_escape(page.id) +
         R"(,"title":)" + json_escape(page.title) +
         R"(,"html":)" + json_escape(renderer_.render(page.markdown)) +
-        R"(,"truncated":)" + (page.truncated ? "true" : "false") + "}";
+        R"(,"truncated":)" + (page.truncated ? "true" : "false") +
+        R"(,"position":)";
+      if (position)
+        body += R"({"blockIndex":)" + std::to_string(position->block_index) +
+                R"(,"blockFraction":)" + std::to_string(position->block_fraction) + "}";
+      else body += "null";
+      body += "}";
       respond(client, 200, "OK", "application/json", body);
     } else if (request.method == "GET" &&
                request.target.compare(0, 12, "/api/images/") == 0) {

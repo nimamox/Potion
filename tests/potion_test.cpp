@@ -2,6 +2,7 @@
 #include "potion/http_server.hpp"
 #include "potion/json.hpp"
 #include "potion/markdown.hpp"
+#include "potion/reading_positions.hpp"
 #include <curl/curl.h>
 #include <chrono>
 #include <cstdlib>
@@ -75,29 +76,45 @@ int main() {
       "[safe](https://example.com) [bad](javascript:alert(1))\n"
       "<script>alert(1)</script>\n$$\nx^2\n$$\n"
       "| Name | Value |\n|---|---|\n| Safe | **bold** |\n");
-    require(html.find("<h1>Heading</h1>") != std::string::npos, "heading");
-    require(html.find("<ul><li>parent<ul><li>child</li></ul></li><li>sibling</li></ul>") != std::string::npos, "nested list");
+    require(html.find("<h1 class=\"potion-block\">Heading</h1>") != std::string::npos, "heading");
+    require(html.find("<ul><li class=\"potion-block\">parent<ul><li class=\"potion-block\">child</li></ul></li><li class=\"potion-block\">sibling</li></ul>") != std::string::npos, "nested list");
     require(html.find("javascript:") == std::string::npos, "unsafe URL leaked");
     require(html.find("<script>") == std::string::npos, "unsafe HTML leaked");
     require(html.find("display-math") != std::string::npos, "equation");
-    require(html.find("<table><thead><tr><th>Name</th><th>Value</th></tr></thead><tbody><tr><td>Safe</td><td><strong>bold</strong></td></tr></tbody></table>") != std::string::npos, "pipe table");
+    require(html.find("<table class=\"potion-block\"><thead><tr><th>Name</th><th>Value</th></tr></thead><tbody><tr><td>Safe</td><td><strong>bold</strong></td></tr></tbody></table>") != std::string::npos, "pipe table");
+
+    const std::string logical_blocks = renderer.render(
+      "# Heading\nParagraph with **inline** text.\n- list item\n> quote\n"
+      "```\ncode\n```\n$$\nx^2\n$$\n"
+      "![image](https://example.com/logical.png)\n");
+    require(logical_blocks.find("<h1 class=\"potion-block\">") != std::string::npos &&
+            logical_blocks.find("<p class=\"potion-block\">") != std::string::npos &&
+            logical_blocks.find("<li class=\"potion-block\">") != std::string::npos &&
+            logical_blocks.find("<blockquote class=\"potion-block\">") != std::string::npos &&
+            logical_blocks.find("<pre class=\"potion-block\">") != std::string::npos &&
+            logical_blocks.find("class=\"potion-block math display-math\"") != std::string::npos &&
+            logical_blocks.find("<figure class=\"potion-block\">") != std::string::npos,
+            "logical block elements are marked");
+    require(logical_blocks.find("<strong class=\"potion-block") == std::string::npos &&
+            logical_blocks.find("<span class=\"potion-block") == std::string::npos,
+            "inline formatting is not a logical block");
 
     const std::string figure = renderer.render(
       "Impulse response $`h[n]`$\n"
       "![Impulse response $`h[n]`$](https://example.com/impulse.png)\n");
     require(figure.find("<img data-src=\"http://127.0.0.1:8766/api/images/") != std::string::npos, "lazy image source");
     require(figure.find("<figcaption>Impulse response <span class=\"math\" data-expr=\"h[n]\">h[n]</span></figcaption>") != std::string::npos, "caption math");
-    require(figure.find("<p>Impulse response") == std::string::npos && figure.find("<p><figure>") == std::string::npos, "deduplicated standalone figure");
+    require(figure.find("<p class=\"potion-block\">Impulse response") == std::string::npos && figure.find("<p><figure>") == std::string::npos, "deduplicated standalone figure");
     const std::string figure_first = renderer.render(
       "![Impulse response $`h[n]`$](https://example.com/impulse.png)\n"
       "Impulse response $`h[n]`$\n");
-    require(figure_first.find("<p>Impulse response") == std::string::npos, "deduplicated caption after figure");
+    require(figure_first.find("<p class=\"potion-block\">Impulse response") == std::string::npos, "deduplicated caption after figure");
 
     const std::string caption_boundary = renderer.render(
       "# Toggle {toggle=\"true\"}\n"
       "\tCaption\n"
       "![Caption](https://example.com/image.png)\n");
-    require(caption_boundary.find("<p>Caption</p></div></div><figure>") != std::string::npos,
+    require(caption_boundary.find("<p class=\"potion-block\">Caption</p></div></div><figure class=\"potion-block\">") != std::string::npos,
             "caption deduplication preserves toggle closure");
 
     const std::string notion_blocks = renderer.render(
@@ -107,7 +124,7 @@ int main() {
     require(notion_blocks.find("data-page-id=\"5908cc548ef342b6b84e254fa1785a21\"") != std::string::npos, "child page link");
     require(notion_blocks.find("Unsupported Notion content") == std::string::npos, "supported Notion blocks");
     require(notion_blocks.find("heading-toggle") != std::string::npos, "toggle heading");
-    require(notion_blocks.find("heading-toggle\"><button type=\"button\" class=\"toggle-summary\" aria-expanded=\"true\"") != std::string::npos, "toggle heading expanded");
+    require(notion_blocks.find("heading-toggle\"><button type=\"button\" class=\"potion-block toggle-summary\" aria-expanded=\"true\"") != std::string::npos, "toggle heading expanded");
     require(notion_blocks.find("toggle-heading-1\">Toggle heading</span></button><div class=\"toggle-content\">") != std::string::npos, "toggle heading content visible");
     require(notion_blocks.find("Regular toggle") != std::string::npos && notion_blocks.find("toggle-content hidden") != std::string::npos, "regular toggle");
 
@@ -119,15 +136,15 @@ int main() {
       "\t\t1. Delay the input\n\t\t2. Delay the output\n\t\t3. Compare\n"
       "\t\t<table>\n<tr>\n<td>Symbol</td>\n<td>Meaning</td>\n</tr>\n\t\t</table>\n"
       "# Second section {toggle=\"true\"}\n\tSecond content\n");
-    require(nested_blocks.find("<ul><li>Ping</li><li>Predict</li><li>Profile</li></ul>") != std::string::npos, "toggle-relative bullet list");
-    require(nested_blocks.find("<ol><li>Delay the input</li><li>Delay the output</li><li>Compare</li></ol>") != std::string::npos, "toggle-relative numbered list");
-    require(nested_blocks.find("<table><tr><td>Symbol</td><td>Meaning</td></tr></table></div></div></div></div><div class=\"toggle heading-toggle\"") != std::string::npos, "table does not break sibling toggles");
+    require(nested_blocks.find("<ul><li class=\"potion-block\">Ping</li><li class=\"potion-block\">Predict</li><li class=\"potion-block\">Profile</li></ul>") != std::string::npos, "toggle-relative bullet list");
+    require(nested_blocks.find("<ol><li class=\"potion-block\">Delay the input</li><li class=\"potion-block\">Delay the output</li><li class=\"potion-block\">Compare</li></ol>") != std::string::npos, "toggle-relative numbered list");
+    require(nested_blocks.find("<table class=\"potion-block\"><tr><td>Symbol</td><td>Meaning</td></tr></table></div></div></div></div><div class=\"toggle heading-toggle\"") != std::string::npos, "table does not break sibling toggles");
 
     const std::string sibling_table = renderer.render(
       "# Toggle {toggle=\"true\"}\n"
       "\tInside toggle\n"
       "<table>\n<tr>\n<td>Outside</td>\n</tr>\n</table>\n");
-    require(sibling_table.find("<p>Inside toggle</p></div></div><table>") != std::string::npos,
+    require(sibling_table.find("<p class=\"potion-block\">Inside toggle</p></div></div><table class=\"potion-block\">") != std::string::npos,
             "sibling table remains outside toggle");
 
     potion::ImageRegistry edge_images;
@@ -146,7 +163,7 @@ int main() {
     const std::string http_image = http_renderer.render(
       "![HTTP-only image](http://example.com/image.png)\n");
     require(http_image.find("data-src=") == std::string::npos &&
-            http_image.find("<p>HTTP-only image</p>") != std::string::npos,
+            http_image.find("<p class=\"potion-block\">HTTP-only image</p>") != std::string::npos,
             "HTTP image does not register a guaranteed-broken image");
     require(!http_images.resolve("1", image_url), "HTTP image registry remains empty");
 
@@ -183,10 +200,10 @@ int main() {
     require(attributes.find("Set S = {1, 2, 3}") != std::string::npos &&
             attributes.find("{idle, running, stopped}") != std::string::npos,
             "ordinary brace text is preserved");
-    require(attributes.find("<h1>Why toggle=&quot;true&quot; matters</h1>") != std::string::npos &&
+    require(attributes.find("<h1 class=\"potion-block\">Why toggle=&quot;true&quot; matters</h1>") != std::string::npos &&
             attributes.find("toggle-heading-1\">Actual toggle") != std::string::npos,
             "only trailing Notion attributes create toggles");
-    require(attributes.find("<p class=\"notion-color notion-color-orange\">Visible text</p>") != std::string::npos,
+    require(attributes.find("<p class=\"potion-block notion-color notion-color-orange\">Visible text</p>") != std::string::npos,
             "recognized trailing attributes are removed");
 
     const std::string escaped_markdown = renderer.render(
@@ -198,15 +215,15 @@ int main() {
             "escaped emphasis delimiter does not close emphasis");
 
     const std::string numbered_list = renderer.render("5. Fifth item\n6. Sixth item\n\n10000. Large item\n");
-    require(numbered_list.find("<ol start=\"5\"><li>Fifth item</li><li>Sixth item</li>") != std::string::npos &&
-            numbered_list.find("<ol start=\"10000\"><li>Large item</li>") != std::string::npos,
+    require(numbered_list.find("<ol start=\"5\"><li class=\"potion-block\">Fifth item</li><li class=\"potion-block\">Sixth item</li>") != std::string::npos &&
+            numbered_list.find("<ol start=\"10000\"><li class=\"potion-block\">Large item</li>") != std::string::npos,
             "ordered list starts and long indices are preserved");
 
     const std::string reverse_caption_depth = renderer.render(
       "# Toggle {toggle=\"true\"}\n"
       "\t![Caption](https://example.com/a.png)\n"
       "Caption\n");
-    require(reverse_caption_depth.find("</div></div><p>Caption</p>") != std::string::npos,
+    require(reverse_caption_depth.find("</div></div><p class=\"potion-block\">Caption</p>") != std::string::npos,
             "caption outside image depth is retained");
 
     potion::ImageRegistry registry_lifetime;
@@ -219,9 +236,9 @@ int main() {
     const std::string rtl = renderer.render(
       "سلام عرض میکنم خدمت شما!\n"
       "Left-to-right paragraph.\n");
-    require(rtl.find("<p dir=\"rtl\">سلام عرض میکنم خدمت شما!</p>") != std::string::npos,
+    require(rtl.find("<p class=\"potion-block\" dir=\"rtl\">سلام عرض میکنم خدمت شما!</p>") != std::string::npos,
             "right-to-left paragraph direction");
-    require(rtl.find("<p dir=\"rtl\">Left-to-right") == std::string::npos,
+    require(rtl.find("dir=\"rtl\">Left-to-right") == std::string::npos,
             "left-to-right paragraph direction unchanged");
 
     const std::string highlighted = renderer.render(
@@ -232,11 +249,92 @@ int main() {
     require(highlighted.find("Unsupported Notion content") == std::string::npos, "highlight supported");
     const std::string inline_only = renderer.render(
       "Plain <span color=\"orange\">orange words</span> remain plain\n");
-    require(inline_only.find("<p>Plain <span class=\"notion-color notion-color-orange\">") != std::string::npos, "inline color scope");
-    require(inline_only.find("<p class=\"notion-color") == std::string::npos, "inline color did not leak to block");
+    require(inline_only.find("<p class=\"potion-block\">Plain <span class=\"notion-color notion-color-orange\">") != std::string::npos, "inline color scope");
+    require(inline_only.find("<p class=\"potion-block notion-color") == std::string::npos, "inline color did not leak to block");
 
     char directory[] = "/tmp/potion-test.XXXXXX";
     require(::mkdtemp(directory) != nullptr, "mkdtemp");
+
+    potion::PageUuid uuid;
+    require(potion::parse_page_uuid("5908cc548ef342b6b84e254fa1785a21", uuid),
+            "compact UUID decode");
+    require(potion::format_page_uuid(uuid) == "5908cc54-8ef3-42b6-b84e-254fa1785a21",
+            "UUID encode");
+    potion::PageUuid hyphenated_uuid;
+    require(potion::parse_page_uuid("5908cc54-8ef3-42b6-b84e-254fa1785a21", hyphenated_uuid) &&
+            hyphenated_uuid == uuid, "hyphenated UUID decode");
+    require(!potion::parse_page_uuid("5908cc54-8ef3-42b6-b84e254f-a1785a21", uuid),
+            "malformed UUID rejected");
+
+    const std::uint32_t position_now = 2000000000u;
+    const std::uint16_t quarter = static_cast<std::uint16_t>(.25 * 65535.0 + .5);
+    require(quarter == 16384, "block fraction fixed-point encoding");
+    const std::string positions_dir = std::string(directory) + "/positions-roundtrip";
+    require(::mkdir(positions_dir.c_str(), 0700) == 0, "positions directory");
+    {
+      potion::ReadingPositionStore positions(positions_dir, position_now);
+      std::string error;
+      require(positions.update("5908cc548ef342b6b84e254fa1785a21", 173, quarter,
+                               position_now, error), "save reading position");
+      require(positions.update("5908cc54-8ef3-42b6-b84e-254fa1785a21", 174, quarter,
+                               position_now + 1, error), "update reading position");
+      require(positions.size() == 1, "reading position update is unique");
+    }
+    {
+      potion::ReadingPositionStore positions(positions_dir, position_now + 1);
+      const auto saved = positions.get("5908cc548ef342b6b84e254fa1785a21");
+      require(saved && saved->block_index == 174 && saved->block_fraction == quarter &&
+              saved->last_seen == position_now + 1, "binary position round trip");
+    }
+    {
+      std::ifstream input(positions_dir + "/positions.dat", std::ios::binary);
+      const std::string bytes((std::istreambuf_iterator<char>(input)),
+                              std::istreambuf_iterator<char>());
+      require(bytes.size() == 42 && bytes.compare(0, 8, std::string("POTNPOS\0", 8)) == 0,
+              "versioned position binary format");
+    }
+
+    const std::string malformed_dir = std::string(directory) + "/positions-malformed";
+    require(::mkdir(malformed_dir.c_str(), 0700) == 0, "malformed directory");
+    { std::ofstream output(malformed_dir + "/positions.dat", std::ios::binary); output << "not a position database"; }
+    require(potion::ReadingPositionStore(malformed_dir, position_now).size() == 0,
+            "malformed positions ignored");
+
+    const std::string expiry_dir = std::string(directory) + "/positions-expiry";
+    require(::mkdir(expiry_dir.c_str(), 0700) == 0, "expiry directory");
+    {
+      potion::ReadingPositionStore positions(expiry_dir, position_now);
+      std::string error;
+      require(positions.update("5908cc548ef342b6b84e254fa1785a21", 1, 2,
+                               position_now, error), "expiry seed");
+    }
+    require(potion::ReadingPositionStore(expiry_dir,
+            position_now + 30u * 24u * 60u * 60u + 1u).size() == 0,
+            "positions expire after 30 days");
+
+    const std::string cap_dir = std::string(directory) + "/positions-cap";
+    require(::mkdir(cap_dir.c_str(), 0700) == 0, "cap directory");
+    {
+      potion::ReadingPositionStore positions(cap_dir, position_now);
+      std::string error;
+      for (std::uint32_t i = 0; i < 513; ++i) {
+        potion::PageUuid generated;
+        generated.bytes[12] = static_cast<std::uint8_t>(i >> 24);
+        generated.bytes[13] = static_cast<std::uint8_t>(i >> 16);
+        generated.bytes[14] = static_cast<std::uint8_t>(i >> 8);
+        generated.bytes[15] = static_cast<std::uint8_t>(i);
+        require(positions.update(potion::format_page_uuid(generated), i, 0,
+                                 position_now + i, error), "cap seed");
+      }
+      potion::PageUuid newest;
+      newest.bytes[14] = 2;
+      require(positions.size() <= 512 &&
+              positions.get(potion::format_page_uuid(newest)).has_value(),
+              "512-entry LRU cap retains recent pages");
+      potion::PageUuid oldest;
+      require(!positions.get(potion::format_page_uuid(oldest)).has_value(),
+              "512-entry LRU cap evicts oldest pages");
+    }
     {
       potion::AppState state(directory); std::string error;
       require(state.save_token("test-token", error), "save token");
@@ -309,6 +407,26 @@ int main() {
       require(potion::Json::parse(request(port, "/api/input")).get("action").string() == "forward", "FIFO first");
       require(potion::Json::parse(request(port, "/api/input")).get("action").string() == "backward", "FIFO second");
 
+      const std::string page_id = "5908cc548ef342b6b84e254fa1785a21";
+      const std::string saved_position = "blockIndex=173&blockFraction=16384";
+      request(port, "/api/pages/" + page_id + "/position", &saved_position);
+      auto position = potion::Json::parse(request(port, "/api/pages/" + page_id + "/position")).get("position");
+      require(position.get("blockIndex").number() == 173 &&
+              position.get("blockFraction").number() == 16384,
+              "reading position HTTP round trip");
+      const std::string out_of_range = "blockIndex=999999999999&blockFraction=70000";
+      request(port, "/api/pages/" + page_id + "/position", &out_of_range);
+      position = potion::Json::parse(request(port, "/api/pages/" + page_id + "/position")).get("position");
+      require(position.get("blockIndex").number() == 4294967295.0 &&
+              position.get("blockFraction").number() == 65535,
+              "reading position API clamps numeric range");
+      const std::string empty_body;
+      request(port, "/api/auth/logout", &empty_body);
+      require(potion::Json::parse(request(port, "/api/pages/" + page_id + "/position"))
+                  .get("position").is_null(), "logout clears reading positions");
+      require(::access((std::string(directory) + "/positions.dat").c_str(), F_OK) != 0,
+              "logout removes persisted positions");
+
       auto shutdown_wait = std::async(std::launch::async, [port] {
         try { request(port, "/api/input"); } catch (...) {}
       });
@@ -318,6 +436,14 @@ int main() {
     }
     ::unlink((std::string(directory) + "/token").c_str());
     ::unlink((std::string(directory) + "/state.conf").c_str());
+    const std::string position_test_dirs[] = {
+      positions_dir, malformed_dir, expiry_dir, cap_dir
+    };
+    for (const auto &path : position_test_dirs) {
+      ::unlink((path + "/positions.dat").c_str());
+      ::unlink((path + "/positions.dat.tmp").c_str());
+      ::rmdir(path.c_str());
+    }
     ::rmdir(directory);
     std::cout << "Potion tests passed\n";
     return 0;
