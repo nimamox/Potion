@@ -81,6 +81,11 @@ int main() {
     require(html.find("javascript:") == std::string::npos, "unsafe URL leaked");
     require(html.find("<script>") == std::string::npos, "unsafe HTML leaked");
     require(html.find("display-math") != std::string::npos, "equation");
+    require(html.find("class=\"katex-display\"") != std::string::npos,
+            "display equation is rendered natively");
+    require(html.find("katex-mathml") == std::string::npos &&
+            html.find("<math") == std::string::npos,
+            "native equation contains HTML only");
     require(html.find("<table class=\"potion-block\"><thead><tr><th>Name</th><th>Value</th></tr></thead><tbody><tr><td>Safe</td><td><strong>bold</strong></td></tr></tbody></table>") != std::string::npos, "pipe table");
 
     const std::string logical_blocks = renderer.render(
@@ -103,12 +108,24 @@ int main() {
       "Impulse response $`h[n]`$\n"
       "![Impulse response $`h[n]`$](https://example.com/impulse.png)\n");
     require(figure.find("<img data-src=\"http://127.0.0.1:8766/api/images/") != std::string::npos, "lazy image source");
-    require(figure.find("<figcaption>Impulse response <span class=\"math\" data-expr=\"h[n]\">h[n]</span></figcaption>") != std::string::npos, "caption math");
+    require(figure.find("<figcaption>Impulse response <span class=\"math\"><span class=\"katex\">") != std::string::npos,
+            "caption math is rendered natively");
     require(figure.find("<p class=\"potion-block\">Impulse response") == std::string::npos && figure.find("<p><figure>") == std::string::npos, "deduplicated standalone figure");
     const std::string figure_first = renderer.render(
       "![Impulse response $`h[n]`$](https://example.com/impulse.png)\n"
       "Impulse response $`h[n]`$\n");
     require(figure_first.find("<p class=\"potion-block\">Impulse response") == std::string::npos, "deduplicated caption after figure");
+
+    const std::string native_math = renderer.render(
+      "Inline $x_i^2$ and $\\frac{1}{2}$.\n"
+      "$$\n\\sum_{k=1}^{N}x_k\n$$\n"
+      "Malformed $\\notacommand$.\n");
+    require(native_math.find("msupsub") != std::string::npos &&
+            native_math.find("mfrac") != std::string::npos &&
+            native_math.find("op-limits") != std::string::npos,
+            "native scripts, fraction, and limits markup");
+    require(native_math.find("<span class=\"math-error\">\\notacommand</span>") != std::string::npos,
+            "malformed math uses an escaped fallback");
 
     const std::string caption_boundary = renderer.render(
       "# Toggle {toggle=\"true\"}\n"

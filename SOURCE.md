@@ -10,6 +10,9 @@ provide equivalent, no-charge access to that source. The pinned third-party
 versions and their source locations are recorded in `THIRD_PARTY_NOTICES.md`.
 The GNU runtime and certificate packages are unmodified Debian builds; their
 exact package versions and Debian source locations are recorded there as well.
+The native math renderer's exact Rust dependency resolution is recorded in
+`backend/math/Cargo.lock`; Cargo obtains crate sources from the registry
+locations recorded by that lockfile.
 
 Anyone redistributing the binary is responsible for preserving the license and
 notices and for satisfying the source-delivery requirements of AGPL-3.0-or-later

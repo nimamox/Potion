@@ -5,6 +5,7 @@ notion-token.txt
 /build*/
 /cmake-build-*/
 /dist/
+/backend/math/target/
 /.potion-simulator/
 token
 token.tmp

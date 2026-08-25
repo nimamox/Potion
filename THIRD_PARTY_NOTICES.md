@@ -26,12 +26,16 @@ Copyright (C) Daniel Stenberg and the curl contributors.
 
 Copyright OpenSSL contributors.
 
-## KaTeX
+## katex-rs and KaTeX assets
+
+- Native renderer: `katex-rs` 0.2.4, <https://github.com/MinusGix/katex-rs>
+- Renderer license: MIT
 
 - Upstream: <https://github.com/KaTeX/KaTeX>
 - License: MIT, reproduced in `LICENSES/KaTeX-MIT.txt` and in the bundled
   `share/potion/vendor/katex/LICENSE`
-- Use: bundled JavaScript, CSS, and fonts for local mathematical rendering
+- Use: `katex-rs` is statically linked into `potiond`; matching KaTeX 0.16.25
+  CSS and fonts are bundled for local HTML layout. No KaTeX JavaScript ships.
 
 Copyright (C) 2013-2020 Khan Academy and other contributors.
 

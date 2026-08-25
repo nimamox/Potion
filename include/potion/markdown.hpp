@@ -1,4 +1,5 @@
 #pragma once
+#include "potion/math_renderer.hpp"
 #include <map>
 #include <mutex>
 #include <string>
@@ -21,6 +22,6 @@ public:
 private:
   std::string inline_html(const std::string &text) const;
   ImageRegistry &images_;
+  MathRenderer math_;
 };
 }
-

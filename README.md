@@ -19,6 +19,12 @@ Authentication and settings are stored by `potiond`, not Mesquite. On Kindle
 the token is `/var/local/potion/token` (mode 0600); on the simulator state is
 kept in `.potion-simulator/`. Both locations are ignored by Git.
 
+Notion mathematics is rendered to HTML inside `potiond` by native Rust
+`katex-rs` 0.2.4. Mesquite loads the matching KaTeX 0.16.25 CSS and fonts, but
+no KaTeX JavaScript and no TeX parser. Repeated expressions use a bounded native
+LRU cache, and equations continue to scale with reader text because the result
+uses KaTeX's relative HTML/CSS sizing. Nothing extra is installed on Kindle.
+
 ## Connect Notion
 
 Notion does not provide a supported username/password login API. Obtain a
@@ -74,6 +80,8 @@ Normal Library and KUAL launches still open the main Pages view.
 
 Both Potion and AnkINK use the same `kindle-dev-builder:local` Docker image and
 the same cache volume, while retaining independent Dockerfiles and scripts.
+Potion's build cross-compiles its small Rust renderer as an ARMv7 static
+library and links it into the C++ `potiond` executable.
 
     ./build_on_docker.sh
     ./push_over_ssh.sh root@192.168.15.244

@@ -1,0 +1,18 @@
+[package]
+name = "potion_math"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+katex-rs = { version = "=0.2.4", default-features = false }
+
+[profile.release]
+opt-level = "s"
+lto = "thin"
+codegen-units = 1
+strip = true
+panic = "unwind"
