@@ -717,10 +717,30 @@
         }
     }
 
+    function repairKindleFractionBaselines(root) {
+        var live = root.getElementsByClassName("mfrac"), nodes = [],
+            i, table, rows, cells, depth;
+        for (i = 0; i < live.length; ++i) nodes.push(live[i]);
+        for (i = 0; i < nodes.length; ++i) {
+            table = nodes[i].getElementsByClassName("vlist-t2")[0];
+            if (!table) continue;
+            rows = table.getElementsByClassName("vlist-r");
+            if (rows.length < 2) continue;
+            cells = rows[rows.length - 1].getElementsByClassName("vlist");
+            if (!cells.length) continue;
+            depth = parseFloat(cells[0].style.height || "");
+            if (!isFinite(depth) || depth <= 0) continue;
+            /* Like op-limits, a KaTeX fraction stores its depth in the final
+               vlist row. Mesquite omits that row from the inline-table baseline. */
+            table.style.verticalAlign = "-" + depth + "em";
+        }
+    }
+
     function repairKindleMath(root) {
         if (!kindleMathLayout()) return;
         repairKindleScripts(root);
         repairKindleOperatorBaselines(root);
+        repairKindleFractionBaselines(root);
     }
 
     function repairMathNearViewport() {
