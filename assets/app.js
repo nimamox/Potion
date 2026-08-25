@@ -234,7 +234,12 @@
     }
 
     function readyForInput() {
-        return !busy && id("connect-view").className.indexOf("hidden") >= 0 && id("settings-dialog").className.indexOf("hidden") >= 0 && id("logout-dialog").className.indexOf("hidden") >= 0 && id("about-dialog").className.indexOf("hidden") >= 0 && !!activeScroll();
+        return !busy &&
+            id("connect-view").className.indexOf("hidden") >= 0 &&
+            id("settings-dialog").className.indexOf("hidden") >= 0 &&
+            id("logout-dialog").className.indexOf("hidden") >= 0 &&
+            id("about-dialog").className.indexOf("hidden") >= 0 &&
+            !!activeScroll();
     }
 
     function waitForInput(delay) {
@@ -257,7 +262,8 @@
                 return;
             }
             if (result.action) {
-                down = (pageButtonMode === "normal" && result.action === "forward") || (pageButtonMode === "reversed" && result.action === "backward");
+                down = (pageButtonMode === "normal" && result.action === "forward") ||
+                    (pageButtonMode === "reversed" && result.action === "backward");
                 pageScroll(down ? 1 : -1);
             }
             waitForInput();
@@ -265,34 +271,47 @@
     }
 
     function saveSetting(key, value) {
-        request("POST", "/api/settings", "key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value), function(error) {
-            if (error) warning(error);
-        });
+        request(
+            "POST",
+            "/api/settings",
+            "key=" + encodeURIComponent(key) + "&value=" + encodeURIComponent(value),
+            function(error) {
+                if (error) warning(error);
+            }
+        );
     }
 
     function applyAppearance(persist) {
         restoreNightPalette(id("page-content"));
         id("page-content").style.fontFamily = fonts[pageFont];
         id("page-content").style.fontSize = Math.round(30 * fontScale) + "px";
+
         if (night) {
-            if (document.documentElement.className.indexOf("night-mode") < 0) document.documentElement.className += " night-mode";
+            if (document.documentElement.className.indexOf("night-mode") < 0)
+                document.documentElement.className += " night-mode";
             id("night").innerHTML = "&#9788;";
         } else {
-            document.documentElement.className = document.documentElement.className.replace(/(^|\s)night-mode(?=\s|$)/g, "");
+            document.documentElement.className =
+                document.documentElement.className.replace(/(^|\s)night-mode(?=\s|$)/g, "");
             id("night").innerHTML = "&#9789;";
         }
+
         id("page-font").value = pageFont;
+
         var buttons = id("font-sizes").getElementsByTagName("button"),
             i;
         for (i = 0; i < buttons.length; ++i) {
-            buttons[i].className = parseFloat(buttons[i].getAttribute("data-scale")) === fontScale ? "selected" : "";
+            buttons[i].className =
+                parseFloat(buttons[i].getAttribute("data-scale")) === fontScale ? "selected" : "";
             buttons[i].style.fontFamily = fonts[pageFont];
         }
+
         if (persist) {
             saveSetting("fontScale", String(fontScale));
             saveSetting("cardFont", pageFont);
             saveSetting("nightMode", night ? "1" : "0");
         }
+
         applyNightPageAppearance();
         scheduleMathRepair();
         scheduleImageLoad();
@@ -302,36 +321,67 @@
         var match, hex, alpha;
         value = String(value || "").replace(/^\s+|\s+$/g, "").toLowerCase();
         if (!value || value === "transparent") return null;
+
         match = value.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)$/);
         if (match) {
             alpha = typeof match[4] === "undefined" ? 1 : parseFloat(match[4]);
             if (alpha === 0) return null;
-            return [parseInt(match[1], 10), parseInt(match[2], 10), parseInt(match[3], 10)];
+            return [
+                parseInt(match[1], 10),
+                parseInt(match[2], 10),
+                parseInt(match[3], 10)
+            ];
         }
+
         match = value.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/);
         if (!match) return null;
+
         hex = match[1];
-        if (hex.length === 3) hex = hex.charAt(0) + hex.charAt(0) + hex.charAt(1) + hex.charAt(1) + hex.charAt(2) + hex.charAt(2);
-        return [parseInt(hex.substring(0, 2), 16), parseInt(hex.substring(2, 4), 16), parseInt(hex.substring(4, 6), 16)];
+        if (hex.length === 3)
+            hex =
+                hex.charAt(0) + hex.charAt(0) +
+                hex.charAt(1) + hex.charAt(1) +
+                hex.charAt(2) + hex.charAt(2);
+
+        return [
+            parseInt(hex.substring(0, 2), 16),
+            parseInt(hex.substring(2, 4), 16),
+            parseInt(hex.substring(4, 6), 16)
+        ];
     }
 
     function colorText(rgb) {
-        return "rgb(" + Math.round(rgb[0]) + "," + Math.round(rgb[1]) + "," + Math.round(rgb[2]) + ")";
+        return "rgb(" +
+            Math.round(rgb[0]) + "," +
+            Math.round(rgb[1]) + "," +
+            Math.round(rgb[2]) + ")";
     }
 
     function nightFriendlyColor(value, background) {
         var rgb = parsedColor(value),
             luminance, factor;
         if (!rgb) return null;
+
         luminance = .299 * rgb[0] + .587 * rgb[1] + .114 * rgb[2];
+
         if (background) {
             if (luminance <= 55) return null;
             factor = 55 / luminance;
-            return colorText([rgb[0] * factor, rgb[1] * factor, rgb[2] * factor]);
+            return colorText([
+                rgb[0] * factor,
+                rgb[1] * factor,
+                rgb[2] * factor
+            ]);
         }
+
         if (luminance >= 190) return null;
+
         factor = (190 - luminance) / (255 - luminance);
-        return colorText([rgb[0] + (255 - rgb[0]) * factor, rgb[1] + (255 - rgb[1]) * factor, rgb[2] + (255 - rgb[2]) * factor]);
+        return colorText([
+            rgb[0] + (255 - rgb[0]) * factor,
+            rgb[1] + (255 - rgb[1]) * factor,
+            rgb[2] + (255 - rgb[2]) * factor
+        ]);
     }
 
     function saveNightStyle(element) {
@@ -345,11 +395,16 @@
         var elements = nightStyledElements,
             i, element;
         nightStyledElements = [];
+
         for (i = 0; i < elements.length; ++i) {
             element = elements[i];
             if (!element._potionNightStyleSaved) continue;
-            if (element._potionNightOriginalStyle === null) element.removeAttribute("style");
-            else element.setAttribute("style", element._potionNightOriginalStyle);
+
+            if (element._potionNightOriginalStyle === null)
+                element.removeAttribute("style");
+            else
+                element.setAttribute("style", element._potionNightOriginalStyle);
+
             try {
                 delete element._potionNightStyleSaved;
                 delete element._potionNightOriginalStyle;
@@ -362,26 +417,47 @@
 
     function setNightStyle(element, property, value) {
         if (!value) return;
+
         saveNightStyle(element);
-        if (element.style.setProperty) element.style.setProperty(property, value, "important");
-        else element.style[property === "background-color" ? "backgroundColor" : property] = value;
+
+        if (element.style.setProperty)
+            element.style.setProperty(property, value, "important");
+        else
+            element.style[property === "background-color" ? "backgroundColor" : property] = value;
     }
 
     function applyNightPalette(root) {
         var elements = [root],
             descendants = root.getElementsByTagName("*"),
             i, element, computed, parentComputed, foreground, background;
-        for (i = 0; i < descendants.length; ++i) elements.push(descendants[i]);
+
+        for (i = 0; i < descendants.length; ++i)
+            elements.push(descendants[i]);
+
         for (i = 0; i < elements.length; ++i) {
             element = elements[i];
-            if (element.tagName === "IMG" || element.tagName === "CANVAS") continue;
-            computed = window.getComputedStyle ? window.getComputedStyle(element, null) : element.currentStyle;
+
+            if (element.tagName === "IMG" || element.tagName === "CANVAS")
+                continue;
+
+            computed = window.getComputedStyle ?
+                window.getComputedStyle(element, null) :
+                element.currentStyle;
+
             if (!computed) continue;
-            parentComputed = element.parentNode && element.parentNode.nodeType === 1 && window.getComputedStyle ? window.getComputedStyle(element.parentNode, null) : null;
+
+            parentComputed =
+                element.parentNode &&
+                element.parentNode.nodeType === 1 &&
+                window.getComputedStyle ?
+                    window.getComputedStyle(element.parentNode, null) :
+                    null;
+
             if (!parentComputed || computed.color !== parentComputed.color) {
                 foreground = nightFriendlyColor(computed.color, false);
                 setNightStyle(element, "color", foreground);
             }
+
             background = nightFriendlyColor(computed.backgroundColor, true);
             setNightStyle(element, "background-color", background);
         }
@@ -390,37 +466,54 @@
     function restoreNightImage(image) {
         var original;
         if (!image._potionNightImageInverted) return;
+
         original = image._potionNightOriginalSource;
         image._potionNightImageInverted = false;
         image._potionNightOriginalSource = null;
-        if (original) image.setAttribute("src", original);
+
+        if (original)
+            image.setAttribute("src", original);
     }
 
     function invertNightImage(image) {
         var width, height, scale, canvas, context, pixels, data, i, source;
-        if (!night || nightPageMode !== "palette-images" || image._potionNightImageInverted || image._potionNightImageBusy) return;
+
+        if (!night ||
+            nightPageMode !== "palette-images" ||
+            image._potionNightImageInverted ||
+            image._potionNightImageBusy)
+            return;
+
         width = image.naturalWidth || image.width;
         height = image.naturalHeight || image.height;
         source = image.getAttribute("src") || "";
+
         if (!width || !height || !source) return;
+
         scale = Math.min(1, 1600 / Math.max(width, height));
         width = Math.max(1, Math.round(width * scale));
         height = Math.max(1, Math.round(height * scale));
         image._potionNightImageBusy = true;
+
         try {
             canvas = document.createElement("canvas");
             canvas.width = width;
             canvas.height = height;
+
             context = canvas.getContext("2d");
             context.drawImage(image, 0, 0, width, height);
+
             pixels = context.getImageData(0, 0, width, height);
             data = pixels.data;
+
             for (i = 0; i < data.length; i += 4) {
                 data[i] = 255 - data[i];
                 data[i + 1] = 255 - data[i + 1];
                 data[i + 2] = 255 - data[i + 2];
             }
+
             context.putImageData(pixels, 0, 0);
+
             image._potionNightOriginalSource = source;
             image._potionNightImageInverted = true;
             image.setAttribute("src", canvas.toDataURL("image/png"));
@@ -428,6 +521,7 @@
             image._potionNightImageInverted = false;
             image._potionNightOriginalSource = null;
         }
+
         image._potionNightImageBusy = false;
         updateScroll();
     }
@@ -435,21 +529,31 @@
     function applyNightPageAppearance() {
         var root = id("page-content"),
             images, i;
+
         if (!root) return;
+
         restoreNightPalette(root);
-        if (night && nightPageMode !== "standard") applyNightPalette(root);
+
+        if (night && nightPageMode !== "standard")
+            applyNightPalette(root);
+
         images = root.getElementsByTagName("img");
+
         for (i = 0; i < images.length; ++i) {
-            if (night && nightPageMode === "palette-images") invertNightImage(images[i]);
-            else restoreNightImage(images[i]);
+            if (night && nightPageMode === "palette-images")
+                invertNightImage(images[i]);
+            else
+                restoreNightImage(images[i]);
         }
     }
 
     function selectedRadio(name, value) {
         var choices = document.getElementsByName(name),
             i;
-        for (i = 0; i < choices.length; ++i) choices[i].checked = choices[i].value === value;
+        for (i = 0; i < choices.length; ++i)
+            choices[i].checked = choices[i].value === value;
     }
+
     var settingsTooltipSource = null;
 
     function hideSettingsTooltip() {
@@ -461,17 +565,32 @@
         var tooltip = id("settings-tooltip"),
             text = button.getAttribute("data-help") || "",
             bounds, left, top;
-        if (settingsTooltipSource === button && tooltip.className.indexOf("hidden") < 0) {
+
+        if (settingsTooltipSource === button &&
+            tooltip.className.indexOf("hidden") < 0) {
             hideSettingsTooltip();
             return;
         }
+
         clear(tooltip);
         tooltip.appendChild(document.createTextNode(text));
         show(tooltip);
+
         bounds = button.getBoundingClientRect();
-        left = Math.max(20, Math.min(window.innerWidth - tooltip.offsetWidth - 20, bounds.right - tooltip.offsetWidth));
+
+        left = Math.max(
+            20,
+            Math.min(
+                window.innerWidth - tooltip.offsetWidth - 20,
+                bounds.right - tooltip.offsetWidth
+            )
+        );
+
         top = bounds.bottom + 8;
-        if (top + tooltip.offsetHeight > window.innerHeight - 20) top = Math.max(20, bounds.top - tooltip.offsetHeight - 8);
+
+        if (top + tooltip.offsetHeight > window.innerHeight - 20)
+            top = Math.max(20, bounds.top - tooltip.offsetHeight - 8);
+
         tooltip.style.left = left + "px";
         tooltip.style.top = top + "px";
         settingsTooltipSource = button;
@@ -498,16 +617,21 @@
     function collectMath() {
         var nodes = id("page-content").getElementsByClassName("math"),
             i;
+
         resetMathRepair();
-        for (i = 0; i < nodes.length; ++i) mathNodes.push(nodes[i]);
+
+        for (i = 0; i < nodes.length; ++i)
+            mathNodes.push(nodes[i]);
     }
 
     function mathTop(node, root) {
         var top = 0;
+
         while (node && node !== root) {
             top += node.offsetTop || 0;
             node = node.offsetParent;
         }
+
         return top;
     }
 
@@ -516,10 +640,12 @@
             window.clearTimeout(positionSaveTimer);
             positionSaveTimer = null;
         }
+
         if (positionRestoreTimer !== null) {
             window.clearTimeout(positionRestoreTimer);
             positionRestoreTimer = null;
         }
+
         readingBlocks = [];
         positionRestoring = false;
         id("page-content").style.visibility = "";
@@ -528,34 +654,50 @@
     function collectReadingBlocks() {
         var nodes = id("page-content").getElementsByClassName("potion-block"),
             i;
+
         readingBlocks = [];
-        for (i = 0; i < nodes.length; ++i) readingBlocks.push(nodes[i]);
+
+        for (i = 0; i < nodes.length; ++i)
+            readingBlocks.push(nodes[i]);
     }
 
     function currentReadingPosition() {
         var root = id("page-content"),
             visible = [],
             i, low, high, middle, selected, top, height, fraction;
+
         for (i = 0; i < readingBlocks.length; ++i)
-            if (readingBlocks[i].offsetParent !== null) visible.push({
-                block: readingBlocks[i],
-                index: i,
-                top: mathTop(readingBlocks[i], root)
-            });
+            if (readingBlocks[i].offsetParent !== null)
+                visible.push({
+                    block: readingBlocks[i],
+                    index: i,
+                    top: mathTop(readingBlocks[i], root)
+                });
+
         if (!visible.length) return null;
+
         low = 0;
         high = visible.length - 1;
         selected = 0;
+
         while (low <= high) {
             middle = Math.floor((low + high) / 2);
+
             if (visible[middle].top <= root.scrollTop) {
                 selected = middle;
                 low = middle + 1;
-            } else high = middle - 1;
+            } else {
+                high = middle - 1;
+            }
         }
+
         top = visible[selected].top;
         height = Math.max(1, visible[selected].block.offsetHeight || 1);
-        fraction = Math.max(0, Math.min(1, (root.scrollTop - top) / height));
+        fraction = Math.max(
+            0,
+            Math.min(1, (root.scrollTop - top) / height)
+        );
+
         return {
             blockIndex: visible[selected].index,
             blockFraction: Math.round(fraction * 65535)
@@ -565,29 +707,49 @@
     function saveCurrentReadingPosition(done) {
         var pageId = currentPageId,
             position;
+
         if (positionSaveTimer !== null) {
             window.clearTimeout(positionSaveTimer);
             positionSaveTimer = null;
         }
+
         done = done || function() {};
-        if (!pageId || id("reader-view").className.indexOf("hidden") >= 0 || !readingBlocks.length) {
+
+        if (!pageId ||
+            id("reader-view").className.indexOf("hidden") >= 0 ||
+            !readingBlocks.length) {
             done();
             return;
         }
+
         position = currentReadingPosition();
+
         if (!position) {
             done();
             return;
         }
-        request("POST", "/api/pages/" + encodeURIComponent(pageId) + "/position", "blockIndex=" + position.blockIndex + "&blockFraction=" + position.blockFraction, function(error) {
-            if (error) warning(error);
-            done();
-        });
+
+        request(
+            "POST",
+            "/api/pages/" + encodeURIComponent(pageId) + "/position",
+            "blockIndex=" + position.blockIndex +
+                "&blockFraction=" + position.blockFraction,
+            function(error) {
+                if (error) warning(error);
+                done();
+            }
+        );
     }
 
     function scheduleReadingPositionSave() {
-        if (positionRestoring || !currentPageId || id("reader-view").className.indexOf("hidden") >= 0) return;
-        if (positionSaveTimer !== null) window.clearTimeout(positionSaveTimer);
+        if (positionRestoring ||
+            !currentPageId ||
+            id("reader-view").className.indexOf("hidden") >= 0)
+            return;
+
+        if (positionSaveTimer !== null)
+            window.clearTimeout(positionSaveTimer);
+
         positionSaveTimer = window.setTimeout(function() {
             positionSaveTimer = null;
             saveCurrentReadingPosition();
@@ -597,20 +759,31 @@
     function restoreReadingPosition(position) {
         var root = id("page-content"),
             index, fraction, block;
+
         positionRestoring = false;
+
         if (!position || !readingBlocks.length) {
             root.scrollTop = 0;
             root.style.visibility = "";
             return;
         }
+
         index = parseInt(position.blockIndex, 10);
-        if (!isFinite(index) || index < 0) index = 0;
+        if (!isFinite(index) || index < 0)
+            index = 0;
+
         index = Math.min(index, readingBlocks.length - 1);
+
         fraction = parseInt(position.blockFraction, 10);
-        if (!isFinite(fraction) || fraction < 0) fraction = 0;
+        if (!isFinite(fraction) || fraction < 0)
+            fraction = 0;
+
         fraction = Math.min(fraction, 65535) / 65535;
         block = readingBlocks[index];
-        while (index > 0 && block.offsetParent === null) block = readingBlocks[--index];
+
+        while (index > 0 && block.offsetParent === null)
+            block = readingBlocks[--index];
+
         root.style.visibility = "hidden";
         positionRestoring = true;
 
@@ -618,12 +791,22 @@
             var top = mathTop(block, root),
                 height = Math.max(1, block.offsetHeight || 1),
                 maximum = Math.max(0, root.scrollHeight - root.clientHeight);
-            root.scrollTop = Math.max(0, Math.min(maximum, Math.round(top + height * fraction)));
+
+            root.scrollTop = Math.max(
+                0,
+                Math.min(
+                    maximum,
+                    Math.round(top + height * fraction)
+                )
+            );
+
             updateScroll();
             scheduleMathRepair(0);
             scheduleImageLoad(0);
         }
+
         apply();
+
         positionRestoreTimer = window.setTimeout(function() {
             positionRestoreTimer = null;
             apply();
@@ -632,12 +815,52 @@
         }, 180);
     }
 
+    /*
+     * Mesquite math compatibility
+     *
+     * KaTeX relies heavily on inline-table vertical lists. Mesquite has two
+     * relevant layout problems:
+     *
+     *  1. Ordinary msupsub scripts are not positioned correctly.
+     *  2. For two-row .vlist-t2 structures, Mesquite does not include the
+     *     final depth row when determining the inline-table baseline.
+     *
+     * Ordinary scripts outside fractions are reconstructed below. Native
+     * scripts inside fractions remain intact because changing their dimensions
+     * after KaTeX has laid out the fraction can invalidate the surrounding
+     * fraction geometry.
+     *
+     * All intact .vlist-t2 structures are handled generically afterwards.
+     */
+
     function directSpans(node) {
         var result = [],
             children = node ? node.childNodes : [],
             i;
+
         for (i = 0; i < children.length; ++i)
-            if (children[i].nodeType === 1 && children[i].tagName.toLowerCase() === "span") result.push(children[i]);
+            if (children[i].nodeType === 1 &&
+                children[i].tagName.toLowerCase() === "span")
+                result.push(children[i]);
+
+        return result;
+    }
+
+    function hasClass(node, className) {
+        return !!node &&
+            (" " + String(node.className || "") + " ")
+                .indexOf(" " + className + " ") >= 0;
+    }
+
+    function directSpansWithClass(node, className) {
+        var spans = directSpans(node),
+            result = [],
+            i;
+
+        for (i = 0; i < spans.length; ++i)
+            if (hasClass(spans[i], className))
+                result.push(spans[i]);
+
         return result;
     }
 
@@ -645,61 +868,104 @@
         var result = [],
             children = directSpans(vlist),
             i, parts;
+
         for (i = 0; i < children.length; ++i) {
             parts = directSpans(children[i]);
-            if (parts.length > 1) result.push({
-                position: children[i],
-                content: parts[parts.length - 1],
-                top: parseFloat(children[i].style.top || "0")
-            });
+
+            if (parts.length > 1)
+                result.push({
+                    position: children[i],
+                    content: parts[parts.length - 1],
+                    top: parseFloat(children[i].style.top || "0")
+                });
         }
+
         return result;
     }
 
     function isInsideMathStructure(node, className) {
         while (node) {
-            if ((" " + node.className + " ").indexOf(" " + className + " ") >= 0) return true;
+            if (hasClass(node, className))
+                return true;
             node = node.parentNode;
         }
+
         return false;
     }
 
     function repairKindleScripts(root) {
         var live = root.getElementsByClassName("msupsub"),
             nodes = [],
-            i, node, vlists, positions, isSub, sup, sub, wrapper, width;
-        for (i = 0; i < live.length; ++i) nodes.push(live[i]);
+            i, node, vlists, positions, isSub,
+            sup, sub, wrapper, width;
+
+        /*
+         * Snapshot the live collection before modifying any of its members.
+         */
+        for (i = 0; i < live.length; ++i)
+            nodes.push(live[i]);
+
         for (i = 0; i < nodes.length; ++i) {
             node = nodes[i];
-            /* The surrounding KaTeX fraction has already reserved the native
-               script dimensions. Rebuilding a nested script changes that box
-               only after the fraction's vlist has been laid out. */
-            if (isInsideMathStructure(node, "mfrac")) continue;
+
+            /*
+             * Do not reconstruct scripts inside fractions.
+             *
+             * The surrounding KaTeX fraction has already reserved dimensions
+             * for the native script box. Rebuilding it afterwards changes the
+             * box geometry without re-running KaTeX's fraction layout.
+             *
+             * The generic vlist baseline repair handles these native nested
+             * scripts safely.
+             */
+            if (isInsideMathStructure(node, "mfrac"))
+                continue;
+
             vlists = node.getElementsByClassName("vlist");
-            if (!vlists.length) continue;
+            if (!vlists.length)
+                continue;
+
             positions = positionedContents(vlists[0]);
-            if (!positions.length || positions.length > 2) continue;
-            isSub = (node.getElementsByClassName("vlist-t2").length > 0);
-            sub = positions.length === 2 || isSub ? positions[0] : null;
-            sup = positions.length === 2 ? positions[1] : (!isSub ? positions[0] : null);
+
+            if (!positions.length || positions.length > 2)
+                continue;
+
+            isSub = node.getElementsByClassName("vlist-t2").length > 0;
+
+            sub = positions.length === 2 || isSub ?
+                positions[0] :
+                null;
+
+            sup = positions.length === 2 ?
+                positions[1] :
+                (!isSub ? positions[0] : null);
+
             clear(node);
             node.className += " potion-script";
+
             if (sub && sup) {
                 node.className += " potion-script-both";
+
                 wrapper = document.createElement("span");
                 wrapper.className = "potion-script-sup";
                 wrapper.appendChild(sup.content);
                 node.appendChild(wrapper);
                 sup = wrapper;
+
                 wrapper = document.createElement("span");
                 wrapper.className = "potion-script-sub";
                 wrapper.appendChild(sub.content);
                 node.appendChild(wrapper);
                 sub = wrapper;
+
                 width = Math.max(sup.offsetWidth, sub.offsetWidth);
                 node.style.width = width + "px";
-                sup.style.left = Math.max(0, (width - sup.offsetWidth) / 2) + "px";
-                sub.style.left = Math.max(0, (width - sub.offsetWidth) / 2) + "px";
+
+                sup.style.left =
+                    Math.max(0, (width - sup.offsetWidth) / 2) + "px";
+
+                sub.style.left =
+                    Math.max(0, (width - sub.offsetWidth) / 2) + "px";
             } else if (sub) {
                 node.className += " potion-script-sub-only";
                 node.appendChild(sub.content);
@@ -710,98 +976,119 @@
         }
     }
 
-    function repairKindleOperatorBaselines(root) {
-        var live = root.getElementsByClassName("op-limits"), nodes = [],
-            i, table, rows, cells, depth;
-        for (i = 0; i < live.length; ++i) nodes.push(live[i]);
-        for (i = 0; i < nodes.length; ++i) {
-            table = nodes[i].getElementsByClassName("vlist-t2")[0];
-            if (!table) continue;
-            if (isInsideMathStructure(nodes[i].parentNode, "mfrac")) continue;
-            rows = table.getElementsByClassName("vlist-r");
-            if (rows.length < 2) continue;
-            cells = rows[rows.length - 1].getElementsByClassName("vlist");
-            if (!cells.length) continue;
-            depth = parseFloat(cells[0].style.height || "");
-            if (!isFinite(depth) || depth <= 0) continue;
-            /* Mesquite drops this final depth row when deriving an inline-table
-               baseline.  KaTeX encodes the missing depth in the final vlist-r. */
-            table.style.verticalAlign = "-" + depth + "em";
-        }
-    }
+    /*
+     * KaTeX represents a vertical stack extending below the baseline as:
+     *
+     *   .vlist-t.vlist-t2
+     *       .vlist-r       visible stack
+     *       .vlist-r       encoded depth below the baseline
+     *
+     * Mesquite ignores the second row when deriving the baseline of the
+     * inline-table. KaTeX has already calculated the correct depth, so restore
+     * that baseline explicitly rather than reconstructing each kind of math
+     * object separately.
+     *
+     * This one repair covers fractions, nested scripts, operator limits,
+     * radicals, matrices and other KaTeX constructs that use vlist-t2.
+     */
+    function repairKindleVlistBaselines(root) {
+        var live = root.getElementsByClassName("vlist-t2"),
+            tables = [],
+            i, rows, cells, depth;
 
-    function repairKindleNestedVlistBaselines(root, ownerClass) {
-        var owners = root.getElementsByClassName(ownerClass), nodes = [],
-            i, tables, j, rows, cells, depth;
-        for (i = 0; i < owners.length; ++i) nodes.push(owners[i]);
-        for (i = 0; i < nodes.length; ++i) {
-            tables = nodes[i].getElementsByClassName("vlist-t2");
-            for (j = 0; j < tables.length; ++j) {
-                rows = tables[j].getElementsByClassName("vlist-r");
-                if (rows.length < 2) continue;
-                cells = rows[rows.length - 1].getElementsByClassName("vlist");
-                if (!cells.length) continue;
-                depth = parseFloat(cells[0].style.height || "");
-                if (!isFinite(depth) || depth <= 0) continue;
-                /* Mesquite omits KaTeX's second (depth) row from the baseline
-                   of nested inline tables too. */
-                tables[j].style.verticalAlign = "-" + depth + "em";
-            }
-        }
-    }
+        /*
+         * Snapshot the live collection before changing styles.
+         */
+        for (i = 0; i < live.length; ++i)
+            tables.push(live[i]);
 
-    function repairKindleFractionBaselines(root) {
-        var live = root.getElementsByClassName("mfrac"), nodes = [],
-            i, table, rows, cells, depth;
-        for (i = 0; i < live.length; ++i) nodes.push(live[i]);
-        for (i = 0; i < nodes.length; ++i) {
-            table = nodes[i].getElementsByClassName("vlist-t2")[0];
-            if (!table) continue;
-            rows = table.getElementsByClassName("vlist-r");
-            if (rows.length < 2) continue;
-            cells = rows[rows.length - 1].getElementsByClassName("vlist");
-            if (!cells.length) continue;
+        for (i = 0; i < tables.length; ++i) {
+            /*
+             * Only inspect direct rows and cells. Descendant searches would
+             * incorrectly mix nested vertical lists with this table's own
+             * depth row.
+             */
+            rows = directSpansWithClass(tables[i], "vlist-r");
+
+            if (rows.length < 2)
+                continue;
+
+            cells = directSpansWithClass(
+                rows[rows.length - 1],
+                "vlist"
+            );
+
+            if (!cells.length)
+                continue;
+
             depth = parseFloat(cells[0].style.height || "");
-            if (!isFinite(depth) || depth <= 0) continue;
-            /* Like op-limits, a KaTeX fraction stores its depth in the final
-               vlist row. Mesquite omits that row from the inline-table baseline. */
-            table.style.verticalAlign = "-" + depth + "em";
+
+            if (!isFinite(depth) || depth <= 0)
+                continue;
+
+            tables[i].style.verticalAlign = "-" + depth + "em";
         }
     }
 
     function repairKindleMath(root) {
-        if (!kindleMathLayout()) return;
+        if (!kindleMathLayout())
+            return;
+
+        /*
+         * Reconstruct only ordinary scripts for which Mesquite cannot
+         * reproduce KaTeX's positioning correctly.
+         */
         repairKindleScripts(root);
-        repairKindleOperatorBaselines(root);
-        repairKindleFractionBaselines(root);
-        repairKindleNestedVlistBaselines(root, "sqrt");
-        repairKindleNestedVlistBaselines(root, "mtable");
+
+        /*
+         * Then repair every remaining native two-row KaTeX vertical list.
+         * This replaces the previous fraction/operator/radical/matrix
+         * special-case baseline fixes.
+         */
+        repairKindleVlistBaselines(root);
     }
 
     function repairMathNearViewport() {
         var root = id("page-content"),
             limit = root.scrollTop + root.clientHeight * 2.5,
             i, node, repaired = 0;
+
         mathRepairTimer = null;
-        if (id("reader-view").className.indexOf("hidden") >= 0) return;
+
+        if (id("reader-view").className.indexOf("hidden") >= 0)
+            return;
+
         for (i = 0; i < mathNodes.length; ++i) {
             node = mathNodes[i];
-            if (node._potionMathRepaired || node.offsetParent === null) continue;
-            if (mathTop(node, root) > limit) break;
+
+            if (node._potionMathRepaired ||
+                node.offsetParent === null)
+                continue;
+
+            if (mathTop(node, root) > limit)
+                break;
+
             node._potionMathRepaired = true;
             repairKindleMath(node);
             repaired++;
+
             if (repaired >= 16) {
                 scheduleMathRepair(20);
                 break;
             }
         }
+
         updateScroll();
     }
 
     function scheduleMathRepair(delay) {
-        if (mathRepairTimer !== null || !mathNodes.length) return;
-        mathRepairTimer = window.setTimeout(repairMathNearViewport, typeof delay === "number" ? delay : 40);
+        if (mathRepairTimer !== null || !mathNodes.length)
+            return;
+
+        mathRepairTimer = window.setTimeout(
+            repairMathNearViewport,
+            typeof delay === "number" ? delay : 40
+        );
     }
 
     function resetImageLoading() {
@@ -809,27 +1096,39 @@
             window.clearTimeout(imageLoadTimer);
             imageLoadTimer = null;
         }
+
         imageNodes = [];
         imageLoads = 0;
         imageGeneration++;
     }
 
     function scheduleImageLoad(delay) {
-        if (imageLoadTimer !== null || !imageNodes.length) return;
-        imageLoadTimer = window.setTimeout(loadImagesNearViewport, typeof delay === "number" ? delay : 40);
+        if (imageLoadTimer !== null || !imageNodes.length)
+            return;
+
+        imageLoadTimer = window.setTimeout(
+            loadImagesNearViewport,
+            typeof delay === "number" ? delay : 40
+        );
     }
 
     function imageFinished(image, loaded) {
-        if (image._potionImageGeneration !== imageGeneration) return;
+        if (image._potionImageGeneration !== imageGeneration)
+            return;
+
         if (image._potionImageLoading) {
             image._potionImageLoading = false;
             imageLoads = Math.max(0, imageLoads - 1);
         }
+
         if (loaded) {
             invertNightImage(image);
             updateScroll();
             scheduleMathRepair();
-        } else image._potionImageRequested = false;
+        } else {
+            image._potionImageRequested = false;
+        }
+
         scheduleImageLoad(loaded ? 20 : 500);
     }
 
@@ -837,98 +1136,164 @@
         var root = id("page-content"),
             limit = root.scrollTop + root.clientHeight * 2.5,
             i, image, source;
+
         imageLoadTimer = null;
-        if (id("reader-view").className.indexOf("hidden") >= 0) return;
+
+        if (id("reader-view").className.indexOf("hidden") >= 0)
+            return;
+
         for (i = 0; i < imageNodes.length && imageLoads < 2; ++i) {
             image = imageNodes[i];
-            if (image._potionImageRequested || image._potionImageAttempts >= 2 || image.offsetParent === null) continue;
-            if (mathTop(image, root) > limit) break;
+
+            if (image._potionImageRequested ||
+                image._potionImageAttempts >= 2 ||
+                image.offsetParent === null)
+                continue;
+
+            if (mathTop(image, root) > limit)
+                break;
+
             source = image.getAttribute("data-src");
-            if (!source) continue;
+
+            if (!source)
+                continue;
+
             image._potionImageRequested = true;
             image._potionImageLoading = true;
             image._potionImageAttempts++;
             image._potionImageGeneration = imageGeneration;
             imageLoads++;
-            image.setAttribute("src", source + (image._potionImageAttempts > 1 ? "?potion_retry=" + image._potionImageAttempts : ""));
+
+            image.setAttribute(
+                "src",
+                source +
+                    (image._potionImageAttempts > 1 ?
+                        "?potion_retry=" + image._potionImageAttempts :
+                        "")
+            );
         }
     }
 
     function prepareImages() {
         var images = id("page-content").getElementsByTagName("img"),
             i, source;
+
         resetImageLoading();
+
         for (i = 0; i < images.length; ++i) {
             imageNodes.push(images[i]);
+
             source = images[i].getAttribute("src");
-            if (source && !images[i].getAttribute("data-src")) images[i].setAttribute("data-src", source);
+
+            if (source && !images[i].getAttribute("data-src"))
+                images[i].setAttribute("data-src", source);
+
             images[i]._potionImageAttempts = source ? 1 : 0;
             images[i]._potionImageRequested = !!source;
             images[i]._potionImageGeneration = imageGeneration;
+
             images[i].onload = function() {
                 imageFinished(this, true);
             };
+
             images[i].onerror = function() {
                 imageFinished(this, false);
             };
+
             images[i].onclick = function() {
-                this.className = this.className === "expanded" ? "" : "expanded";
+                this.className =
+                    this.className === "expanded" ? "" : "expanded";
                 updateScroll();
                 scheduleMathRepair();
                 scheduleImageLoad();
             };
+
             if (source && images[i].complete) {
-                if (images[i].naturalWidth) invertNightImage(images[i]);
-                else images[i]._potionImageRequested = false;
+                if (images[i].naturalWidth)
+                    invertNightImage(images[i]);
+                else
+                    images[i]._potionImageRequested = false;
             }
         }
+
         scheduleImageLoad(0);
     }
 
     function prepareToggles() {
-        var buttons = id("page-content").getElementsByClassName("toggle-summary"),
+        var buttons =
+                id("page-content").getElementsByClassName("toggle-summary"),
             i;
-        for (i = 0; i < buttons.length; ++i) buttons[i].onclick = function() {
-            var content = this.nextSibling,
-                expanded = this.getAttribute("aria-expanded") === "true",
-                arrows = this.getElementsByClassName("toggle-arrow");
-            this.setAttribute("aria-expanded", expanded ? "false" : "true");
-            if (expanded) hide(content);
-            else show(content);
-            if (arrows.length) arrows[0].innerHTML = expanded ? "&#9656;" : "&#9662;";
-            updateScroll();
-            scheduleMathRepair();
-            scheduleImageLoad();
-        };
+
+        for (i = 0; i < buttons.length; ++i)
+            buttons[i].onclick = function() {
+                var content = this.nextSibling,
+                    expanded =
+                        this.getAttribute("aria-expanded") === "true",
+                    arrows =
+                        this.getElementsByClassName("toggle-arrow");
+
+                this.setAttribute(
+                    "aria-expanded",
+                    expanded ? "false" : "true"
+                );
+
+                if (expanded)
+                    hide(content);
+                else
+                    show(content);
+
+                if (arrows.length)
+                    arrows[0].innerHTML =
+                        expanded ? "&#9656;" : "&#9662;";
+
+                updateScroll();
+                scheduleMathRepair();
+                scheduleImageLoad();
+            };
     }
 
     function preparePageLinks() {
-        var links = id("page-content").getElementsByClassName("child-page"),
+        var links =
+                id("page-content").getElementsByClassName("child-page"),
             i;
+
         for (i = 0; i < links.length; ++i)
-            if (links[i].getAttribute("data-page-id")) links[i].onclick = function() {
-                openPage(this.getAttribute("data-page-id"), "child");
-                return false;
-            };
+            if (links[i].getAttribute("data-page-id"))
+                links[i].onclick = function() {
+                    openPage(
+                        this.getAttribute("data-page-id"),
+                        "child"
+                    );
+                    return false;
+                };
     }
 
     function showPages(positionSaved) {
         if (busy) return;
-        if (!positionSaved && currentPageId && id("reader-view").className.indexOf("hidden") < 0) {
+
+        if (!positionSaved &&
+            currentPageId &&
+            id("reader-view").className.indexOf("hidden") < 0) {
             saveCurrentReadingPosition(function() {
                 showPages(true);
             });
             return;
         }
+
         resetMathRepair();
         resetImageLoading();
         clearReadingPositionState();
+
         pageHistory = [];
         currentPageId = "";
+
         hide(id("reader-view"));
         show(id("pages-view"));
+
         id("status").innerHTML = "Pages";
+
         updateScroll();
+
         request("POST", "/api/input/clear", "", function() {
             waitForInput();
         });
@@ -938,206 +1303,378 @@
         busy = true;
         warning("");
         id("status").innerHTML = "Loading Notion pages...";
+
         hide(id("connect-view"));
         hide(id("reader-view"));
         show(id("pages-view"));
         show(id("settings"));
-        request("GET", "/api/pages?query=" + encodeURIComponent(id("search").value || ""), null, function(error, result) {
-            busy = false;
-            var list = id("pages"),
-                i;
-            if (error) {
-                warning(error);
-                id("status").innerHTML = "Notion unavailable";
-                waitForInput();
-                return;
+
+        request(
+            "GET",
+            "/api/pages?query=" +
+                encodeURIComponent(id("search").value || ""),
+            null,
+            function(error, result) {
+                busy = false;
+
+                var list = id("pages"),
+                    i;
+
+                if (error) {
+                    warning(error);
+                    id("status").innerHTML = "Notion unavailable";
+                    waitForInput();
+                    return;
+                }
+
+                clear(list);
+
+                for (i = 0; i < result.pages.length; ++i) {
+                    (function(page) {
+                        var button =
+                                document.createElement("button"),
+                            icon =
+                                document.createElement("span"),
+                            name =
+                                document.createElement("span"),
+                            arrow =
+                                document.createElement("span");
+
+                        button.className = "page-row";
+
+                        icon.className = "page-icon";
+                        icon.appendChild(
+                            document.createTextNode("\u2637")
+                        );
+
+                        name.className = "page-name";
+                        name.appendChild(
+                            document.createTextNode(page.title)
+                        );
+
+                        var small =
+                            document.createElement("small");
+
+                        small.appendChild(
+                            document.createTextNode(
+                                page.edited ?
+                                    "Edited " +
+                                        page.edited.substring(0, 10) :
+                                    ""
+                            )
+                        );
+
+                        name.appendChild(small);
+
+                        arrow.className = "page-arrow";
+                        arrow.innerHTML = "&rsaquo;";
+
+                        button.appendChild(icon);
+                        button.appendChild(name);
+                        button.appendChild(arrow);
+
+                        button.onclick = function() {
+                            openPage(page.id);
+                        };
+
+                        list.appendChild(button);
+                    }(result.pages[i]));
+                }
+
+                if (!result.pages.length) {
+                    var empty = document.createElement("p");
+                    empty.appendChild(
+                        document.createTextNode(
+                            "No accessible pages found. " +
+                            "Share pages with your Notion connection, " +
+                            "then search again."
+                        )
+                    );
+                    list.appendChild(empty);
+                }
+
+                id("status").innerHTML =
+                    result.pages.length +
+                    " accessible page" +
+                    (result.pages.length === 1 ? "" : "s");
+
+                id("pages").scrollTop = 0;
+
+                updateScroll();
+
+                request(
+                    "POST",
+                    "/api/input/clear",
+                    "",
+                    function() {
+                        waitForInput();
+                    }
+                );
             }
-            clear(list);
-            for (i = 0; i < result.pages.length; ++i) {
-                (function(page) {
-                    var button = document.createElement("button"),
-                        icon = document.createElement("span"),
-                        name = document.createElement("span"),
-                        arrow = document.createElement("span");
-                    button.className = "page-row";
-                    icon.className = "page-icon";
-                    icon.appendChild(document.createTextNode("\u2637"));
-                    name.className = "page-name";
-                    name.appendChild(document.createTextNode(page.title));
-                    var small = document.createElement("small");
-                    small.appendChild(document.createTextNode(page.edited ? "Edited " + page.edited.substring(0, 10) : ""));
-                    name.appendChild(small);
-                    arrow.className = "page-arrow";
-                    arrow.innerHTML = "&rsaquo;";
-                    button.appendChild(icon);
-                    button.appendChild(name);
-                    button.appendChild(arrow);
-                    button.onclick = function() {
-                        openPage(page.id);
-                    };
-                    list.appendChild(button);
-                }(result.pages[i]));
-            }
-            if (!result.pages.length) {
-                var empty = document.createElement("p");
-                empty.appendChild(document.createTextNode("No accessible pages found. Share pages with your Notion connection, then search again."));
-                list.appendChild(empty);
-            }
-            id("status").innerHTML = result.pages.length + " accessible page" + (result.pages.length === 1 ? "" : "s");
-            id("pages").scrollTop = 0;
-            updateScroll();
-            request("POST", "/api/input/clear", "", function() {
-                waitForInput();
-            });
-        });
+        );
     }
 
     function openPage(pageId, navigation, positionSaved) {
         if (busy) return;
-        if (!positionSaved && currentPageId && id("reader-view").className.indexOf("hidden") < 0) {
+
+        if (!positionSaved &&
+            currentPageId &&
+            id("reader-view").className.indexOf("hidden") < 0) {
             saveCurrentReadingPosition(function() {
                 openPage(pageId, navigation, true);
             });
             return;
         }
+
         var previous = currentPageId;
+
         busy = true;
         warning("");
         show(id("settings"));
         id("status").innerHTML = "Loading page...";
-        request("GET", "/api/pages/" + encodeURIComponent(pageId), null, function(error, page) {
-            if (error) {
-                busy = false;
-                warning(error);
-                waitForInput();
-                return;
-            }
-            if (navigation === "child" && previous) pageHistory.push(previous);
-            else if (navigation === "back") pageHistory.pop();
-            else pageHistory = [];
-            currentPageId = page.id || pageId;
-            restoreNightPalette(id("page-content"));
-            resetMathRepair();
-            resetImageLoading();
-            clearReadingPositionState();
-            hide(id("pages-view"));
-            show(id("reader-view"));
-            id("page-title").innerHTML = "";
-            id("page-title").appendChild(document.createTextNode("\u2637 " + page.title));
-            id("page-content").innerHTML = page.html;
-            id("page-content").scrollTop = 0;
-            if (page.position) id("page-content").style.visibility = "hidden";
-            if (page.truncated) warning("This very large page was truncated by Notion.");
-            id("status").innerHTML = "";
-            updateScroll();
-            window.setTimeout(function() {
-                try {
-                    collectMath();
-                    prepareImages();
-                    prepareToggles();
-                    preparePageLinks();
-                    collectReadingBlocks();
-                    applyNightPageAppearance();
-                    scheduleMathRepair(0);
-                    restoreReadingPosition(page.position);
-                } finally {
+
+        request(
+            "GET",
+            "/api/pages/" + encodeURIComponent(pageId),
+            null,
+            function(error, page) {
+                if (error) {
                     busy = false;
-                    updateScroll();
-                    request("POST", "/api/input/clear", "", function() {
-                        waitForInput();
-                    });
+                    warning(error);
+                    waitForInput();
+                    return;
                 }
-            }, 0);
-        });
+
+                if (navigation === "child" && previous)
+                    pageHistory.push(previous);
+                else if (navigation === "back")
+                    pageHistory.pop();
+                else
+                    pageHistory = [];
+
+                currentPageId = page.id || pageId;
+
+                restoreNightPalette(id("page-content"));
+                resetMathRepair();
+                resetImageLoading();
+                clearReadingPositionState();
+
+                hide(id("pages-view"));
+                show(id("reader-view"));
+
+                id("page-title").innerHTML = "";
+                id("page-title").appendChild(
+                    document.createTextNode(
+                        "\u2637 " + page.title
+                    )
+                );
+
+                id("page-content").innerHTML = page.html;
+                id("page-content").scrollTop = 0;
+
+                if (page.position)
+                    id("page-content").style.visibility = "hidden";
+
+                if (page.truncated)
+                    warning(
+                        "This very large page was truncated by Notion."
+                    );
+
+                id("status").innerHTML = "";
+
+                updateScroll();
+
+                window.setTimeout(function() {
+                    try {
+                        collectMath();
+                        prepareImages();
+                        prepareToggles();
+                        preparePageLinks();
+                        collectReadingBlocks();
+                        applyNightPageAppearance();
+                        scheduleMathRepair(0);
+                        restoreReadingPosition(page.position);
+                    } finally {
+                        busy = false;
+                        updateScroll();
+
+                        request(
+                            "POST",
+                            "/api/input/clear",
+                            "",
+                            function() {
+                                waitForInput();
+                            }
+                        );
+                    }
+                }, 0);
+            }
+        );
     }
 
     function start() {
         request("GET", "/api/settings", null, function(error, settings) {
             if (!error && settings) {
                 fontScale = settings.fontScale || 1;
-                pageFont = fonts[settings.cardFont] ? settings.cardFont : "Bookerly";
+
+                pageFont =
+                    fonts[settings.cardFont] ?
+                        settings.cardFont :
+                        "Bookerly";
+
                 night = settings.nightMode === true;
                 nightPageMode = settings.nightPageMode;
-                if (nightPageMode !== "palette" && nightPageMode !== "palette-images") nightPageMode = "standard";
-                pageButtonMode = settings.pageButtonMode === "reversed" ? "reversed" : "normal";
+
+                if (nightPageMode !== "palette" &&
+                    nightPageMode !== "palette-images")
+                    nightPageMode = "standard";
+
+                pageButtonMode =
+                    settings.pageButtonMode === "reversed" ?
+                        "reversed" :
+                        "normal";
             }
+
             applyAppearance(false);
-            request("GET", "/api/status", null, function(statusError, status) {
-                var pageId;
-                if (statusError) {
-                    warning(statusError);
-                    return;
+
+            request(
+                "GET",
+                "/api/status",
+                null,
+                function(statusError, status) {
+                    var pageId;
+
+                    if (statusError) {
+                        warning(statusError);
+                        return;
+                    }
+
+                    pageId =
+                        status.startPageId ||
+                        requestedPageId();
+
+                    if (status.authenticated && pageId)
+                        openPage(pageId, "debug");
+                    else if (status.authenticated)
+                        loadPages();
+                    else
+                        connectView();
+
+                    if (status.tokenImportMessage)
+                        warning(
+                            "Token file: " +
+                            status.tokenImportMessage
+                        );
                 }
-                pageId = status.startPageId || requestedPageId();
-                if (status.authenticated && pageId) openPage(pageId, "debug");
-                else if (status.authenticated) loadPages();
-                else connectView();
-                if (status.tokenImportMessage) warning("Token file: " + status.tokenImportMessage);
-            });
+            );
         });
     }
+
     id("connect").onclick = function() {
         var token = id("token").value;
+
         if (!token) {
             warning("Enter a Notion access token.");
             return;
         }
+
         busy = true;
-        id("status").innerHTML = "Validating Notion token...";
-        request("POST", "/api/auth/token", "token=" + encodeURIComponent(token), function(error) {
-            busy = false;
-            id("token").value = "";
-            if (error) {
-                warning(error);
-                connectView();
-            } else loadPages();
-        });
+        id("status").innerHTML =
+            "Validating Notion token...";
+
+        request(
+            "POST",
+            "/api/auth/token",
+            "token=" + encodeURIComponent(token),
+            function(error) {
+                busy = false;
+                id("token").value = "";
+
+                if (error) {
+                    warning(error);
+                    connectView();
+                } else {
+                    loadPages();
+                }
+            }
+        );
     };
+
     id("search-button").onclick = loadPages;
+
     id("search").onkeydown = function(event) {
         event = event || window.event;
-        if (event.keyCode === 13) loadPages();
+        if (event.keyCode === 13)
+            loadPages();
     };
+
     id("back").onclick = function() {
         if (pageHistory.length) {
-            openPage(pageHistory[pageHistory.length - 1], "back");
+            openPage(
+                pageHistory[pageHistory.length - 1],
+                "back"
+            );
             return;
         }
+
         showPages();
     };
+
     id("pages-home").onclick = showPages;
+
     id("scroll-up").onclick = function() {
         pageScroll(-1);
     };
+
     id("scroll-down").onclick = function() {
         pageScroll(1);
     };
+
     id("pages").onscroll = updateScroll;
+
     id("page-content").onscroll = function() {
         updateScroll();
         scheduleMathRepair();
         scheduleImageLoad();
         scheduleReadingPositionSave();
     };
+
     id("font-plus").onclick = function() {
-        var i = Math.min(fontScales.length - 1, scaleIndex() + 1);
+        var i = Math.min(
+            fontScales.length - 1,
+            scaleIndex() + 1
+        );
+
         fontScale = fontScales[i];
         applyAppearance(true);
     };
+
     id("font-minus").onclick = function() {
-        var i = Math.max(0, scaleIndex() - 1);
+        var i = Math.max(
+            0,
+            scaleIndex() - 1
+        );
+
         fontScale = fontScales[i];
         applyAppearance(true);
     };
+
     id("night").onclick = function() {
         night = !night;
         applyAppearance(true);
     };
+
     id("refresh").onclick = function() {
-        request("POST", "/api/refresh", "", function(error) {
-            if (error) warning(error);
-        });
+        request(
+            "POST",
+            "/api/refresh",
+            "",
+            function(error) {
+                if (error) warning(error);
+            }
+        );
     };
+
     id("settings").onclick = function() {
         id("page-font").value = pageFont;
         selectedRadio("page-buttons", pageButtonMode);
@@ -1145,87 +1682,148 @@
         hideSettingsTooltip();
         show(id("settings-dialog"));
     };
+
     id("settings-about").onclick = openAbout;
+
     id("settings-done").onclick = function() {
         hideSettingsTooltip();
         hide(id("settings-dialog"));
         waitForInput();
     };
+
     id("page-font").onchange = function() {
         if (fonts[this.value]) {
             pageFont = this.value;
             applyAppearance(true);
         }
     };
+
     (function() {
-        var buttons = id("font-sizes").getElementsByTagName("button"),
+        var buttons =
+                id("font-sizes").getElementsByTagName("button"),
             i;
-        for (i = 0; i < buttons.length; ++i) buttons[i].onclick = function() {
-            fontScale = parseFloat(this.getAttribute("data-scale"));
-            applyAppearance(true);
-        };
+
+        for (i = 0; i < buttons.length; ++i)
+            buttons[i].onclick = function() {
+                fontScale =
+                    parseFloat(
+                        this.getAttribute("data-scale")
+                    );
+                applyAppearance(true);
+            };
     }());
+
     (function() {
-        var choices = document.getElementsByName("night-page-mode"),
+        var choices =
+                document.getElementsByName("night-page-mode"),
             i;
-        for (i = 0; i < choices.length; ++i) choices[i].onclick = function() {
-            nightPageMode = this.value;
-            saveSetting("nightPageMode", nightPageMode);
-            applyNightPageAppearance();
-        };
+
+        for (i = 0; i < choices.length; ++i)
+            choices[i].onclick = function() {
+                nightPageMode = this.value;
+                saveSetting(
+                    "nightPageMode",
+                    nightPageMode
+                );
+                applyNightPageAppearance();
+            };
     }());
+
     (function() {
-        var choices = document.getElementsByName("page-buttons"),
+        var choices =
+                document.getElementsByName("page-buttons"),
             i;
-        for (i = 0; i < choices.length; ++i) choices[i].onclick = function() {
-            pageButtonMode = this.value;
-            saveSetting("pageButtonMode", pageButtonMode);
-        };
+
+        for (i = 0; i < choices.length; ++i)
+            choices[i].onclick = function() {
+                pageButtonMode = this.value;
+                saveSetting(
+                    "pageButtonMode",
+                    pageButtonMode
+                );
+            };
     }());
+
     (function() {
-        var buttons = document.getElementsByClassName("setting-help"),
+        var buttons =
+                document.getElementsByClassName("setting-help"),
             i;
-        for (i = 0; i < buttons.length; ++i) buttons[i].onclick = function(event) {
-            event = event || window.event;
-            if (event.stopPropagation) event.stopPropagation();
-            else event.cancelBubble = true;
-            showSettingsTooltip(this);
-        };
-        id("settings-tooltip").onclick = hideSettingsTooltip;
-        id("settings-dialog").onscroll = hideSettingsTooltip;
-        document.onclick = hideSettingsTooltip;
+
+        for (i = 0; i < buttons.length; ++i)
+            buttons[i].onclick = function(event) {
+                event = event || window.event;
+
+                if (event.stopPropagation)
+                    event.stopPropagation();
+                else
+                    event.cancelBubble = true;
+
+                showSettingsTooltip(this);
+            };
+
+        id("settings-tooltip").onclick =
+            hideSettingsTooltip;
+
+        id("settings-dialog").onscroll =
+            hideSettingsTooltip;
+
+        document.onclick =
+            hideSettingsTooltip;
     }());
+
     id("logout").onclick = function() {
         hideSettingsTooltip();
         hide(id("settings-dialog"));
         show(id("logout-dialog"));
     };
+
     id("logout-cancel").onclick = function() {
         hide(id("logout-dialog"));
         show(id("settings-dialog"));
     };
+
     id("logout-confirm").onclick = function() {
-        request("POST", "/api/auth/logout", "", function(error) {
-            hide(id("logout-dialog"));
-            if (error) warning(error);
-            else {
-                clearReadingPositionState();
-                currentPageId = "";
-                connectView();
+        request(
+            "POST",
+            "/api/auth/logout",
+            "",
+            function(error) {
+                hide(id("logout-dialog"));
+
+                if (error) {
+                    warning(error);
+                } else {
+                    clearReadingPositionState();
+                    currentPageId = "";
+                    connectView();
+                }
             }
-        });
+        );
     };
+
     id("about").onclick = openAbout;
     id("about-done").onclick = closeAbout;
+
     id("close").onclick = function() {
         saveCurrentReadingPosition(function() {
-            request("POST", "/api/quit", "", function() {
-                if (window.kindle && window.kindle.appmgr && window.kindle.appmgr.back) window.kindle.appmgr.back();
-                else window.close();
-            });
+            request(
+                "POST",
+                "/api/quit",
+                "",
+                function() {
+                    if (window.kindle &&
+                        window.kindle.appmgr &&
+                        window.kindle.appmgr.back)
+                        window.kindle.appmgr.back();
+                    else
+                        window.close();
+                }
+            );
         });
     };
+
     id("about-logo").onload = prepareAboutLogo;
     window.onresize = updateScroll;
+
     start();
 }());
