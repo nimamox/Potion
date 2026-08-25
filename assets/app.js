@@ -656,6 +656,14 @@
         return result;
     }
 
+    function isInsideMathStructure(node, className) {
+        while (node) {
+            if ((" " + node.className + " ").indexOf(" " + className + " ") >= 0) return true;
+            node = node.parentNode;
+        }
+        return false;
+    }
+
     function repairKindleScripts(root) {
         var live = root.getElementsByClassName("msupsub"),
             nodes = [],
@@ -663,6 +671,10 @@
         for (i = 0; i < live.length; ++i) nodes.push(live[i]);
         for (i = 0; i < nodes.length; ++i) {
             node = nodes[i];
+            /* The surrounding KaTeX fraction has already reserved the native
+               script dimensions. Rebuilding a nested script changes that box
+               only after the fraction's vlist has been laid out. */
+            if (isInsideMathStructure(node, "mfrac")) continue;
             vlists = node.getElementsByClassName("vlist");
             if (!vlists.length) continue;
             positions = positionedContents(vlists[0]);
@@ -705,6 +717,7 @@
         for (i = 0; i < nodes.length; ++i) {
             table = nodes[i].getElementsByClassName("vlist-t2")[0];
             if (!table) continue;
+            if (isInsideMathStructure(nodes[i].parentNode, "mfrac")) continue;
             rows = table.getElementsByClassName("vlist-r");
             if (rows.length < 2) continue;
             cells = rows[rows.length - 1].getElementsByClassName("vlist");
@@ -714,6 +727,26 @@
             /* Mesquite drops this final depth row when deriving an inline-table
                baseline.  KaTeX encodes the missing depth in the final vlist-r. */
             table.style.verticalAlign = "-" + depth + "em";
+        }
+    }
+
+    function repairKindleNestedVlistBaselines(root, ownerClass) {
+        var owners = root.getElementsByClassName(ownerClass), nodes = [],
+            i, tables, j, rows, cells, depth;
+        for (i = 0; i < owners.length; ++i) nodes.push(owners[i]);
+        for (i = 0; i < nodes.length; ++i) {
+            tables = nodes[i].getElementsByClassName("vlist-t2");
+            for (j = 0; j < tables.length; ++j) {
+                rows = tables[j].getElementsByClassName("vlist-r");
+                if (rows.length < 2) continue;
+                cells = rows[rows.length - 1].getElementsByClassName("vlist");
+                if (!cells.length) continue;
+                depth = parseFloat(cells[0].style.height || "");
+                if (!isFinite(depth) || depth <= 0) continue;
+                /* Mesquite omits KaTeX's second (depth) row from the baseline
+                   of nested inline tables too. */
+                tables[j].style.verticalAlign = "-" + depth + "em";
+            }
         }
     }
 
@@ -741,6 +774,8 @@
         repairKindleScripts(root);
         repairKindleOperatorBaselines(root);
         repairKindleFractionBaselines(root);
+        repairKindleNestedVlistBaselines(root, "sqrt");
+        repairKindleNestedVlistBaselines(root, "mtable");
     }
 
     function repairMathNearViewport() {
