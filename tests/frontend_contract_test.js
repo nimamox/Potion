@@ -16,6 +16,12 @@ assert.match(index, /vendor\/katex\/katex\.min\.css\?v=0\.16\.25-native/);
 assert.equal(fs.existsSync(javascriptAsset), false);
 assert.ok(index.indexOf("vendor/katex/katex.min.css") < index.indexOf("app.css"),
   "application compatibility CSS must load after KaTeX CSS");
+assert.doesNotMatch(index, /class="eyebrow"/);
+assert.match(index, /<div class="section-heading">\s*<h2>Notion Pages<\/h2>\s*<div class="search-row">/);
+assert.match(appCss, /\.section-heading\s*{[\s\S]*display:\s*table;[\s\S]*height:\s*74px;/);
+assert.match(appCss, /\.section-heading h2\s*{[\s\S]*display:\s*table-cell;[\s\S]*width:\s*270px;/);
+assert.match(appCss, /\.search-row\s*{[\s\S]*display:\s*table-cell;[\s\S]*width:\s*100%;/);
+assert.match(appCss, /\.page-list\s*{[\s\S]*top:\s*74px;/);
 
 const fontReferences = [...katexCss.matchAll(/fonts\/([^)'\"]+\.(?:woff2?|ttf))/g)]
   .map((match) => match[1]);

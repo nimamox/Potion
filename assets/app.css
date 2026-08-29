@@ -229,18 +229,23 @@ h2 {
   overflow: hidden;
 }
 .section-heading {
-  padding: 12px 0 22px;
-}
-.eyebrow {
-  margin-bottom: 7px;
-  color: #555;
-  font: bold 13px "Amazon Ember", Arial, sans-serif;
-  letter-spacing: 4px;
-}
-.search-row {
   display: table;
   width: 100%;
-  margin-top: 22px;
+  height: 74px;
+  padding: 0 0 10px;
+  table-layout: fixed;
+}
+.section-heading h2 {
+  display: table-cell;
+  width: 50%;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.search-row {
+  display: table-cell;
+  width: 50%;
+  margin: 0;
+  vertical-align: middle;
 }
 .search-row input,
 .search-row button {
@@ -260,7 +265,7 @@ h2 {
 }
 .page-list {
   position: absolute;
-  top: 190px;
+  top: 74px;
   right: 0;
   bottom: 0;
   left: 0;
@@ -926,7 +931,6 @@ h2 {
   border-color: #eee;
 }
 .night-mode #status,
-.night-mode .eyebrow,
 .night-mode .page-name small {
   color: #bbb;
 }
