@@ -1,5 +1,6 @@
 #include "potion/http_server.hpp"
 #include "potion/json.hpp"
+#include "potion/orientation.hpp"
 #include <arpa/inet.h>
 #include <algorithm>
 #include <cctype>
@@ -153,6 +154,11 @@ HttpServer::HttpServer(ServerOptions options)
       notion_("2026-03-11", options_.ca_bundle_path), renderer_(images_) {
   if (!options_.start_page_id.empty() && !valid_page_id(options_.start_page_id))
     throw std::runtime_error("Invalid startup page id");
+  if (!options_.simulator) {
+    std::string rotation_error;
+    if (!apply_kindle_rotation(state_.settings().rotation_mode, rotation_error))
+      std::cerr << "Rotation restore: " << rotation_error << '\n';
+  }
   if (!options_.token_import_path.empty()) {
     const auto result = import_token_file(
         options_.token_import_path, state_,
@@ -168,7 +174,13 @@ HttpServer::HttpServer(ServerOptions options)
       std::cerr << "Token import: " << token_import_message_ << '\n';
   }
 }
-HttpServer::~HttpServer() { stop(); }
+HttpServer::~HttpServer() {
+  stop();
+  if (!options_.simulator) {
+    std::string ignored;
+    apply_kindle_rotation("auto", ignored);
+  }
+}
 void HttpServer::request_stop() noexcept { stop_requested = 1; }
 void HttpServer::wake_listener() noexcept {
   if (wake_write_ >= 0) { const char byte = 1; (void)::write(wake_write_, &byte, 1); }
@@ -221,10 +233,18 @@ void HttpServer::handle_client(int client) noexcept {
     else if (request.method == "GET" && request.target == "/api/settings")
       respond(client, 200, "OK", "application/json", state_.settings_json());
     else if (request.method == "POST" && request.target == "/api/settings") {
+      const std::string key = parameter(request.body, "key");
+      const std::string value = parameter(request.body, "value");
+      const std::string previous_rotation = state_.settings().rotation_mode;
       std::string error;
-      if (!state_.set_setting(parameter(request.body, "key"),
-                              parameter(request.body, "value"), error))
+      if (!state_.set_setting(key, value, error))
         throw std::runtime_error(error);
+      if (key == "rotationMode" && !options_.simulator &&
+          !apply_kindle_rotation(value, error)) {
+        std::string rollback_error;
+        state_.set_setting("rotationMode", previous_rotation, rollback_error);
+        throw std::runtime_error(error);
+      }
       respond(client, 200, "OK", "application/json", state_.settings_json());
     } else if (request.method == "POST" && request.target == "/api/auth/token") {
       const std::string token = trim(parameter(request.body, "token")); std::string error;

@@ -38,7 +38,7 @@ if(TARGET potion_math_build)
 endif()
 
 add_library(potion_core
-  src/json.cpp src/app_state.cpp src/reading_positions.cpp src/markdown.cpp
+  src/json.cpp src/app_state.cpp src/orientation.cpp src/reading_positions.cpp src/markdown.cpp
   src/math_renderer.cpp src/notion_client.cpp src/http_server.cpp)
 target_include_directories(potion_core PUBLIC include)
 target_link_libraries(potion_core PUBLIC potion_math CURL::libcurl OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
@@ -79,6 +79,7 @@ if(POTION_BUILD_TESTS)
               "${CMAKE_SOURCE_DIR}/assets/vendor/katex/katex.min.css"
               "${CMAKE_SOURCE_DIR}/assets/vendor/katex/fonts"
               "${CMAKE_SOURCE_DIR}/assets/app.css"
-              "${CMAKE_SOURCE_DIR}/assets/config.xml")
+              "${CMAKE_SOURCE_DIR}/assets/config.xml"
+              "${CMAKE_SOURCE_DIR}/scripts/run-kindle.sh")
   endif()
 endif()

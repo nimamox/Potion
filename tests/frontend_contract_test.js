@@ -11,6 +11,7 @@ const katexCss = fs.readFileSync(process.argv[5], "utf8");
 const fontDirectory = process.argv[6];
 const appCss = fs.readFileSync(process.argv[7], "utf8");
 const config = fs.readFileSync(process.argv[8], "utf8");
+const runKindle = fs.readFileSync(process.argv[9], "utf8");
 
 assert.doesNotMatch(frontend, /window\.katex|katex\.render|loadKatex|katexState|data-expr/);
 assert.match(index, /vendor\/katex\/katex\.min\.css\?v=0\.16\.25-native/);
@@ -21,6 +22,12 @@ assert.doesNotMatch(index, /class="eyebrow"/);
 assert.match(index, /<div class="section-heading">\s*<h2>Notion Pages<\/h2>\s*<div class="search-row">/);
 assert.match(index, /id="sort-opened"[^>]*aria-pressed="true">Opened<\/button><button id="sort-edited"[^>]*>Edited<\/button>/);
 assert.match(index, /id="page-pin"[^>]*aria-label="Pin page"[^>]*>&#9734;<\/button>\s*<button id="pages-home"/);
+assert.match(index,
+  /id="night"[\s\S]*id="rotation"[^>]*title="Rotation locked"[^>]*aria-label="Rotation locked"[^>]*>⌽<\/button>[\s\S]*id="refresh"/);
+assert.match(appCss, /\.header-actions\s*{[\s\S]*width:\s*439px;[\s\S]*font-size:\s*0;/);
+assert.match(appCss,
+  /\.header-actions button,[\s\S]*?\.header-actions \.header-button\.icon-button\s*{[\s\S]*width:\s*69px;[\s\S]*height:\s*69px;/);
+assert.match(runKindle, /'supportedOrientation','UDLR'/);
 assert.match(appCss, /\.section-heading\s*{[\s\S]*display:\s*table;[\s\S]*height:\s*74px;/);
 assert.match(appCss, /\.section-heading h2\s*{[\s\S]*display:\s*table-cell;[\s\S]*width:\s*270px;/);
 assert.match(appCss, /\.search-row\s*{[\s\S]*display:\s*table-cell;[\s\S]*width:\s*auto;/);
@@ -33,6 +40,62 @@ assert.match(frontend, /key=pageSortMode&value=/);
 assert.match(frontend, /\/api\/pages\/" \+ encodeURIComponent\(pageId\) \+ "\/pin"/);
 assert.match(frontend, /page\.pinned === true/);
 assert.doesNotMatch(frontend, /localStorage/);
+
+// Rotation uses the WAF device API when present, persists through potiond,
+// locks the exact current direction where window.orientation exposes it, and
+// remains harmless in the desktop simulator.
+const rotationMatch = frontend.match(
+  /\/\* ROTATION_LOGIC_BEGIN \*\/([\s\S]*?)\/\* ROTATION_LOGIC_END \*\//);
+assert.ok(rotationMatch, "missing rotation logic test boundary");
+function rotationContext(options) {
+  const button = { attributes: {}, setAttribute: function(key, value) {
+    this.attributes[key] = value;
+  }};
+  const calls = [];
+  const context = {
+    rotationMode: "auto",
+    window: {
+      innerWidth: 1072,
+      innerHeight: 1448,
+      orientation: options.orientation
+    },
+    id: function() { return button; },
+    encodeURIComponent,
+    warning: function(error) { calls.push("warning:" + error); },
+    request: function(method, path, body, done) {
+      calls.push(method + " " + path + " " + body);
+      done(options.failure ? "save failed" : null);
+    }
+  };
+  if (options.device) context.window.kindle = { device: {
+    setOrientation: function(value) { calls.push("orientation:" + value); }
+  }};
+  vm.createContext(context);
+  vm.runInContext(rotationMatch[1], context);
+  return { context, button, calls };
+}
+const autoRotation = rotationContext({ device: true, orientation: 0 });
+autoRotation.context.chooseRotationMode("auto", true);
+assert.equal(autoRotation.context.rotationMode, "auto");
+assert.equal(autoRotation.button.innerHTML, "⌽");
+assert.equal(autoRotation.button.attributes["aria-label"], "Rotation locked");
+assert.deepEqual(autoRotation.calls,
+  ["orientation:auto", "POST /api/settings key=rotationMode&value=auto"]);
+
+const lockedRotation = rotationContext({ device: true, orientation: -90 });
+lockedRotation.context.chooseRotationMode("locked", false);
+assert.equal(lockedRotation.context.rotationMode, "locked");
+assert.equal(lockedRotation.button.innerHTML, "⟳");
+assert.equal(lockedRotation.button.attributes["aria-label"], "Auto rotation");
+assert.deepEqual(lockedRotation.calls, ["orientation:landscapeRight"]);
+
+const simulatorRotation = rotationContext({ device: false });
+assert.doesNotThrow(function() {
+  simulatorRotation.context.chooseRotationMode("locked", false);
+});
+assert.deepEqual(simulatorRotation.calls, []);
+assert.match(frontend, /settings\.rotationMode === "locked"/);
+assert.match(frontend, /key=rotationMode&value=/);
 
 // Page navigation is an in-memory ES5 model after GET /api/pages. Exercise
 // the production comparator/update functions rather than a duplicate model.
@@ -266,5 +329,33 @@ assert.match(frontend, /selectionDragActive/);
 assert.match(frontend, /point\.x < rect\.left/);
 assert.doesNotMatch(frontend, /selectionDebug|\/api\/debug\/selection/);
 assert.doesNotMatch(index, /selection-debug/);
+
+// Native triple-click ranges may include the paragraph boundary; Potion
+// normalizes that one-block selection. Double-click uses logical offsets so a
+// sentence can cross inline formatting nodes without losing exact offsets.
+const multiTapMatch = frontend.match(
+  /\/\* MULTI_TAP_SELECTION_LOGIC_BEGIN \*\/([\s\S]*?)\/\* MULTI_TAP_SELECTION_LOGIC_END \*\//);
+assert.ok(multiTapMatch, "missing multi-tap selection logic boundary");
+const multiTapContext = {};
+vm.createContext(multiTapContext);
+vm.runInContext(multiTapMatch[1], multiTapContext);
+assert.deepEqual(
+  JSON.parse(JSON.stringify(multiTapContext.sentenceBounds(
+    "First sentence. Second bold and linked sentence! Third?", 25))),
+  {start: 16, end: 48},
+  "double-click selects the complete containing sentence");
+assert.deepEqual(
+  JSON.parse(JSON.stringify(multiTapContext.sentenceBounds(
+    "سلام عرض می‌کنم؟ جمله دوم.", 5))),
+  {start: 0, end: 16},
+  "sentence selection recognizes Persian question punctuation");
+assert.match(frontend, /function logicalBoundary\(content, wanted\)/);
+assert.match(frontend, /function setLogicalSelection\(content, start, end\)/);
+assert.match(frontend, /function normalizeWholeBlockRange\(selection, range\)/);
+assert.match(frontend,
+  /if \(!startContent \|\| startContent !== endContent\) \{[\s\S]*normalizeWholeBlockRange/);
+assert.match(frontend,
+  /detail >= 3[\s\S]*selectMultiTap\(event, true\)[\s\S]*detail === 2[\s\S]*selectMultiTap\(event, false\)/);
+assert.match(frontend, /id\("page-content"\)\.ondblclick = function\(event\)/);
 
 console.log("Potion frontend native-math contract tests passed");

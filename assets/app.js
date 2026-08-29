@@ -45,6 +45,7 @@
         night = false,
         nightPageMode = "standard",
         pageButtonMode = "normal",
+        rotationMode = "auto",
         brandLogoDaySrc = null;
     var fonts = {
         "Amazon Ember": '"Amazon Ember",Arial,sans-serif',
@@ -61,6 +62,62 @@
     function id(name) {
         return document.getElementById(name);
     }
+
+    /* ROTATION_LOGIC_BEGIN */
+    function currentKindleOrientation() {
+        var angle = typeof window.orientation === "number" ? window.orientation : null;
+        if (angle === 180 || angle === -180) return "portraitDown";
+        if (angle === 90) return "landscapeLeft";
+        if (angle === -90 || angle === 270) return "landscapeRight";
+        if (angle === 0) return "portraitUp";
+        return window.innerWidth > window.innerHeight ? "landscape" : "portrait";
+    }
+
+    function updateRotationButton() {
+        var button = id("rotation"), action;
+        if (!button) return;
+        action = rotationMode === "auto" ? "Rotation locked" : "Auto rotation";
+        button.innerHTML = rotationMode === "auto" ? "⌽" : "⟳";
+        button.title = action;
+        button.setAttribute("aria-label", action);
+        button.setAttribute("aria-pressed", rotationMode === "locked" ? "true" : "false");
+    }
+
+    function applyRotationMode() {
+        var device;
+        if (!window.kindle || !window.kindle.device) return false;
+        device = window.kindle.device;
+        if (typeof device.setOrientation !== "function") return false;
+        try {
+            device.setOrientation(
+                rotationMode === "auto" ? "auto" : currentKindleOrientation()
+            );
+            return true;
+        } catch (ignore) {
+            return false;
+        }
+    }
+
+    function chooseRotationMode(mode, persist) {
+        var previous = rotationMode;
+        rotationMode = mode === "locked" ? "locked" : "auto";
+        updateRotationButton();
+        applyRotationMode();
+        if (!persist) return;
+        request(
+            "POST",
+            "/api/settings",
+            "key=rotationMode&value=" + encodeURIComponent(rotationMode),
+            function(error) {
+                if (!error) return;
+                rotationMode = previous;
+                updateRotationButton();
+                applyRotationMode();
+                warning(error);
+            }
+        );
+    }
+    /* ROTATION_LOGIC_END */
 
     function requestedPageId() {
         var source = (window.location.search || "") + "&" + (window.location.hash || ""),
@@ -397,6 +454,125 @@
         return out;
     }
 
+    /* MULTI_TAP_SELECTION_LOGIC_BEGIN */
+    function sentenceBounds(text, offset) {
+        var start, end, length = text.length;
+        if (!length) return {start: 0, end: 0};
+        offset = Math.max(0, Math.min(offset, length - 1));
+        start = offset;
+        while (start > 0 && !/[.!?\u061f\n]/.test(text.charAt(start - 1))) --start;
+        while (start < length && /\s/.test(text.charAt(start))) ++start;
+        end = Math.max(start, offset);
+        while (end < length && !/[.!?\u061f\n]/.test(text.charAt(end))) ++end;
+        if (end < length && text.charAt(end) !== "\n") ++end;
+        while (end < length && /[\"'\u2019\u201d)\]]/.test(text.charAt(end))) ++end;
+        while (end > start && /\s/.test(text.charAt(end - 1))) --end;
+        return {start: start, end: end};
+    }
+    /* MULTI_TAP_SELECTION_LOGIC_END */
+
+    function childOffset(node) {
+        var offset = 0;
+        while (node.previousSibling) {
+            node = node.previousSibling;
+            ++offset;
+        }
+        return offset;
+    }
+
+    function logicalBoundary(content, wanted) {
+        var at = 0, result = null;
+        function visit(node) {
+            var leaf = null, next, child, offset;
+            if (result) return;
+            if (node.nodeType === 3) leaf = node.nodeValue;
+            else if (node.nodeType === 1 && node.tagName.toLowerCase() === "br") leaf = "\n";
+            else if (node.nodeType === 1 && node.getAttribute("data-potion-atomic") !== null)
+                leaf = "\ufffc";
+            if (leaf !== null) {
+                next = at + leaf.length;
+                if (wanted <= next) {
+                    if (node.nodeType === 3) {
+                        result = {node: node, offset: Math.max(0, wanted - at)};
+                    } else {
+                        offset = childOffset(node);
+                        result = {node: node.parentNode, offset: offset + (wanted > at ? 1 : 0)};
+                    }
+                }
+                at = next;
+                return;
+            }
+            child = node.firstChild;
+            while (child && !result) {
+                visit(child);
+                child = child.nextSibling;
+            }
+        }
+        visit(content);
+        return result || {node: content, offset: content.childNodes.length};
+    }
+
+    function setLogicalSelection(content, start, end) {
+        var first = logicalBoundary(content, start),
+            last = logicalBoundary(content, end),
+            range = document.createRange(), selection = window.getSelection();
+        try {
+            range.setStart(first.node, first.offset);
+            range.setEnd(last.node, last.offset);
+            selection.removeAllRanges();
+            selection.addRange(range);
+            return true;
+        } catch (ignored) {}
+        return false;
+    }
+
+    function selectMultiTap(event, wholeBlock) {
+        var point = eventPoint(event), caret, content, text, before, offset, bounds;
+        if (!point || busy || !currentPageId) return false;
+        caret = caretAtPoint(point.x, point.y);
+        content = caret && selectionAncestor(caret.startContainer, "potion-editable-content");
+        if (!content)
+            content = selectionAncestor(event && event.target, "potion-editable-content");
+        if (!content) return false;
+        text = logicalNodeText(content);
+        if (!text) return false;
+        if (wholeBlock) bounds = {start: 0, end: text.length};
+        else {
+            if (!caret) return false;
+            before = document.createRange();
+            before.selectNodeContents(content);
+            try { before.setEnd(caret.startContainer, caret.startOffset); }
+            catch (ignored) { return false; }
+            offset = logicalNodeText(before.cloneContents()).length;
+            bounds = sentenceBounds(text, offset);
+        }
+        if (bounds.end <= bounds.start ||
+            !setLogicalSelection(content, bounds.start, bounds.end)) return false;
+        inspectSelection(wholeBlock ? "TRIPLE" : "DOUBLE");
+        return true;
+    }
+
+    function normalizeWholeBlockRange(selection, range) {
+        var block = selectionAncestor(range.startContainer, "potion-editable") ||
+                selectionAncestor(range.endContainer, "potion-editable"),
+            contents, content, selectedText, blockText, normalized;
+        if (!block) return null;
+        contents = block.getElementsByClassName("potion-editable-content");
+        if (!contents.length) return null;
+        content = contents[0];
+        selectedText = String(selection.toString ? selection.toString() : "");
+        blockText = logicalNodeText(content);
+        normalized = function(value) {
+            return value.replace(/^\s+|\s+$/g, "").replace(/\r\n/g, "\n");
+        };
+        if (!blockText || normalized(selectedText) !== normalized(blockText)) return null;
+        range = document.createRange();
+        range.selectNodeContents(content);
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return range;
+    }
+
     function selectionFormatState(content, start, end) {
         var at = 0, any = false,
             state = {highlight: true, bold: true, underline: true};
@@ -457,8 +633,13 @@
         startContent = selectionAncestor(range.startContainer, "potion-editable-content");
         endContent = selectionAncestor(range.endContainer, "potion-editable-content");
         if (!startContent || startContent !== endContent) {
-            clearSelectionMenu(false);
-            return;
+            range = normalizeWholeBlockRange(selection, range);
+            if (!range) {
+                clearSelectionMenu(false);
+                return;
+            }
+            startContent = selectionAncestor(range.startContainer, "potion-editable-content");
+            endContent = selectionAncestor(range.endContainer, "potion-editable-content");
         }
         block = selectionAncestor(startContent, "potion-editable");
         index = editableIndex(block);
@@ -2255,8 +2436,14 @@
                     settings.pageSortMode === "edited" ?
                         "edited" :
                         "opened";
+
+                rotationMode =
+                    settings.rotationMode === "locked" ?
+                        "locked" :
+                        "auto";
             }
 
+            chooseRotationMode(rotationMode, false);
             applyAppearance(false);
             setSortButtons();
 
@@ -2399,6 +2586,10 @@
     id("night").onclick = function() {
         night = !night;
         applyAppearance(true);
+    };
+
+    id("rotation").onclick = function() {
+        chooseRotationMode(rotationMode === "auto" ? "locked" : "auto", true);
     };
 
     id("refresh").onclick = function() {
@@ -2594,7 +2785,17 @@
     id("page-content").onmousedown = startSelectionHold;
     id("page-content").ontouchstart = startSelectionHold;
     id("page-content").onclick = function(event) {
-        var point, rect;
+        var point, rect, detail;
+        event = event || window.event;
+        detail = typeof event.detail === "number" ? event.detail : 0;
+        if (detail >= 3) {
+            selectMultiTap(event, true);
+            return false;
+        }
+        if (detail === 2) {
+            selectMultiTap(event, false);
+            return false;
+        }
         if (selectionSuppressClick) {
             selectionSuppressClick = false;
             return false;
@@ -2608,6 +2809,10 @@
                 return false;
             }
         }
+    };
+    id("page-content").ondblclick = function(event) {
+        selectMultiTap(event || window.event, false);
+        return false;
     };
     window.onresize = updateScroll;
 

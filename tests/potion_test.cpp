@@ -3,6 +3,7 @@
 #include "potion/json.hpp"
 #include "potion/markdown.hpp"
 #include "potion/notion_client.hpp"
+#include "potion/orientation.hpp"
 #include "potion/reading_positions.hpp"
 #include <curl/curl.h>
 #include <chrono>
@@ -66,6 +67,30 @@ struct RunningServer {
 
 int main() {
   try {
+    {
+      std::vector<std::vector<std::string>> commands;
+      const potion::OrientationCommandRunner runner =
+          [&commands](const std::vector<std::string> &arguments, std::string &) {
+            commands.push_back(arguments);
+            return true;
+          };
+      std::string error;
+      require(potion::apply_kindle_rotation("auto", runner, error),
+              "apply Kindle auto rotation");
+      require(commands.size() == 1 && commands[0].size() == 4 &&
+                  commands[0][2] == "orientationLock" &&
+                  commands[0][3] == "off",
+              "auto rotation clears the global orientation lock");
+      commands.clear();
+      require(potion::apply_kindle_rotation("locked", runner, error),
+              "apply Kindle current-orientation lock");
+      require(commands.size() == 1 && commands[0][3] == "current",
+              "rotation lock captures the accelerometer's current direction");
+      commands.clear();
+      require(!potion::apply_kindle_rotation("sideways", runner, error) &&
+                  commands.empty(),
+              "invalid rotation mode does not invoke LIPC");
+    }
     const auto parsed = potion::Json::parse(R"({"ok":true,"items":[1,"x"]})");
     require(parsed.get("ok").boolean(), "JSON bool");
     require(parsed.get("items").items().size() == 2, "JSON array");
@@ -588,11 +613,19 @@ int main() {
       require(state.set_setting("pageButtonMode", "reversed", error), "save page button mode");
       require(state.settings_json().find("\"pageButtonMode\":\"reversed\"") != std::string::npos, "page button mode JSON");
       require(state.settings().page_sort_mode == "opened", "opened sort is default");
+      require(state.settings().rotation_mode == "auto", "auto rotation is default");
       require(state.set_setting("pageSortMode", "edited", error), "save page sort mode");
       require(state.settings_json().find("\"pageSortMode\":\"edited\"") != std::string::npos,
               "page sort mode JSON");
       error.clear();
       require(!state.set_setting("pageSortMode", "random", error), "reject invalid page sort mode");
+      error.clear();
+      require(state.set_setting("rotationMode", "locked", error), "save rotation mode");
+      require(state.settings_json().find("\"rotationMode\":\"locked\"") != std::string::npos,
+              "rotation mode JSON");
+      error.clear();
+      require(!state.set_setting("rotationMode", "sideways", error),
+              "reject invalid rotation mode");
       error.clear();
       require(state.set_page_pinned("5908cc548ef342b6b84e254fa1785a21", true, error),
               "persist page pin");
@@ -607,6 +640,7 @@ int main() {
       potion::AppState reloaded(directory);
       require(reloaded.token() == "test-token", "reload token");
       require(reloaded.settings().page_sort_mode == "edited", "reload page sort mode");
+      require(reloaded.settings().rotation_mode == "locked", "reload rotation mode");
       require(reloaded.page_pinned("5908cc54-8ef3-42b6-b84e-254fa1785a21"),
               "reload normalized page pin");
     }

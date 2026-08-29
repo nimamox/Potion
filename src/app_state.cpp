@@ -48,6 +48,7 @@ void AppState::load() {
     else if (key == "nightPageMode" && allowed_night_page_mode(value)) settings_.night_page_mode = value;
     else if (key == "pageButtonMode" && (value == "normal" || value == "reversed")) settings_.page_button_mode = value;
     else if (key == "pageSortMode" && (value == "opened" || value == "edited")) settings_.page_sort_mode = value;
+    else if (key == "rotationMode" && (value == "auto" || value == "locked")) settings_.rotation_mode = value;
   }
   std::ifstream pins(pins_path_);
   while (std::getline(pins, line)) {
@@ -61,7 +62,7 @@ std::string AppState::token() const { std::lock_guard<std::mutex> lock(mutex_); 
 Settings AppState::settings() const { std::lock_guard<std::mutex> lock(mutex_); return settings_; }
 bool AppState::save_token(const std::string &token, std::string &error) { std::lock_guard<std::mutex> lock(mutex_); if (!ensure_directory(error) || !atomic_write(token_path_, token + "\n", error)) return false; token_ = token; return true; }
 bool AppState::clear_token(std::string &error) { std::lock_guard<std::mutex> lock(mutex_); if (::unlink(token_path_.c_str()) != 0 && errno != ENOENT) { error = std::strerror(errno); return false; } token_.clear(); return true; }
-bool AppState::persist_settings(std::string &error) const { if (!ensure_directory(error)) return false; std::ostringstream out; out << "fontScale=" << settings_.font_scale << "\ncardFont=" << settings_.card_font << "\nnightMode=" << (settings_.night_mode ? 1 : 0) << "\nnightPageMode=" << settings_.night_page_mode << "\npageButtonMode=" << settings_.page_button_mode << "\npageSortMode=" << settings_.page_sort_mode << '\n'; return atomic_write(settings_path_, out.str(), error); }
+bool AppState::persist_settings(std::string &error) const { if (!ensure_directory(error)) return false; std::ostringstream out; out << "fontScale=" << settings_.font_scale << "\ncardFont=" << settings_.card_font << "\nnightMode=" << (settings_.night_mode ? 1 : 0) << "\nnightPageMode=" << settings_.night_page_mode << "\npageButtonMode=" << settings_.page_button_mode << "\npageSortMode=" << settings_.page_sort_mode << "\nrotationMode=" << settings_.rotation_mode << '\n'; return atomic_write(settings_path_, out.str(), error); }
 bool AppState::set_setting(const std::string &key, const std::string &value, std::string &error) { std::lock_guard<std::mutex> lock(mutex_);
   if (key == "fontScale") { try { double n = std::stod(value); if (n < .7 || n > 1.6) throw std::runtime_error("range"); settings_.font_scale = n; } catch (...) { error = "Invalid font scale"; return false; } }
   else if (key == "cardFont") { if (!allowed_font(value)) { error = "Invalid card font"; return false; } settings_.card_font = value; }
@@ -69,10 +70,11 @@ bool AppState::set_setting(const std::string &key, const std::string &value, std
   else if (key == "nightPageMode") { if (!allowed_night_page_mode(value)) { error = "Invalid night page mode"; return false; } settings_.night_page_mode = value; }
   else if (key == "pageButtonMode") { if (value != "normal" && value != "reversed") { error = "Invalid page button mode"; return false; } settings_.page_button_mode = value; }
   else if (key == "pageSortMode") { if (value != "opened" && value != "edited") { error = "Invalid page sort mode"; return false; } settings_.page_sort_mode = value; }
+  else if (key == "rotationMode") { if (value != "auto" && value != "locked") { error = "Invalid rotation mode"; return false; } settings_.rotation_mode = value; }
   else { error = "Unknown setting"; return false; }
   return persist_settings(error);
 }
-std::string AppState::settings_json() const { std::lock_guard<std::mutex> lock(mutex_); std::ostringstream out; out << "{\"type\":\"settings\",\"fontScale\":" << settings_.font_scale << ",\"cardFont\":" << json_escape(settings_.card_font) << ",\"nightMode\":" << (settings_.night_mode ? "true" : "false") << ",\"nightPageMode\":" << json_escape(settings_.night_page_mode) << ",\"pageButtonMode\":" << json_escape(settings_.page_button_mode) << ",\"pageSortMode\":" << json_escape(settings_.page_sort_mode) << '}'; return out.str(); }
+std::string AppState::settings_json() const { std::lock_guard<std::mutex> lock(mutex_); std::ostringstream out; out << "{\"type\":\"settings\",\"fontScale\":" << settings_.font_scale << ",\"cardFont\":" << json_escape(settings_.card_font) << ",\"nightMode\":" << (settings_.night_mode ? "true" : "false") << ",\"nightPageMode\":" << json_escape(settings_.night_page_mode) << ",\"pageButtonMode\":" << json_escape(settings_.page_button_mode) << ",\"pageSortMode\":" << json_escape(settings_.page_sort_mode) << ",\"rotationMode\":" << json_escape(settings_.rotation_mode) << '}'; return out.str(); }
 
 bool AppState::persist_page_pins(std::string &error) const {
   if (!ensure_directory(error)) return false;

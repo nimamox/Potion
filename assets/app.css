@@ -58,21 +58,21 @@ select {
   display: block;
   width: 50px;
   height: 50px;
-  margin-left: -262px;
+  margin-left: -338px;
   visibility: hidden;
 }
 .busy-iris.active {
   visibility: visible;
 }
-/* Potion has one fewer 72px header icon and a 187px logo. This offset keeps
-   the logo centered between Settings and the +/- control on Mesquite. */
+/* Keep the logo centered in the open space between Settings and the six
+   fixed-size action buttons on both portrait and landscape Mesquite. */
 .brand-button {
   position: fixed;
   z-index: 101;
   top: 0;
   left: 50%;
   display: block;
-  margin: 0 0 0 -202px;
+  margin: 0 0 0 -278px;
   padding: 0;
   border: 0;
   background: transparent;
@@ -103,7 +103,7 @@ h2 {
   top: 50px;
   left: 50%;
   width: 187px;
-  margin: 0 0 0 -202px;
+  margin: 0 0 0 -278px;
   overflow: hidden;
   color: #555;
   text-align: center;
@@ -113,10 +113,11 @@ h2 {
 }
 .header-actions {
   display: table-cell;
-  width: 290px;
+  width: 439px;
   vertical-align: top;
   text-align: right;
   white-space: nowrap;
+  font-size: 0;
 }
 .header-button {
   display: inline-block;
@@ -156,21 +157,47 @@ h2 {
 }
 .font-buttons {
   display: inline-block;
-  width: 54px;
+  width: 108px;
   height: 72px;
+  font-size: 0;
   vertical-align: middle;
 }
 .font-buttons button {
-  display: block;
+  display: inline-block;
   width: 54px;
-  height: 36px;
+  height: 72px;
   padding: 0;
   border: 2px solid #111;
   background: #fff;
   font: bold 25px/1 Arial, sans-serif;
+  vertical-align: top;
 }
 .font-buttons button + button {
-  border-top: 0;
+  border-left: 2px solid #111;
+}
+.header-actions button,
+.header-actions .header-button.icon-button {
+  display: inline-block;
+  width: 69px;
+  height: 69px;
+  margin: 0 0 0 5px;
+  padding: 0;
+  border-width: 2px;
+  vertical-align: top;
+}
+.header-actions .font-buttons {
+  width: 143px;
+  height: 69px;
+}
+.header-actions .font-buttons button {
+  width: 69px;
+  height: 69px;
+}
+.header-actions .font-buttons button:first-child {
+  margin-left: 0;
+}
+.header-actions .rotation-button {
+  font: 34px/1 "Kindle Symbol", "Amazon Ember", Arial, sans-serif;
 }
 .warning {
   position: fixed;
