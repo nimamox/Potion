@@ -122,6 +122,10 @@ std::string block_class_attribute(const std::string &source) {
   const std::string color = notion_block_color_class(source);
   return " class=\"potion-block" + (color.empty() ? std::string{} : " " + color) + "\"";
 }
+std::string editable_block_class_attribute(const std::string &source) {
+  const std::string color = notion_block_color_class(source);
+  return " class=\"potion-block potion-editable" + (color.empty() ? std::string{} : " " + color) + "\"";
+}
 std::string colored_inline(const std::string &source, const std::string &html) {
   const std::string color = notion_block_color_class(source);
   return color.empty() ? html : "<span class=\"" + color + "\">" + html + "</span>";
@@ -225,26 +229,28 @@ std::string MarkdownRenderer::render(const std::string &markdown) const {
         close_lists(); out += "<table class=\"potion-block\"><thead>"; table_row(table_header, "th"); out += "</thead><tbody>";
         table_header.clear(); pipe_table = true; continue;
       }
-      out += "<p class=\"potion-block\">" + inline_html(strip_attrs(table_header)) + "</p>"; table_header.clear();
+      out += "<p class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">" + inline_html(strip_attrs(table_header)) + "</span></p>"; table_header.clear();
     }
     if (pipe_row) { close_lists(); table_header = body; continue; }
     bool bullet = starts(body, "- ") || starts(body, "* "); std::size_t dot = body.find(". "); bool numbered = dot != std::string::npos && dot > 0 && std::all_of(body.begin(), body.begin() + static_cast<long>(dot), [](unsigned char c){ return std::isdigit(c); });
     if (bullet || numbered) {
       std::string tag = numbered ? "ol" : "ul", item = bullet ? body.substr(2) : body.substr(dot + 2), start = numbered ? body.substr(0, dot) : std::string{};
+      const bool todo = starts(item, "[ ] ") || starts(item, "[x] ") || starts(item, "[X] ");
+      const std::string item_open = todo ? "<li class=\"potion-block\">" : "<li class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">";
       if (lists.empty()) list_base_depth = depth;
       else if (depth < list_base_depth) { close_lists(); list_base_depth = depth; }
       const std::size_t wanted = depth - list_base_depth + 1;
       while (lists.size() > wanted) { out += "</li></" + lists.back() + ">"; lists.pop_back(); }
       if (lists.size() == wanted && lists.back() != tag) {
-        out += "</li></" + lists.back() + "><" + tag + (tag == "ol" && start != "1" ? " start=\"" + start + "\"" : "") + "><li class=\"potion-block\">";
+        out += "</li></" + lists.back() + "><" + tag + (tag == "ol" && start != "1" ? " start=\"" + start + "\"" : "") + ">" + item_open;
         lists.back() = tag;
       } else if (lists.size() == wanted) {
-        out += "</li><li class=\"potion-block\">";
+        out += "</li>" + item_open;
       } else {
-        while (lists.size() < wanted) { out += "<" + tag + (tag == "ol" && start != "1" ? " start=\"" + start + "\"" : "") + "><li class=\"potion-block\">"; lists.push_back(tag); }
+        while (lists.size() < wanted) { out += "<" + tag + (tag == "ol" && start != "1" ? " start=\"" + start + "\"" : "") + ">" + item_open; lists.push_back(tag); }
       }
-      bool todo = starts(item, "[ ] ") || starts(item, "[x] ") || starts(item, "[X] "); if (todo) { bool checked = item[1] != ' '; item = item.substr(4); out += "<span class=\"todo-box\">" + std::string(checked ? "&#9745;" : "&#9744;") + "</span> "; }
-      out += colored_inline(item, inline_html(strip_attrs(item))); continue;
+      if (todo) { bool checked = item[1] != ' '; item = item.substr(4); out += "<span class=\"todo-box\">" + std::string(checked ? "&#9745;" : "&#9744;") + "</span> "; }
+      out += colored_inline(item, inline_html(strip_attrs(item))) + (todo ? "" : "</span>"); continue;
     }
     close_lists(); body = trim(body); if (body.empty() || body == "<empty-block/>") { out += "<div class=\"potion-block empty-block\"></div>"; continue; }
     if (body == "---") { out += "<hr class=\"potion-block\">"; continue; }
@@ -261,7 +267,7 @@ std::string MarkdownRenderer::render(const std::string &markdown) const {
     if (starts(body, "<td")) { auto gt = body.find('>'), end = body.rfind("</td>"); out += "<td" + color_attribute(body) + ">" + (gt != std::string::npos && end != std::string::npos ? inline_html(body.substr(gt + 1, end - gt - 1)) : std::string("Unsupported cell")) + "</td>"; continue; }
     if (body == "<columns>" || body == "</columns>" || body == "<column>" || body == "</column>" || starts(body, "<col") || body == "</colgroup>") continue;
     if ((starts(body, "<page ") || starts(body, "<database ") || starts(body, "<mention-")) && body.find('>') != std::string::npos) { out += "<div class=\"potion-block notion-reference-row\">" + inline_html(body) + "</div>"; continue; }
-    if (starts(body, "<span ") && body.find("</span>") != std::string::npos) { out += "<p class=\"potion-block\">" + inline_html(body) + "</p>"; continue; }
+    if (starts(body, "<span ") && body.find("</span>") != std::string::npos) { out += "<p class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">" + inline_html(body) + "</span></p>"; continue; }
     if (starts(body, "![")) {
       const auto mid = body.find("](", 2), end = mid == std::string::npos ? mid : markdown_url_end(body, mid + 2);
       const std::string trailing = end == std::string::npos ? std::string{} : trim(body.substr(end + 1));
@@ -275,8 +281,8 @@ std::string MarkdownRenderer::render(const std::string &markdown) const {
       }
     }
     if (body[0] == '<' && body.find('>') != std::string::npos) { out += "<div class=\"potion-block unsupported\">Unsupported Notion content</div>"; continue; }
-    last_plain_source = strip_attrs(body); if (preceding_image && depth == last_image_depth && last_plain_source == last_image_caption) continue; last_plain_output = out.size(); last_plain_depth = depth; last_plain_paragraph = true; out += "<p" + block_class_attribute(body) + direction_attribute(last_plain_source) + ">" + inline_html(last_plain_source) + "</p>";
+    last_plain_source = strip_attrs(body); if (preceding_image && depth == last_image_depth && last_plain_source == last_image_caption) continue; last_plain_output = out.size(); last_plain_depth = depth; last_plain_paragraph = true; out += "<p" + editable_block_class_attribute(body) + direction_attribute(last_plain_source) + "><span class=\"potion-editable-content\">" + inline_html(last_plain_source) + "</span></p>";
   }
-  close_lists(); close_pipe_table(); while (!heading_toggles.empty()) { out += "</div></div>"; heading_toggles.pop_back(); } if (!table_header.empty()) out += "<p class=\"potion-block\">" + inline_html(strip_attrs(table_header)) + "</p>"; if (code) out += "<pre class=\"potion-block\"><code>" + html_escape(code_text) + "</code></pre>"; if (equation) out += "<div class=\"potion-block unsupported\">Incomplete equation</div>"; return out;
+  close_lists(); close_pipe_table(); while (!heading_toggles.empty()) { out += "</div></div>"; heading_toggles.pop_back(); } if (!table_header.empty()) out += "<p class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">" + inline_html(strip_attrs(table_header)) + "</span></p>"; if (code) out += "<pre class=\"potion-block\"><code>" + html_escape(code_text) + "</code></pre>"; if (equation) out += "<div class=\"potion-block unsupported\">Incomplete equation</div>"; return out;
 }
 }

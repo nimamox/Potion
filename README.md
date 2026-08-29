@@ -2,12 +2,18 @@
 
 # Potion
 
-Potion is a read-only Notion client for jailbroken Kindles. A C++17 daemon
+Potion is a lightweight Notion reader for jailbroken Kindles. A C++17 daemon
 uses Notion's official API, converts Notion-flavored Markdown to sanitized
 HTML, and serves a deliberately lightweight interface to Amazon Mesquite.
 
-Potion has no Notion write operations. It can validate a connection token,
-search accessible pages, retrieve page metadata/Markdown, and fetch images.
+Potion can validate a connection token, search accessible pages, retrieve page
+metadata/Markdown, and fetch images. Within ordinary paragraphs and list items,
+selected text can be highlighted, bolded, or underlined directly on Notion.
+This formatting requires the integration's update-content capability; Potion
+does not cache page content or keep a local copy of edits.
+On Kindle, hold a word to select it; dragging while holding extends Potion's
+selection when Mesquite supplies drag events. Potion also accepts an ordinary
+WebKit selection when the device provides native selection behavior.
 The reader supports navigable child pages, parent-page Back navigation, regular
 toggles, toggle headings, and Notion text/background highlights. Night mode can
 preserve page colors, adapt them for a dark background, or also invert images.

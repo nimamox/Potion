@@ -1,4 +1,6 @@
-Potion is a read-only Notion client for jailbroken Kindle.
+Potion is a lightweight Notion reader for jailbroken Kindle. Text selected
+within one ordinary paragraph or list item can be highlighted, bolded, or
+underlined on Notion when the connection has update-content access.
 
 USB installation
 ================

@@ -9,6 +9,7 @@ const javascriptAsset = process.argv[4];
 const katexCss = fs.readFileSync(process.argv[5], "utf8");
 const fontDirectory = process.argv[6];
 const appCss = fs.readFileSync(process.argv[7], "utf8");
+const config = fs.readFileSync(process.argv[8], "utf8");
 
 assert.doesNotMatch(frontend, /window\.katex|katex\.render|loadKatex|katexState|data-expr/);
 assert.match(index, /vendor\/katex\/katex\.min\.css\?v=0\.16\.25-native/);
@@ -69,5 +70,30 @@ assert.doesNotMatch(frontend, /requestAnimationFrame/);
 assert.equal((frontend.match(/busy\s*=\s*(?:true|false)/g) || []).length, 1,
   "only the initial declaration may assign busy directly");
 assert.match(appCss, /\.busy-iris\s*{[\s\S]*position:\s*fixed;[\s\S]*width:\s*50px;[\s\S]*visibility:\s*hidden;/);
+
+// Selection formatting remains a small ES5 interaction: one block only,
+// exact UTF-16 offsets, block PATCH through potiond, and no page reload.
+assert.match(index, /id="selection-menu"[\s\S]*data-format="highlight"[\s\S]*data-format="bold"[\s\S]*data-format="underline"/);
+assert.match(frontend, /startContent !== endContent/);
+assert.match(frontend, /before\.toString\(\)\.length/);
+assert.match(frontend, /\/api\/pages\/" \+ encodeURIComponent\(currentPageId\) \+ "\/format/);
+assert.match(frontend, /function applySelectionLocally\(state, format\)/);
+assert.doesNotMatch(frontend, /localStorage|sessionStorage/);
+assert.doesNotMatch(frontend, /location\.reload/);
+assert.match(appCss, /\.selection-menu\s*{[\s\S]*position:\s*fixed;[\s\S]*z-index:\s*500;/);
+assert.match(config, /<kindle:param name="tap" value="no"\/>/);
+assert.match(config, /<kindle:param name="multi_tap" value="no"\/>/);
+assert.match(config, /<kindle:param name="hold" value="no"\/>/);
+assert.doesNotMatch(config, /<kindle:param name="drag"/);
+assert.doesNotMatch(config, /<kindle:param name="swipe"/);
+assert.match(frontend, /document\.caretRangeFromPoint/);
+assert.match(frontend, /selectionHoldTimer = window\.setTimeout\(beginCustomSelection, 700\)/);
+assert.match(frontend, /elapsed >= 700/);
+assert.match(frontend, /function moveCustomSelection\(event\)/);
+assert.match(frontend, /source === "NATIVE" && selectionHoldTimer !== null/);
+assert.match(frontend, /selectionDragActive/);
+assert.match(frontend, /point\.x < rect\.left/);
+assert.doesNotMatch(frontend, /selectionDebug|\/api\/debug\/selection/);
+assert.doesNotMatch(index, /selection-debug/);
 
 console.log("Potion frontend native-math contract tests passed");

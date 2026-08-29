@@ -31,7 +31,7 @@
   <section id="connect-view" class="panel hidden">
     <p class="eyebrow">NOTION CONNECTION</p>
     <h2>Connect Potion</h2>
-    <p>Potion uses a read-only Notion integration token. In Notion, create a connection with read-content access and share the pages you want to read with it.</p>
+    <p>Potion uses a Notion integration token. In Notion, give the connection read-content and update-content access, then share the pages you want to read and format with it.</p>
     <label for="token">Notion access token</label>
     <input id="token" type="password" autocomplete="off">
     <button id="connect" class="primary" type="button">Connect</button>
@@ -53,6 +53,10 @@
     </div>
     <article id="page-content" class="page-content"></article>
   </section>
+
+  <div id="selection-menu" class="selection-menu hidden" role="toolbar" aria-label="Format selected text">
+    <button type="button" data-format="highlight" class="selection-highlight">Highlight</button><button type="button" data-format="bold" class="selection-bold">B</button><button type="button" data-format="underline" class="selection-underline">U</button>
+  </div>
 
   <div id="settings-dialog" class="overlay hidden">
     <div class="dialog settings-dialog">
@@ -119,6 +123,6 @@
     <button id="scroll-up" class="scroll-button hidden" title="Scroll up">&#9650;</button>
     <button id="scroll-down" class="scroll-button hidden" title="Scroll down">&#9660;</button>
   </div>
-  <script src="app.js?v=20260828-1-busy-iris"></script>
+  <script src="app.js?v=20260828-2-selection"></script>
 </body>
 </html>

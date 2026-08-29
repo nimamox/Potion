@@ -23,6 +23,17 @@
         positionSaveTimer = null,
         positionRestoreTimer = null,
         positionRestoring = false;
+    var selectionTimer = null,
+        selectionState = null,
+        selectionMenuActive = false,
+        selectionHoldTimer = null,
+        selectionHoldActive = false,
+        selectionHoldX = 0,
+        selectionHoldY = 0,
+        selectionHoldStartedAt = 0,
+        selectionDragActive = false,
+        selectionAnchor = null,
+        selectionSuppressClick = false;
     var fontScales = [0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6],
         fontScale = 1,
         pageFont = "Bookerly",
@@ -288,6 +299,315 @@
         xhr.send(body || null);
     }
 
+    function hasClass(element, name) {
+        return element && element.nodeType === 1 &&
+            (" " + element.className + " ").indexOf(" " + name + " ") >= 0;
+    }
+
+    function selectionAncestor(node, name) {
+        if (node && node.nodeType !== 1) node = node.parentNode;
+        while (node && node !== id("page-content")) {
+            if (hasClass(node, name)) return node;
+            node = node.parentNode;
+        }
+        return null;
+    }
+
+    function clearSelectionMenu(clearNative) {
+        var selection;
+        if (selectionTimer !== null) {
+            window.clearTimeout(selectionTimer);
+            selectionTimer = null;
+        }
+        hide(id("selection-menu"));
+        selectionState = null;
+        selectionMenuActive = false;
+        clearSelectionHoldTimer();
+        selectionHoldActive = false;
+        selectionHoldStartedAt = 0;
+        selectionDragActive = false;
+        selectionAnchor = null;
+        selectionSuppressClick = false;
+        if (clearNative && window.getSelection) {
+            selection = window.getSelection();
+            if (selection && selection.removeAllRanges) selection.removeAllRanges();
+        }
+    }
+
+    function editableIndex(block) {
+        var blocks = id("page-content").getElementsByClassName("potion-editable"),
+            i;
+        for (i = 0; i < blocks.length; ++i)
+            if (blocks[i] === block) return i;
+        return -1;
+    }
+
+    function positionSelectionMenu(rect) {
+        var menu = id("selection-menu"),
+            width = 430,
+            height = 62,
+            viewportWidth = document.documentElement.clientWidth || document.body.clientWidth,
+            viewportHeight = document.documentElement.clientHeight || document.body.clientHeight,
+            left = Math.max(8, Math.floor((viewportWidth - width) / 2)),
+            top = 188;
+        if (rect && typeof rect.top === "number") {
+            if (rect.top > 180 + height + 12) top = rect.top - height - 10;
+            else top = rect.bottom + 10;
+        }
+        top = Math.max(94, Math.min(viewportHeight - height - 8, Math.floor(top)));
+        menu.style.left = left + "px";
+        menu.style.top = top + "px";
+    }
+
+    function inspectSelection(source) {
+        var selection, range, startContent, endContent, block, before, through,
+            index, text, rect = null;
+        selectionTimer = null;
+        if (source === "NATIVE" && selectionHoldTimer !== null) return;
+        if (selectionMenuActive || busy || !currentPageId ||
+            id("reader-view").className.indexOf("hidden") >= 0 ||
+            !window.getSelection || !document.createRange) return;
+        selection = window.getSelection();
+        if (!selection || selection.rangeCount < 1 || selection.isCollapsed) {
+            clearSelectionMenu(false);
+            return;
+        }
+        range = selection.getRangeAt(0);
+        startContent = selectionAncestor(range.startContainer, "potion-editable-content");
+        endContent = selectionAncestor(range.endContainer, "potion-editable-content");
+        if (!startContent || startContent !== endContent) {
+            clearSelectionMenu(false);
+            return;
+        }
+        block = selectionAncestor(startContent, "potion-editable");
+        index = editableIndex(block);
+        text = range.toString();
+        if (!block || index < 0 || !text || text.length > 4000) {
+            clearSelectionMenu(false);
+            return;
+        }
+        before = document.createRange();
+        before.selectNodeContents(startContent);
+        before.setEnd(range.startContainer, range.startOffset);
+        through = document.createRange();
+        through.selectNodeContents(startContent);
+        through.setEnd(range.endContainer, range.endOffset);
+        if (range.getBoundingClientRect) {
+            try { rect = range.getBoundingClientRect(); } catch (ignored) {}
+        }
+        selectionState = {
+            range: range.cloneRange(),
+            content: startContent,
+            editableIndex: index,
+            blockText: startContent.textContent,
+            selectedText: text,
+            start: before.toString().length,
+            end: through.toString().length
+        };
+        positionSelectionMenu(rect);
+        show(id("selection-menu"));
+    }
+
+    function scheduleSelectionInspection() {
+        if (selectionMenuActive) return;
+        if (selectionTimer !== null) window.clearTimeout(selectionTimer);
+        selectionTimer = window.setTimeout(function() { inspectSelection("NATIVE"); }, 140);
+    }
+
+    function eventPoint(event) {
+        var touch = event && event.touches && event.touches.length ?
+                event.touches[0] :
+                event && event.changedTouches && event.changedTouches.length ?
+                    event.changedTouches[0] : event;
+        if (!touch) return null;
+        return {
+            x: typeof touch.clientX === "number" ? touch.clientX : touch.pageX,
+            y: typeof touch.clientY === "number" ? touch.clientY : touch.pageY
+        };
+    }
+
+    function clearSelectionHoldTimer() {
+        if (selectionHoldTimer !== null) {
+            window.clearTimeout(selectionHoldTimer);
+            selectionHoldTimer = null;
+        }
+    }
+
+    function wordCharacter(character) {
+        return !!character && !/[\s.,;:!?()[\]{}"'\/\\|<>]/.test(character);
+    }
+
+    function caretAtPoint(x, y) {
+        if (!document.caretRangeFromPoint) return null;
+        try { return document.caretRangeFromPoint(x, y); } catch (ignored) {}
+        return null;
+    }
+
+    function selectWordAtPoint(x, y) {
+        var caret = caretAtPoint(x, y),
+            node, text, start, end, range, selection;
+        if (!caret || !caret.startContainer ||
+            !selectionAncestor(caret.startContainer, "potion-editable-content")) return false;
+        node = caret.startContainer;
+        text = node.nodeValue || "";
+        start = Math.min(caret.startOffset, text.length);
+        if (start === text.length && start) --start;
+        if (!wordCharacter(text.charAt(start))) return false;
+        end = start + 1;
+        while (start > 0 && wordCharacter(text.charAt(start - 1))) --start;
+        while (end < text.length && wordCharacter(text.charAt(end))) ++end;
+        range = document.createRange();
+        range.setStart(node, start);
+        range.setEnd(node, end);
+        selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        selectionAnchor = {node: node, start: start, end: end};
+        selectionHoldActive = true;
+        selectionDragActive = false;
+        selectionSuppressClick = true;
+        inspectSelection("SELECT");
+        return true;
+    }
+
+    function beginCustomSelection() {
+        if (selectionHoldTimer !== null) window.clearTimeout(selectionHoldTimer);
+        selectionHoldTimer = null;
+        selectWordAtPoint(selectionHoldX, selectionHoldY);
+    }
+
+    function startSelectionHold(event) {
+        var point, caret, content;
+        point = eventPoint(event);
+        if (!point) return;
+        content = selectionAncestor(event && event.target, "potion-editable-content");
+        if (!content) {
+            caret = caretAtPoint(point.x, point.y);
+            content = caret && selectionAncestor(caret.startContainer, "potion-editable-content");
+        }
+        if (busy || !content) return;
+        clearSelectionHoldTimer();
+        selectionHoldActive = false;
+        selectionDragActive = false;
+        selectionAnchor = null;
+        selectionHoldX = point.x;
+        selectionHoldY = point.y;
+        selectionHoldStartedAt = new Date().getTime();
+        selectionHoldTimer = window.setTimeout(beginCustomSelection, 700);
+    }
+
+    function moveCustomSelection(event) {
+        var point = eventPoint(event), elapsed, caret, content, before, range, selection;
+        if (!point) return;
+        if (!selectionHoldActive) {
+            if (selectionHoldTimer === null) return;
+            elapsed = new Date().getTime() - selectionHoldStartedAt;
+            if (elapsed >= 700) {
+                beginCustomSelection();
+                if (!selectionHoldActive) return;
+            } else if (Math.abs(point.x - selectionHoldX) > 28 ||
+                       Math.abs(point.y - selectionHoldY) > 28) {
+                clearSelectionHoldTimer();
+                selectionHoldStartedAt = 0;
+                return;
+            } else return;
+        }
+        if (!selectionDragActive) {
+            if (Math.abs(point.x - selectionHoldX) <= 28 &&
+                Math.abs(point.y - selectionHoldY) <= 28) return;
+            selectionDragActive = true;
+        }
+        caret = caretAtPoint(point.x, point.y);
+        content = caret && selectionAncestor(caret.startContainer, "potion-editable-content");
+        if (!caret || !content || content !== selectionAncestor(selectionAnchor.node, "potion-editable-content")) return;
+        if (caret.startContainer === selectionAnchor.node)
+            before = caret.startOffset < selectionAnchor.start;
+        else
+            before = !!(selectionAnchor.node.compareDocumentPosition(caret.startContainer) & 2);
+        range = document.createRange();
+        if (before) {
+            range.setStart(caret.startContainer, caret.startOffset);
+            range.setEnd(selectionAnchor.node, selectionAnchor.end);
+        } else {
+            range.setStart(selectionAnchor.node, selectionAnchor.start);
+            range.setEnd(caret.startContainer, caret.startOffset);
+        }
+        selection = window.getSelection();
+        selection.removeAllRanges();
+        selection.addRange(range);
+        inspectSelection("DRAG");
+        if (event.preventDefault) event.preventDefault();
+    }
+
+    function finishSelectionHold(event) {
+        var elapsed = selectionHoldStartedAt ?
+                new Date().getTime() - selectionHoldStartedAt : 0,
+            held = selectionHoldTimer !== null && elapsed >= 700;
+        clearSelectionHoldTimer();
+        if (held) selectWordAtPoint(selectionHoldX, selectionHoldY);
+        if (selectionHoldActive) {
+            selectionHoldActive = false;
+            selectionDragActive = false;
+            inspectSelection("SELECT");
+            window.setTimeout(function() { selectionSuppressClick = false; }, 800);
+        }
+        selectionHoldStartedAt = 0;
+    }
+
+    function setSelectionButtonsDisabled(value) {
+        var buttons = id("selection-menu").getElementsByTagName("button"), i;
+        for (i = 0; i < buttons.length; ++i) buttons[i].disabled = !!value;
+    }
+
+    function applySelectionLocally(state, format) {
+        var wrapper, fragment;
+        if (!state || !state.range) return;
+        wrapper = document.createElement(format === "bold" ? "strong" : format === "underline" ? "u" : "span");
+        if (format === "highlight") wrapper.className = "notion-color notion-color-yellow-bg";
+        try {
+            fragment = state.range.extractContents();
+            wrapper.appendChild(fragment);
+            state.range.insertNode(wrapper);
+            if (state.content.normalize) state.content.normalize();
+        } catch (ignored) {}
+    }
+
+    function formatSelection(format) {
+        var state = selectionState;
+        if (!state || busy) return;
+        selectionMenuActive = true;
+        setSelectionButtonsDisabled(true);
+        setBusy(true);
+        warning("");
+        id("status").innerHTML = "Saving formatting...";
+        request(
+            "POST",
+            "/api/pages/" + encodeURIComponent(currentPageId) + "/format",
+            "editableIndex=" + state.editableIndex +
+                "&start=" + state.start +
+                "&end=" + state.end +
+                "&format=" + encodeURIComponent(format) +
+                "&blockText=" + encodeURIComponent(state.blockText) +
+                "&selectedText=" + encodeURIComponent(state.selectedText),
+            function(error) {
+                setBusy(false);
+                setSelectionButtonsDisabled(false);
+                id("status").innerHTML = "";
+                if (error) {
+                    selectionMenuActive = false;
+                    warning(error);
+                    return;
+                }
+                applySelectionLocally(state, format);
+                clearSelectionMenu(true);
+                collectReadingBlocks();
+                applyNightPageAppearance();
+                updateScroll();
+                waitForInput();
+            }
+        );
+    }
+
     function warning(message) {
         id("warning").innerHTML = "";
         id("warning").appendChild(document.createTextNode(message || ""));
@@ -329,6 +649,7 @@
 
     function readyForInput() {
         return !busy &&
+            id("selection-menu").className.indexOf("hidden") >= 0 &&
             id("connect-view").className.indexOf("hidden") >= 0 &&
             id("settings-dialog").className.indexOf("hidden") >= 0 &&
             id("logout-dialog").className.indexOf("hidden") >= 0 &&
@@ -1382,6 +1703,7 @@
             return;
         }
 
+        clearSelectionMenu(true);
         resetMathRepair();
         resetImageLoading();
         clearReadingPositionState();
@@ -1529,6 +1851,8 @@
         }
 
         var previous = currentPageId;
+
+        clearSelectionMenu(true);
 
         setBusy(true);
         warning("");
@@ -1735,6 +2059,7 @@
     id("pages").onscroll = updateScroll;
 
     id("page-content").onscroll = function() {
+        clearSelectionMenu(true);
         updateScroll();
         scheduleMathRepair();
         scheduleImageLoad();
@@ -1925,6 +2250,47 @@
     };
 
     id("about-logo").onload = prepareAboutLogo;
+    document.onmouseup = scheduleSelectionInspection;
+    document.ontouchend = scheduleSelectionInspection;
+    document.onselectionchange = scheduleSelectionInspection;
+    (function() {
+        var menu = id("selection-menu"),
+            buttons = menu.getElementsByTagName("button"),
+            i;
+        menu.onmousedown = menu.ontouchstart = function(event) {
+            selectionMenuActive = true;
+            event = event || window.event;
+            if (event.stopPropagation) event.stopPropagation();
+            else event.cancelBubble = true;
+        };
+        for (i = 0; i < buttons.length; ++i)
+            buttons[i].onclick = function() {
+                formatSelection(this.getAttribute("data-format"));
+                return false;
+            };
+    }());
+    id("page-content").onmousedown = startSelectionHold;
+    id("page-content").ontouchstart = startSelectionHold;
+    id("page-content").onmousemove = moveCustomSelection;
+    id("page-content").ontouchmove = moveCustomSelection;
+    id("page-content").onmouseup = finishSelectionHold;
+    id("page-content").ontouchend = finishSelectionHold;
+    id("page-content").onclick = function(event) {
+        var point, rect;
+        if (selectionSuppressClick) {
+            selectionSuppressClick = false;
+            return false;
+        }
+        if (selectionState) {
+            point = eventPoint(event || window.event);
+            try { rect = selectionState.range.getBoundingClientRect(); } catch (ignored) {}
+            if (!point || !rect || point.x < rect.left || point.x > rect.right ||
+                point.y < rect.top || point.y > rect.bottom) {
+                clearSelectionMenu(true);
+                return false;
+            }
+        }
+    };
     window.onresize = updateScroll;
 
     start();

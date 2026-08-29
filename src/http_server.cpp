@@ -251,6 +251,37 @@ void HttpServer::handle_client(int client) noexcept {
                 R"(,"edited":)" + json_escape(page.edited) + "}";
       }
       body += "]}"; respond(client, 200, "OK", "application/json", body);
+    } else if (request.method == "POST" &&
+               request.target.compare(0, 11, "/api/pages/") == 0 &&
+               request.target.size() > 18 &&
+               request.target.compare(request.target.size() - 7, 7, "/format") == 0) {
+      if (!state_.authenticated()) throw std::runtime_error("Connect Potion to Notion first");
+      const std::string id = request.target.substr(11, request.target.size() - 18);
+      if (!valid_page_id(id)) throw std::runtime_error("Invalid page id");
+      const std::string index_text = parameter(request.body, "editableIndex");
+      const std::string start_text = parameter(request.body, "start");
+      const std::string end_text = parameter(request.body, "end");
+      std::size_t used = 0;
+      unsigned long long index = 0, start = 0, end = 0;
+      try {
+        index = std::stoull(index_text, &used);
+        if (used != index_text.size()) throw std::runtime_error("number");
+        start = std::stoull(start_text, &used);
+        if (used != start_text.size()) throw std::runtime_error("number");
+        end = std::stoull(end_text, &used);
+        if (used != end_text.size()) throw std::runtime_error("number");
+      } catch (...) { throw std::runtime_error("Invalid text selection"); }
+      if (index > 4096 || start > 0xffffffffull || end > 0xffffffffull)
+        throw std::runtime_error("Invalid text selection");
+      std::string error;
+      if (!notion_.format_block_text(
+              state_.token(), id, static_cast<std::size_t>(index),
+              parameter(request.body, "blockText"),
+              static_cast<std::uint32_t>(start), static_cast<std::uint32_t>(end),
+              parameter(request.body, "selectedText"),
+              parameter(request.body, "format"), error))
+        throw std::runtime_error(error);
+      respond(client, 200, "OK", "application/json", R"({"type":"formatted"})");
     } else if ((request.method == "GET" || request.method == "POST") &&
                request.target.compare(0, 11, "/api/pages/") == 0 &&
                request.target.size() > 20 &&

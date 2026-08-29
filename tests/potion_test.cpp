@@ -2,6 +2,7 @@
 #include "potion/http_server.hpp"
 #include "potion/json.hpp"
 #include "potion/markdown.hpp"
+#include "potion/notion_client.hpp"
 #include "potion/reading_positions.hpp"
 #include <curl/curl.h>
 #include <chrono>
@@ -69,6 +70,50 @@ int main() {
     require(parsed.get("ok").boolean(), "JSON bool");
     require(parsed.get("items").items().size() == 2, "JSON array");
 
+    const auto repeated_rich_text = potion::Json::parse(R"([
+      {"type":"text","text":{"content":"very important / very important","link":null},
+       "plain_text":"very important / very important",
+       "annotations":{"bold":false,"italic":false,"strikethrough":false,"underline":false,"code":false,"color":"default"}}
+    ])");
+    potion::Json formatted;
+    std::string format_error;
+    require(potion::NotionClient::build_formatted_rich_text(
+                repeated_rich_text, "very important / very important",
+                17, 31, "very important", "bold", formatted, format_error),
+            "format one repeated occurrence");
+    require(formatted.items().size() == 2 &&
+            !formatted.items()[0].get("annotations").get("bold").boolean() &&
+            formatted.items()[1].get("annotations").get("bold").boolean(),
+            "only selected repeated occurrence is bold");
+
+    const auto emoji_rich_text = potion::Json::parse(R"([
+      {"type":"text","text":{"content":"A😀B","link":null},
+       "plain_text":"A😀B",
+       "annotations":{"bold":false,"italic":false,"strikethrough":false,"underline":false,"code":false,"color":"default"}}
+    ])");
+    format_error.clear();
+    require(potion::NotionClient::build_formatted_rich_text(
+                emoji_rich_text, "A😀B", 1, 3, "😀", "underline",
+                formatted, format_error) &&
+            formatted.items().size() == 3 &&
+            formatted.items()[1].get("annotations").get("underline").boolean(),
+            "UTF-16 selection offsets preserve supplementary characters");
+    format_error.clear();
+    require(!potion::NotionClient::build_formatted_rich_text(
+                emoji_rich_text, "A😀B", 2, 3, "😀", "highlight",
+                formatted, format_error),
+            "selection cannot split a UTF-16 surrogate pair");
+
+    const auto mention_rich_text = potion::Json::parse(R"([
+      {"type":"mention","mention":{"type":"page","page":{"id":"5908cc54-8ef3-42b6-b84e-254fa1785a21"}},
+       "plain_text":"Mention","annotations":{"bold":false}}
+    ])");
+    format_error.clear();
+    require(!potion::NotionClient::build_formatted_rich_text(
+                mention_rich_text, "Mention", 0, 7, "Mention", "bold",
+                formatted, format_error),
+            "non-text rich text is rejected safely");
+
     potion::ImageRegistry images;
     potion::MarkdownRenderer renderer(images);
     const std::string html = renderer.render(
@@ -77,7 +122,7 @@ int main() {
       "<script>alert(1)</script>\n$$\nx^2\n$$\n"
       "| Name | Value |\n|---|---|\n| Safe | **bold** |\n");
     require(html.find("<h1 class=\"potion-block\">Heading</h1>") != std::string::npos, "heading");
-    require(html.find("<ul><li class=\"potion-block\">parent<ul><li class=\"potion-block\">child</li></ul></li><li class=\"potion-block\">sibling</li></ul>") != std::string::npos, "nested list");
+    require(html.find("<ul><li class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">parent</span><ul><li class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">child</span></li></ul></li><li class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">sibling</span></li></ul>") != std::string::npos, "nested list");
     require(html.find("javascript:") == std::string::npos, "unsafe URL leaked");
     require(html.find("<script>") == std::string::npos, "unsafe HTML leaked");
     require(html.find("display-math") != std::string::npos, "equation");
@@ -93,8 +138,8 @@ int main() {
       "```\ncode\n```\n$$\nx^2\n$$\n"
       "![image](https://example.com/logical.png)\n");
     require(logical_blocks.find("<h1 class=\"potion-block\">") != std::string::npos &&
-            logical_blocks.find("<p class=\"potion-block\">") != std::string::npos &&
-            logical_blocks.find("<li class=\"potion-block\">") != std::string::npos &&
+            logical_blocks.find("<p class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">") != std::string::npos &&
+            logical_blocks.find("<li class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">") != std::string::npos &&
             logical_blocks.find("<blockquote class=\"potion-block\">") != std::string::npos &&
             logical_blocks.find("<pre class=\"potion-block\">") != std::string::npos &&
             logical_blocks.find("class=\"potion-block math display-math\"") != std::string::npos &&
@@ -103,6 +148,18 @@ int main() {
     require(logical_blocks.find("<strong class=\"potion-block") == std::string::npos &&
             logical_blocks.find("<span class=\"potion-block") == std::string::npos,
             "inline formatting is not a logical block");
+    const std::string editable_scope = renderer.render(
+      "Paragraph\n- list item\n- [ ] to do\n# Heading\n> Quote\n"
+      "```\ncode\n```\n$$\nx\n$$\n![caption](https://example.com/image.png)\n");
+    require(editable_scope.find("<p class=\"potion-block potion-editable\">") != std::string::npos &&
+            editable_scope.find("<li class=\"potion-block potion-editable\">") != std::string::npos,
+            "paragraphs and ordinary list items are editable");
+    require(editable_scope.find("<li class=\"potion-block\"><span class=\"todo-box\">") != std::string::npos &&
+            editable_scope.find("<h1 class=\"potion-block potion-editable\">") == std::string::npos &&
+            editable_scope.find("<blockquote class=\"potion-block potion-editable\">") == std::string::npos &&
+            editable_scope.find("<pre class=\"potion-block potion-editable\">") == std::string::npos &&
+            editable_scope.find("<figure class=\"potion-block potion-editable\">") == std::string::npos,
+            "unsupported block types are not editable");
 
     const std::string figure = renderer.render(
       "Impulse response $`h[n]`$\n"
@@ -110,11 +167,11 @@ int main() {
     require(figure.find("<img data-src=\"http://127.0.0.1:8766/api/images/") != std::string::npos, "lazy image source");
     require(figure.find("<figcaption>Impulse response <span class=\"math\"><span class=\"katex\">") != std::string::npos,
             "caption math is rendered natively");
-    require(figure.find("<p class=\"potion-block\">Impulse response") == std::string::npos && figure.find("<p><figure>") == std::string::npos, "deduplicated standalone figure");
+    require(figure.find("potion-editable-content\">Impulse response") == std::string::npos && figure.find("<p><figure>") == std::string::npos, "deduplicated standalone figure");
     const std::string figure_first = renderer.render(
       "![Impulse response $`h[n]`$](https://example.com/impulse.png)\n"
       "Impulse response $`h[n]`$\n");
-    require(figure_first.find("<p class=\"potion-block\">Impulse response") == std::string::npos, "deduplicated caption after figure");
+    require(figure_first.find("potion-editable-content\">Impulse response") == std::string::npos, "deduplicated caption after figure");
 
     const std::string native_math = renderer.render(
       "Inline $x_i^2$ and $\\frac{1}{2}$.\n"
@@ -131,7 +188,7 @@ int main() {
       "# Toggle {toggle=\"true\"}\n"
       "\tCaption\n"
       "![Caption](https://example.com/image.png)\n");
-    require(caption_boundary.find("<p class=\"potion-block\">Caption</p></div></div><figure class=\"potion-block\">") != std::string::npos,
+    require(caption_boundary.find("<p class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">Caption</span></p></div></div><figure class=\"potion-block\">") != std::string::npos,
             "caption deduplication preserves toggle closure");
 
     const std::string notion_blocks = renderer.render(
@@ -153,15 +210,15 @@ int main() {
       "\t\t1. Delay the input\n\t\t2. Delay the output\n\t\t3. Compare\n"
       "\t\t<table>\n<tr>\n<td>Symbol</td>\n<td>Meaning</td>\n</tr>\n\t\t</table>\n"
       "# Second section {toggle=\"true\"}\n\tSecond content\n");
-    require(nested_blocks.find("<ul><li class=\"potion-block\">Ping</li><li class=\"potion-block\">Predict</li><li class=\"potion-block\">Profile</li></ul>") != std::string::npos, "toggle-relative bullet list");
-    require(nested_blocks.find("<ol><li class=\"potion-block\">Delay the input</li><li class=\"potion-block\">Delay the output</li><li class=\"potion-block\">Compare</li></ol>") != std::string::npos, "toggle-relative numbered list");
+    require(nested_blocks.find("<ul><li class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">Ping</span></li><li class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">Predict</span></li><li class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">Profile</span></li></ul>") != std::string::npos, "toggle-relative bullet list");
+    require(nested_blocks.find("<ol><li class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">Delay the input</span></li><li class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">Delay the output</span></li><li class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">Compare</span></li></ol>") != std::string::npos, "toggle-relative numbered list");
     require(nested_blocks.find("<table class=\"potion-block\"><tr><td>Symbol</td><td>Meaning</td></tr></table></div></div></div></div><div class=\"toggle heading-toggle\"") != std::string::npos, "table does not break sibling toggles");
 
     const std::string sibling_table = renderer.render(
       "# Toggle {toggle=\"true\"}\n"
       "\tInside toggle\n"
       "<table>\n<tr>\n<td>Outside</td>\n</tr>\n</table>\n");
-    require(sibling_table.find("<p class=\"potion-block\">Inside toggle</p></div></div><table class=\"potion-block\">") != std::string::npos,
+    require(sibling_table.find("<p class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">Inside toggle</span></p></div></div><table class=\"potion-block\">") != std::string::npos,
             "sibling table remains outside toggle");
 
     potion::ImageRegistry edge_images;
@@ -180,7 +237,7 @@ int main() {
     const std::string http_image = http_renderer.render(
       "![HTTP-only image](http://example.com/image.png)\n");
     require(http_image.find("data-src=") == std::string::npos &&
-            http_image.find("<p class=\"potion-block\">HTTP-only image</p>") != std::string::npos,
+            http_image.find("<p class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">HTTP-only image</span></p>") != std::string::npos,
             "HTTP image does not register a guaranteed-broken image");
     require(!http_images.resolve("1", image_url), "HTTP image registry remains empty");
 
@@ -220,7 +277,7 @@ int main() {
     require(attributes.find("<h1 class=\"potion-block\">Why toggle=&quot;true&quot; matters</h1>") != std::string::npos &&
             attributes.find("toggle-heading-1\">Actual toggle") != std::string::npos,
             "only trailing Notion attributes create toggles");
-    require(attributes.find("<p class=\"potion-block notion-color notion-color-orange\">Visible text</p>") != std::string::npos,
+    require(attributes.find("<p class=\"potion-block potion-editable notion-color notion-color-orange\"><span class=\"potion-editable-content\">Visible text</span></p>") != std::string::npos,
             "recognized trailing attributes are removed");
 
     const std::string escaped_markdown = renderer.render(
@@ -232,15 +289,15 @@ int main() {
             "escaped emphasis delimiter does not close emphasis");
 
     const std::string numbered_list = renderer.render("5. Fifth item\n6. Sixth item\n\n10000. Large item\n");
-    require(numbered_list.find("<ol start=\"5\"><li class=\"potion-block\">Fifth item</li><li class=\"potion-block\">Sixth item</li>") != std::string::npos &&
-            numbered_list.find("<ol start=\"10000\"><li class=\"potion-block\">Large item</li>") != std::string::npos,
+    require(numbered_list.find("<ol start=\"5\"><li class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">Fifth item</span></li><li class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">Sixth item</span></li>") != std::string::npos &&
+            numbered_list.find("<ol start=\"10000\"><li class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">Large item</span></li>") != std::string::npos,
             "ordered list starts and long indices are preserved");
 
     const std::string reverse_caption_depth = renderer.render(
       "# Toggle {toggle=\"true\"}\n"
       "\t![Caption](https://example.com/a.png)\n"
       "Caption\n");
-    require(reverse_caption_depth.find("</div></div><p class=\"potion-block\">Caption</p>") != std::string::npos,
+    require(reverse_caption_depth.find("</div></div><p class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">Caption</span></p>") != std::string::npos,
             "caption outside image depth is retained");
 
     potion::ImageRegistry registry_lifetime;
@@ -253,7 +310,7 @@ int main() {
     const std::string rtl = renderer.render(
       "سلام عرض میکنم خدمت شما!\n"
       "Left-to-right paragraph.\n");
-    require(rtl.find("<p class=\"potion-block\" dir=\"rtl\">سلام عرض میکنم خدمت شما!</p>") != std::string::npos,
+    require(rtl.find("<p class=\"potion-block potion-editable\" dir=\"rtl\"><span class=\"potion-editable-content\">سلام عرض میکنم خدمت شما!</span></p>") != std::string::npos,
             "right-to-left paragraph direction");
     require(rtl.find("dir=\"rtl\">Left-to-right") == std::string::npos,
             "left-to-right paragraph direction unchanged");
@@ -266,8 +323,8 @@ int main() {
     require(highlighted.find("Unsupported Notion content") == std::string::npos, "highlight supported");
     const std::string inline_only = renderer.render(
       "Plain <span color=\"orange\">orange words</span> remain plain\n");
-    require(inline_only.find("<p class=\"potion-block\">Plain <span class=\"notion-color notion-color-orange\">") != std::string::npos, "inline color scope");
-    require(inline_only.find("<p class=\"potion-block notion-color") == std::string::npos, "inline color did not leak to block");
+    require(inline_only.find("<p class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">Plain <span class=\"notion-color notion-color-orange\">") != std::string::npos, "inline color scope");
+    require(inline_only.find("<p class=\"potion-block potion-editable notion-color") == std::string::npos, "inline color did not leak to block");
 
     char directory[] = "/tmp/potion-test.XXXXXX";
     require(::mkdtemp(directory) != nullptr, "mkdtemp");

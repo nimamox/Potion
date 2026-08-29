@@ -433,6 +433,50 @@ h2 {
   text-align: right;
   unicode-bidi: embed;
 }
+.potion-editable-content,
+.potion-editable-content * {
+  -webkit-user-select: text;
+  user-select: text;
+  -webkit-touch-callout: default;
+}
+.selection-menu {
+  position: fixed;
+  z-index: 500;
+  display: table;
+  width: 430px;
+  height: 62px;
+  overflow: hidden;
+  border: 3px solid #111;
+  background: #fff;
+  table-layout: fixed;
+}
+.selection-menu button {
+  display: table-cell;
+  height: 56px;
+  margin: 0;
+  padding: 0 12px;
+  border: 0;
+  border-right: 2px solid #111;
+  background: #fff;
+  vertical-align: middle;
+  font: 21px/1 "Amazon Ember", Arial, sans-serif;
+}
+.selection-menu button:last-child {
+  border-right: 0;
+}
+.selection-menu .selection-highlight {
+  width: 54%;
+  background: #ccc;
+  font-weight: bold;
+}
+.selection-menu .selection-bold {
+  width: 23%;
+  font-weight: bold;
+}
+.selection-menu .selection-underline {
+  width: 23%;
+  text-decoration: underline;
+}
 .empty-block {
   min-height: 22px;
 }
@@ -912,6 +956,15 @@ h2 {
   background: #000;
   color: #eee;
   border-color: #eee;
+}
+.night-mode .selection-menu,
+.night-mode .selection-menu button {
+  border-color: #eee;
+  background: #000;
+  color: #eee;
+}
+.night-mode .selection-menu .selection-highlight {
+  background: #555;
 }
 /* Do not let KaTeX fraction rules collapse onto fractional device pixels. */
 .katex .mfrac .frac-line {
