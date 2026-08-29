@@ -159,6 +159,23 @@ int main() {
             formatted.items()[0].get("text").get("link").get("url").string() == "https://example.com",
             "clear formatting preserves links and code while removing visual annotations");
 
+    const auto relative_link_rich_text = potion::Json::parse(R"([
+      {"type":"text","text":{"content":"Morbi","link":{"url":"/p/5908cc548ef342b6b84e254fa1785a21?pvs=25"}},
+       "plain_text":"Morbi","href":"/p/5908cc548ef342b6b84e254fa1785a21?pvs=25",
+       "annotations":{"bold":false,"italic":false,"strikethrough":false,"underline":false,"code":false,"color":"default"}},
+      {"type":"text","text":{"content":" aliquam","link":null},"plain_text":" aliquam",
+       "annotations":{"bold":false,"italic":false,"strikethrough":false,"underline":false,"code":false,"color":"default"}}
+    ])");
+    format_error.clear();
+    require(potion::NotionClient::build_formatted_rich_text(
+                relative_link_rich_text, "Morbi aliquam", 6, 13, "aliquam",
+                "bold", formatted, format_error) &&
+            formatted.items()[0].get("text").get("link").get("url").string() ==
+                "https://www.notion.so/p/5908cc548ef342b6b84e254fa1785a21?pvs=25" &&
+            formatted.items().size() == 3 &&
+            formatted.items()[2].get("annotations").get("bold").boolean(),
+            "formatting adjacent text preserves and normalizes a relative Notion link");
+
     const auto emoji_rich_text = potion::Json::parse(R"([
       {"type":"text","text":{"content":"A😀B","link":null},
        "plain_text":"A😀B",
@@ -367,6 +384,11 @@ int main() {
     require(query_page.find("data-page-id=\"5908cc548ef342b6b84e254fa1785a21\"") != std::string::npos,
             "page ID survives query or fragment");
     require(query_page.find("Fragment page") != std::string::npos, "fragment page rendered");
+    const std::string inline_notion_page = renderer.render(
+      "Read [Morbi](/p/5908cc548ef342b6b84e254fa1785a21?pvs=25) now.\n");
+    require(inline_notion_page.find(
+                "<a class=\"notion-page-link\" href=\"https://www.notion.so/p/5908cc548ef342b6b84e254fa1785a21?pvs=25\" data-page-id=\"5908cc548ef342b6b84e254fa1785a21\">Morbi</a>") != std::string::npos,
+            "relative inline Notion page link remains visible and opens inside Potion");
     const std::string self_closing_page = renderer.render(
       "<mention-page url=\"https://www.notion.so/5908cc548ef342b6b84e254fa1785a21?pvs=4\"/>\n");
     require(self_closing_page.find("data-page-id=\"5908cc548ef342b6b84e254fa1785a21\"") != std::string::npos &&

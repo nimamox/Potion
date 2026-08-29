@@ -1797,17 +1797,23 @@
     function preparePageLinks() {
         var links =
                 id("page-content").getElementsByClassName("child-page"),
-            i;
+            inlineLinks =
+                id("page-content").getElementsByClassName("notion-page-link"),
+            i,
+            openLinkedPage = function() {
+                openPage(
+                    this.getAttribute("data-page-id"),
+                    "child"
+                );
+                return false;
+            };
 
         for (i = 0; i < links.length; ++i)
             if (links[i].getAttribute("data-page-id"))
-                links[i].onclick = function() {
-                    openPage(
-                        this.getAttribute("data-page-id"),
-                        "child"
-                    );
-                    return false;
-                };
+                links[i].onclick = openLinkedPage;
+        for (i = 0; i < inlineLinks.length; ++i)
+            if (inlineLinks[i].getAttribute("data-page-id"))
+                inlineLinks[i].onclick = openLinkedPage;
     }
 
     function showPages(positionSaved) {

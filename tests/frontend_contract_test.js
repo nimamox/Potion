@@ -80,6 +80,7 @@ assert.match(frontend, /\/api\/pages\/" \+ encodeURIComponent\(currentPageId\) \
 assert.match(frontend, /function applySelectionLocally\(state, format, enabled\)/);
 assert.match(frontend, /function selectionFormatState\(content, start, end\)/);
 assert.match(frontend, /function logicalNodeText\(node\)/);
+assert.match(frontend, /getElementsByClassName\("notion-page-link"\)/);
 assert.match(frontend, /node\.tagName\.toLowerCase\(\) === "br"[\s\S]*return "\\n"/);
 assert.match(frontend, /getAttribute\("data-potion-atomic"\)[\s\S]*return "\\ufffc"/);
 assert.match(frontend, /logicalNodeText\(before\.cloneContents\(\)\)\.length/);

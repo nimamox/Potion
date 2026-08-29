@@ -142,6 +142,20 @@ std::string notion_page_id(const std::string &url) {
   std::reverse(id.begin(), id.end());
   return id;
 }
+bool notion_page_url(const std::string &url) {
+  if (notion_page_id(url).empty()) return false;
+  if (!url.empty() && url.front() == '/') return true;
+  std::string lower = url;
+  std::transform(lower.begin(), lower.end(), lower.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return starts(lower, "https://www.notion.so/") ||
+         starts(lower, "https://notion.so/") ||
+         starts(lower, "https://app.notion.com/");
+}
+std::string absolute_notion_url(const std::string &url) {
+  return !url.empty() && url.front() == '/' ?
+      "https://www.notion.so" + url : url;
+}
 std::vector<std::string> table_cells(std::string line) {
   line = trim(line);
   if (!line.empty() && line.front() == '|') line.erase(line.begin());
@@ -193,7 +207,7 @@ std::string MarkdownRenderer::inline_html(const std::string &text) const {
         i = end + 1; continue;
       }
     }
-    if (text[i] == '[') { auto mid = text.find("](", i + 1), end = mid == std::string::npos ? mid : markdown_url_end(text, mid + 2); if (mid != std::string::npos && end != std::string::npos) { std::string safe = sanitize_url(text.substr(mid + 2, end - mid - 2)); std::string label = inline_html(text.substr(i + 1, mid - i - 1)); out += safe.empty() ? label : "<a href=\"" + safe + "\">" + label + "</a>"; i = end + 1; continue; } }
+    if (text[i] == '[') { auto mid = text.find("](", i + 1), end = mid == std::string::npos ? mid : markdown_url_end(text, mid + 2); if (mid != std::string::npos && end != std::string::npos) { std::string url = text.substr(mid + 2, end - mid - 2), safe = sanitize_url(url), label = inline_html(text.substr(i + 1, mid - i - 1)), page_id = notion_page_id(url); if (notion_page_url(url)) out += "<a class=\"notion-page-link\" href=\"" + html_escape(absolute_notion_url(url)) + "\" data-page-id=\"" + page_id + "\">" + label + "</a>"; else out += safe.empty() ? label : "<a href=\"" + safe + "\">" + label + "</a>"; i = end + 1; continue; } }
     struct Marker { const char *open; const char *close; const char *a; const char *b; };
     static const Marker markers[] = {{"**", "**", "<strong>", "</strong>"}, {"~~", "~~", "<del>", "</del>"}, {"`", "`", "<code>", "</code>"}, {"*", "*", "<em>", "</em>"}, {"$", "$", "", ""}};
     bool matched = false;

@@ -63,6 +63,14 @@ Json writable_text(const Json &source, const std::string &content,
   Json item = Json::object(), text = source.get("text"), annotations = source.get("annotations");
   item["type"] = Json(std::string("text"));
   text["content"] = Json(content);
+  Json link = text.get("link");
+  if (!link.is_null()) {
+    const std::string url = link.get("url").string();
+    if (!url.empty() && url.front() == '/') {
+      link["url"] = Json(std::string("https://www.notion.so") + url);
+      text["link"] = link;
+    }
+  }
   item["text"] = text;
   if (selected && format == "clear") {
     annotations["bold"] = Json(false);
