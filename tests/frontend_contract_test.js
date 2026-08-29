@@ -75,10 +75,16 @@ assert.match(appCss, /\.busy-iris\s*{[\s\S]*position:\s*fixed;[\s\S]*width:\s*50
 // exact UTF-16 offsets, block PATCH through potiond, and no page reload.
 assert.match(index, /id="selection-menu"[\s\S]*data-format="highlight"[\s\S]*data-format="bold"[\s\S]*data-format="underline"[\s\S]*data-format="clear"/);
 assert.match(frontend, /startContent !== endContent/);
-assert.match(frontend, /before\.toString\(\)\.length/);
+assert.match(frontend, /logicalNodeText\(before\.cloneContents\(\)\)\.length/);
 assert.match(frontend, /\/api\/pages\/" \+ encodeURIComponent\(currentPageId\) \+ "\/format/);
 assert.match(frontend, /function applySelectionLocally\(state, format, enabled\)/);
 assert.match(frontend, /function selectionFormatState\(content, start, end\)/);
+assert.match(frontend, /function logicalNodeText\(node\)/);
+assert.match(frontend, /node\.tagName\.toLowerCase\(\) === "br"[\s\S]*return "\\n"/);
+assert.match(frontend, /getAttribute\("data-potion-atomic"\)[\s\S]*return "\\ufffc"/);
+assert.match(frontend, /logicalNodeText\(before\.cloneContents\(\)\)\.length/);
+assert.match(frontend, /blockText = logicalNodeText\(startContent\)/);
+assert.doesNotMatch(frontend, /blockText:\s*startContent\.textContent/);
 assert.match(frontend, /result && result\.enabled/);
 assert.match(frontend, /format === "clear"[\s\S]*tag === "strong"[\s\S]*classes\.indexOf\(" notion-color "\)/);
 assert.doesNotMatch(frontend, /localStorage|sessionStorage/);

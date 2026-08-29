@@ -30,6 +30,7 @@ public:
       std::uint32_t start_utf16, std::uint32_t end_utf16,
       const std::string &selected_text, const std::string &format,
       Json &formatted, std::string &error, bool *enabled = nullptr);
+  static bool block_counts_as_editable(const Json &block);
   bool retrieve_image(const std::string &url, BinaryResponse &image,
                       std::string &error) const;
 private:

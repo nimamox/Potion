@@ -70,6 +70,16 @@ int main() {
     require(parsed.get("ok").boolean(), "JSON bool");
     require(parsed.get("items").items().size() == 2, "JSON array");
 
+    const auto empty_paragraph = potion::Json::parse(R"({
+      "type":"paragraph","paragraph":{"rich_text":[]}})");
+    const auto text_paragraph = potion::Json::parse(R"({
+      "type":"paragraph","paragraph":{"rich_text":[
+        {"type":"text","plain_text":"after empty","text":{"content":"after empty"}}
+      ]}})");
+    require(!potion::NotionClient::block_counts_as_editable(empty_paragraph) &&
+            potion::NotionClient::block_counts_as_editable(text_paragraph),
+            "empty Notion paragraphs do not consume an editable index");
+
     const auto repeated_rich_text = potion::Json::parse(R"([
       {"type":"text","text":{"content":"very important / very important","link":null},
        "plain_text":"very important / very important",
@@ -167,15 +177,62 @@ int main() {
                 formatted, format_error),
             "selection cannot split a UTF-16 surrogate pair");
 
-    const auto mention_rich_text = potion::Json::parse(R"([
-      {"type":"mention","mention":{"type":"page","page":{"id":"5908cc54-8ef3-42b6-b84e-254fa1785a21"}},
-       "plain_text":"Mention","annotations":{"bold":false}}
+    const auto multiline_rich_text = potion::Json::parse(R"([
+      {"type":"text","text":{"content":"Line one\nLine two","link":null},
+       "plain_text":"Line one\nLine two",
+       "annotations":{"bold":false,"italic":false,"strikethrough":false,"underline":false,"code":false,"color":"default"}}
     ])");
     format_error.clear();
+    require(potion::NotionClient::build_formatted_rich_text(
+                multiline_rich_text, "Line one\nLine two", 9, 17, "Line two",
+                "underline", formatted, format_error) &&
+            formatted.items().size() == 2 &&
+            formatted.items()[0].get("text").get("content").string() == "Line one\n" &&
+            formatted.items()[1].get("annotations").get("underline").boolean(),
+            "line-break-aware offsets format text after a Notion break");
+
+    const auto mention_rich_text = potion::Json::parse(R"([
+      {"type":"text","text":{"content":"Hello ","link":null},"plain_text":"Hello ",
+       "annotations":{"bold":false,"italic":false,"strikethrough":false,"underline":false,"code":false,"color":"default"}},
+      {"type":"mention","mention":{"type":"user","user":{"id":"user-id","name":"Nima","avatar_url":null,"type":"person","person":{"email":"nima@example.com"}}},
+       "plain_text":"Nima","annotations":{"bold":false,"italic":false,"strikethrough":false,"underline":false,"code":false,"color":"default"}},
+      {"type":"text","text":{"content":", important","link":null},"plain_text":", important",
+       "annotations":{"bold":false,"italic":false,"strikethrough":false,"underline":false,"code":false,"color":"default"}}
+    ])");
+    const std::string atom("\xef\xbf\xbc");
+    format_error.clear();
+    require(potion::NotionClient::build_formatted_rich_text(
+                mention_rich_text, "Hello " + atom + ", important", 9, 18, "important",
+                "bold", formatted, format_error) &&
+            formatted.items().size() == 4 &&
+            formatted.items()[1].get("type").string() == "mention" &&
+            formatted.items()[1].get("mention").get("user").get("id").string() == "user-id" &&
+            formatted.items()[1].get("mention").get("user").get("name").is_null() &&
+            formatted.items()[1].get("mention").get("user").get("person").is_null() &&
+            formatted.items()[3].get("annotations").get("bold").boolean(),
+            "a non-selected mention is preserved while adjacent text is formatted");
+    format_error.clear();
     require(!potion::NotionClient::build_formatted_rich_text(
-                mention_rich_text, "Mention", 0, 7, "Mention", "bold",
+                mention_rich_text, "Hello " + atom + ", important", 6, 7, atom, "bold",
                 formatted, format_error),
-            "non-text rich text is rejected safely");
+            "a selection overlapping a mention is rejected safely");
+
+    const auto equation_rich_text = potion::Json::parse(R"([
+      {"type":"text","text":{"content":"Before ","link":null},"plain_text":"Before ",
+       "annotations":{"bold":false,"italic":false,"strikethrough":false,"underline":false,"code":false,"color":"default"}},
+      {"type":"equation","equation":{"expression":"x^2"},"plain_text":"x^2",
+       "annotations":{"bold":false,"italic":false,"strikethrough":false,"underline":false,"code":false,"color":"default"}},
+      {"type":"text","text":{"content":" after","link":null},"plain_text":" after",
+       "annotations":{"bold":false,"italic":false,"strikethrough":false,"underline":false,"code":false,"color":"default"}}
+    ])");
+    format_error.clear();
+    require(potion::NotionClient::build_formatted_rich_text(
+                equation_rich_text, "Before " + atom + " after", 9, 14, "after", "underline",
+                formatted, format_error) &&
+            formatted.items()[1].get("type").string() == "equation" &&
+            formatted.items()[1].get("equation").get("expression").string() == "x^2" &&
+            formatted.items()[3].get("annotations").get("underline").boolean(),
+            "a non-selected equation is preserved while adjacent text is formatted");
 
     potion::ImageRegistry images;
     potion::MarkdownRenderer renderer(images);
@@ -228,7 +285,7 @@ int main() {
       "Impulse response $`h[n]`$\n"
       "![Impulse response $`h[n]`$](https://example.com/impulse.png)\n");
     require(figure.find("<img data-src=\"http://127.0.0.1:8766/api/images/") != std::string::npos, "lazy image source");
-    require(figure.find("<figcaption>Impulse response <span class=\"math\"><span class=\"katex\">") != std::string::npos,
+    require(figure.find("<figcaption>Impulse response <span class=\"math\" data-potion-atomic=\"1\"><span class=\"katex\">") != std::string::npos,
             "caption math is rendered natively");
     require(figure.find("potion-editable-content\">Impulse response") == std::string::npos && figure.find("<p><figure>") == std::string::npos, "deduplicated standalone figure");
     const std::string figure_first = renderer.render(

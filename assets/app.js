@@ -376,13 +376,33 @@
         return false;
     }
 
+    function logicalNodeText(node) {
+        var out = "", child;
+        if (node.nodeType === 3) return node.nodeValue;
+        if (node.nodeType !== 1 && node.nodeType !== 11) return out;
+        if (node.nodeType === 1) {
+            if (node.tagName.toLowerCase() === "br") return "\n";
+            if (node.getAttribute("data-potion-atomic") !== null) return "\ufffc";
+        }
+        child = node.firstChild;
+        while (child) {
+            out += logicalNodeText(child);
+            child = child.nextSibling;
+        }
+        return out;
+    }
+
     function selectionFormatState(content, start, end) {
         var at = 0, any = false,
             state = {highlight: true, bold: true, underline: true};
         function visit(node) {
-            var next, child;
-            if (node.nodeType === 3) {
-                next = at + node.nodeValue.length;
+            var next, child, leaf = null;
+            if (node.nodeType === 3) leaf = node.nodeValue;
+            else if (node.nodeType === 1 && node.tagName.toLowerCase() === "br") leaf = "\n";
+            else if (node.nodeType === 1 && node.getAttribute("data-potion-atomic") !== null)
+                leaf = "\ufffc";
+            if (leaf !== null) {
+                next = at + leaf.length;
                 if (at < end && next > start) {
                     any = true;
                     if (!nodeHasSelectionFormat(node, content, "highlight")) state.highlight = false;
@@ -417,7 +437,7 @@
 
     function inspectSelection(source) {
         var selection, range, startContent, endContent, block, before, through,
-            index, text, rect = null;
+            index, text, blockText, start, end, rect = null;
         selectionTimer = null;
         if (source === "NATIVE" && selectionHoldTimer !== null) return;
         if (selectionMenuActive || busy || !currentPageId ||
@@ -437,17 +457,20 @@
         }
         block = selectionAncestor(startContent, "potion-editable");
         index = editableIndex(block);
-        text = range.toString();
-        if (!block || index < 0 || !text || text.length > 4000) {
-            clearSelectionMenu(false);
-            return;
-        }
         before = document.createRange();
         before.selectNodeContents(startContent);
         before.setEnd(range.startContainer, range.startOffset);
         through = document.createRange();
         through.selectNodeContents(startContent);
         through.setEnd(range.endContainer, range.endOffset);
+        blockText = logicalNodeText(startContent);
+        start = logicalNodeText(before.cloneContents()).length;
+        end = logicalNodeText(through.cloneContents()).length;
+        text = blockText.substring(start, end);
+        if (!block || index < 0 || !text || text.length > 4000) {
+            clearSelectionMenu(false);
+            return;
+        }
         if (range.getBoundingClientRect) {
             try { rect = range.getBoundingClientRect(); } catch (ignored) {}
         }
@@ -455,10 +478,10 @@
             range: range.cloneRange(),
             content: startContent,
             editableIndex: index,
-            blockText: startContent.textContent,
+            blockText: blockText,
             selectedText: text,
-            start: before.toString().length,
-            end: through.toString().length
+            start: start,
+            end: end
         };
         selectionState.formats = selectionFormatState(
             startContent, selectionState.start, selectionState.end);

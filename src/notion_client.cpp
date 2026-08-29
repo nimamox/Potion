@@ -80,6 +80,46 @@ Json writable_text(const Json &source, const std::string &content,
   item["annotations"] = annotations;
   return item;
 }
+Json writable_non_text(const Json &source) {
+  const std::string type = source.get("type").string();
+  Json item = Json::object();
+  item["type"] = Json(type);
+  if (type == "equation") {
+    Json equation = Json::object();
+    equation["expression"] = source.get("equation").get("expression");
+    item["equation"] = equation;
+  } else if (type == "mention") {
+    const Json &source_mention = source.get("mention");
+    const std::string mention_type = source_mention.get("type").string();
+    Json mention = Json::object();
+    mention["type"] = Json(mention_type);
+    if (mention_type == "user" || mention_type == "page" ||
+        mention_type == "database" || mention_type == "data_source" ||
+        mention_type == "agent" || mention_type == "custom_emoji") {
+      Json reference = Json::object();
+      reference["id"] = source_mention.get(mention_type).get("id");
+      mention[mention_type] = reference;
+    } else {
+      mention[mention_type] = source_mention.get(mention_type);
+    }
+    item["mention"] = mention;
+  } else {
+    item[type] = source.get(type);
+  }
+  item["annotations"] = source.get("annotations");
+  return item;
+}
+const std::string &atomic_rich_text_marker() {
+  static const std::string marker("\xef\xbf\xbc");
+  return marker;
+}
+std::string logical_rich_text(const Json &source) {
+  std::string text;
+  for (const auto &part : source.items())
+    text += part.get("type").string() == "text" ?
+        part.get("plain_text").string() : atomic_rich_text_marker();
+  return text;
+}
 }
 
 NotionClient::NotionClient(std::string api_version, std::string ca_bundle)
@@ -151,8 +191,7 @@ bool NotionClient::build_formatted_rich_text(
       format != "underline" && format != "clear") {
     error = "Unsupported text format"; return false;
   }
-  std::string plain_text;
-  for (const auto &part : source.items()) plain_text += part.get("plain_text").string();
+  const std::string plain_text = logical_rich_text(source);
   if (plain_text != expected_text) { error = "The page changed; reopen it before formatting text"; return false; }
   if (start_utf16 >= end_utf16 || end_utf16 > utf16_length(plain_text)) { error = "Invalid text selection"; return false; }
   std::size_t selection_start = 0, selection_end = 0;
@@ -164,12 +203,14 @@ bool NotionClient::build_formatted_rich_text(
   bool all_enabled = format != "clear", has_overlap = false;
   std::size_t state_at = 0;
   for (const auto &part : source.items()) {
-    if (part.get("type").string() != "text") {
-      error = "Selections containing mentions or equations cannot be formatted"; return false;
-    }
-    const std::size_t part_end = state_at + utf16_length(part.get("text").get("content").string());
+    const std::size_t part_end = state_at +
+        (part.get("type").string() == "text" ?
+             utf16_length(part.get("plain_text").string()) : 1);
     if (std::max<std::size_t>(state_at, start_utf16) <
         std::min<std::size_t>(part_end, end_utf16)) {
+      if (part.get("type").string() != "text") {
+        error = "Selections containing mentions or equations cannot be formatted"; return false;
+      }
       has_overlap = true;
       const Json &annotations = part.get("annotations");
       if ((format == "bold" && !annotations.get("bold").boolean()) ||
@@ -185,12 +226,26 @@ bool NotionClient::build_formatted_rich_text(
   formatted = Json::array();
   std::size_t at = 0;
   for (const auto &part : source.items()) {
-    const std::string content = part.get("text").get("content").string();
-    const std::size_t length = utf16_length(content), part_end = at + length;
+    const std::string type = part.get("type").string();
+    const std::string plain = part.get("plain_text").string();
+    const std::size_t length = type == "text" ? utf16_length(plain) : 1;
+    const std::size_t part_end = at + length;
     const std::size_t overlap_start = std::max<std::size_t>(at, start_utf16);
     const std::size_t overlap_end = std::min<std::size_t>(part_end, end_utf16);
-    if (overlap_start >= overlap_end) formatted.items().push_back(writable_text(part, content, format, false, false));
+    if (overlap_start >= overlap_end) {
+      if (type == "text")
+        formatted.items().push_back(writable_text(part, part.get("text").get("content").string(), format, false, false));
+      else
+        formatted.items().push_back(writable_non_text(part));
+    }
     else {
+      if (type != "text") {
+        error = "Selections containing mentions or equations cannot be formatted"; return false;
+      }
+      const std::string content = part.get("text").get("content").string();
+      if (content != plain) {
+        error = "This text cannot be mapped safely; reopen the page and try again"; return false;
+      }
       std::size_t before_byte = 0, after_byte = 0;
       if (!utf16_byte(content, overlap_start - at, before_byte) ||
           !utf16_byte(content, overlap_end - at, after_byte)) {
@@ -204,6 +259,15 @@ bool NotionClient::build_formatted_rich_text(
   }
   if (formatted.items().size() > 100) { error = "Formatting would create too many rich-text segments"; return false; }
   return true;
+}
+bool NotionClient::block_counts_as_editable(const Json &block) {
+  const std::string type = block.get("type").string();
+  if (type != "paragraph" && type != "bulleted_list_item" &&
+      type != "numbered_list_item") return false;
+  if (type != "paragraph") return true;
+  for (const auto &part : block.get(type).get("rich_text").items())
+    if (!part.get("plain_text").string().empty()) return true;
+  return false;
 }
 bool NotionClient::format_block_text(const std::string &token,
     const std::string &page_id, std::size_t editable_index,
@@ -226,8 +290,7 @@ bool NotionClient::format_block_text(const std::string &token,
         const Json root = Json::parse(response.body);
         for (const auto &block : root.get("results").items()) {
           const std::string type = block.get("type").string();
-          if (type == "paragraph" || type == "bulleted_list_item" ||
-              type == "numbered_list_item") {
+          if (block_counts_as_editable(block)) {
             EditableBlock editable{block.get("id").string(), type, {}, block.get(type).get("rich_text")};
             for (const auto &part : editable.rich_text.items()) editable.plain_text += part.get("plain_text").string();
             if (seen == editable_index) { target = std::move(editable); found = true; return true; }
