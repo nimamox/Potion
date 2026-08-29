@@ -696,6 +696,23 @@ int main() {
       request(port, "/api/simulator/input", &forward);
       require(waiting.get() == "forward", "long-poll wake");
 
+      std::vector<std::future<std::string>> stale_tabs;
+      for (int i = 0; i < 4; ++i)
+        stale_tabs.push_back(std::async(std::launch::async, [port] {
+          return potion::Json::parse(request(port, "/api/input")).get("action").string();
+        }));
+      std::this_thread::sleep_for(std::chrono::milliseconds(30));
+      const auto stale_status_start = std::chrono::steady_clock::now();
+      require(potion::Json::parse(request(port, "/api/status")).get("type").string() ==
+                  "status",
+              "stale simulator input polls starved API traffic");
+      require(std::chrono::steady_clock::now() - stale_status_start <
+                  std::chrono::milliseconds(80),
+              "a worker is reserved from simulator long polls");
+      for (auto &poll : stale_tabs)
+        require(poll.wait_for(std::chrono::seconds(1)) == std::future_status::ready,
+                "stale simulator poll did not finish");
+
       const std::string backward = "action=backward";
       request(port, "/api/simulator/input", &forward);
       request(port, "/api/simulator/input", &backward);

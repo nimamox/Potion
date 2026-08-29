@@ -298,13 +298,21 @@ const finishContext = {
   selectionHoldTimer: 1,
   selectionHoldActive: false,
   selectionDragActive: false,
+  selectionDragInspectTimer: 17,
   selectionSuppressClick: true,
   clearSelectionHoldTimer: function() { finishContext.selectionHoldTimer = null; },
+  clearDragSelectionInspection: function() {
+    finishCalls.push("clear-drag");
+    finishContext.selectionDragInspectTimer = null;
+  },
   beginCustomSelection: function() {
     finishCalls.push("begin");
     finishContext.selectionHoldActive = true;
   },
-  moveCustomSelection: function(event) { finishCalls.push("move:" + event.marker); },
+  moveCustomSelection: function(event) {
+    finishCalls.push("move:" + event.marker);
+    finishContext.selectionDragInspectTimer = 18;
+  },
   inspectSelection: function(source) { finishCalls.push("inspect:" + source); },
   window: { setTimeout: function() {} },
   Date: Date
@@ -312,8 +320,11 @@ const finishContext = {
 vm.createContext(finishContext);
 vm.runInContext(finishMatch[1], finishContext);
 finishContext.finishSelectionHold({ marker: "release" });
-assert.deepEqual(finishCalls, ["begin", "move:release", "inspect:SELECT"],
+assert.deepEqual(finishCalls,
+  ["clear-drag", "begin", "move:release", "clear-drag", "inspect:SELECT"],
   "a delayed hold timer must extend to the release point instead of collapsing to one word");
+assert.equal(finishContext.selectionDragInspectTimer, null,
+  "release cancels both the old timer and any inspection scheduled by the final move");
 assert.match(frontend, /document\.onmousemove = moveCustomSelection;/);
 assert.match(frontend, /document\.ontouchmove = moveCustomSelection;/);
 assert.match(frontend,
@@ -329,6 +340,90 @@ assert.match(frontend, /selectionDragActive/);
 assert.match(frontend, /point\.x < rect\.left/);
 assert.doesNotMatch(frontend, /selectionDebug|\/api\/debug\/selection/);
 assert.doesNotMatch(index, /selection-debug/);
+
+// Updating the native Range stays synchronous for every drag event, while
+// expensive logical-offset/format/menu inspection is limited to one timer.
+const dragThrottleMatch = frontend.match(
+  /\/\* DRAG_SELECTION_THROTTLE_BEGIN \*\/([\s\S]*?)\/\* DRAG_SELECTION_THROTTLE_END \*\//);
+assert.ok(dragThrottleMatch, "missing drag-selection throttle test boundary");
+const dragThrottleCalls = [];
+const dragThrottleTimers = [];
+const dragThrottleContext = {
+  selectionDragInspectTimer: null,
+  selectionHoldActive: true,
+  SELECTION_DRAG_INSPECT_MS: 80,
+  inspectSelection: function(source) { dragThrottleCalls.push("inspect:" + source); },
+  window: {
+    setTimeout: function(callback, delay) {
+      dragThrottleCalls.push("timer:" + delay);
+      dragThrottleTimers.push({callback: callback, cancelled: false});
+      return dragThrottleTimers.length;
+    },
+    clearTimeout: function(timer) {
+      dragThrottleCalls.push("clear:" + timer);
+      dragThrottleTimers[timer - 1].cancelled = true;
+    }
+  }
+};
+vm.createContext(dragThrottleContext);
+vm.runInContext(dragThrottleMatch[1], dragThrottleContext);
+dragThrottleContext.scheduleDragSelectionInspection();
+dragThrottleContext.scheduleDragSelectionInspection();
+assert.deepEqual(dragThrottleCalls, ["timer:80"],
+  "rapid moves create at most one inspection timer");
+dragThrottleTimers[0].callback();
+assert.deepEqual(dragThrottleCalls, ["timer:80", "inspect:DRAG"],
+  "the timer inspects an active drag");
+dragThrottleContext.scheduleDragSelectionInspection();
+dragThrottleContext.clearDragSelectionInspection();
+assert.equal(dragThrottleContext.selectionDragInspectTimer, null,
+  "clearing selection cancels the pending drag inspection");
+assert.equal(dragThrottleTimers[1].cancelled, true);
+dragThrottleContext.selectionHoldActive = false;
+dragThrottleContext.scheduleDragSelectionInspection();
+dragThrottleTimers[2].callback();
+assert.equal(dragThrottleCalls.filter(function(call) { return call === "inspect:DRAG"; }).length, 1,
+  "an inactive delayed callback cannot overwrite final release state");
+assert.match(frontend,
+  /function clearSelectionMenu\(clearNative\)[\s\S]*clearDragSelectionInspection\(\)/,
+  "clearing selection cancels pending drag inspection");
+
+const moveMatch = frontend.match(
+  /(function moveCustomSelection\(event\) \{[\s\S]*?\n    \})\n\n    function finishSelectionHold/);
+assert.ok(moveMatch, "missing moveCustomSelection");
+const moveCalls = [];
+const anchorNode = {
+  compareDocumentPosition: function() { return 0; }
+};
+const endpointNode = {};
+const moveContext = {
+  selectionHoldActive: true,
+  selectionDragActive: true,
+  selectionHoldTimer: null,
+  selectionHoldX: 10,
+  selectionHoldY: 10,
+  selectionAnchor: {node: anchorNode, start: 1, end: 4},
+  eventPoint: function() { return {x: 50, y: 50}; },
+  caretAtPoint: function() { return {startContainer: endpointNode, startOffset: 8}; },
+  selectionAncestor: function() { return "same-content"; },
+  scheduleDragSelectionInspection: function() { moveCalls.push("schedule"); },
+  inspectSelection: function(source) { moveCalls.push("inspect:" + source); },
+  document: { createRange: function() { return {
+    setStart: function() {}, setEnd: function() {}
+  }; } },
+  window: { getSelection: function() { return {
+    removeAllRanges: function() { moveCalls.push("remove"); },
+    addRange: function() { moveCalls.push("add"); }
+  }; } },
+  Math: Math,
+  Date: Date
+};
+vm.createContext(moveContext);
+vm.runInContext(moveMatch[1], moveContext);
+moveContext.moveCustomSelection({preventDefault: function() { moveCalls.push("prevent"); }});
+assert.deepEqual(moveCalls, ["prevent", "remove", "add", "schedule"],
+  "every move updates the native Range immediately without synchronous inspection");
+assert.doesNotMatch(moveMatch[1], /inspectSelection\("DRAG"\)/);
 
 // Native triple-click ranges may include the paragraph boundary; Potion
 // normalizes that one-block selection. Double-click uses logical offsets so a

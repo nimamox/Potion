@@ -37,8 +37,10 @@
         selectionHoldY = 0,
         selectionHoldStartedAt = 0,
         selectionDragActive = false,
+        selectionDragInspectTimer = null,
         selectionAnchor = null,
         selectionSuppressClick = false;
+    var SELECTION_DRAG_INSPECT_MS = 80;
     var fontScales = [0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6],
         fontScale = 1,
         pageFont = "Bookerly",
@@ -385,6 +387,7 @@
         selectionState = null;
         selectionMenuActive = false;
         clearSelectionHoldTimer();
+        clearDragSelectionInspection();
         selectionHoldActive = false;
         selectionHoldStartedAt = 0;
         selectionDragActive = false;
@@ -682,6 +685,23 @@
         selectionTimer = window.setTimeout(function() { inspectSelection("NATIVE"); }, 140);
     }
 
+    /* DRAG_SELECTION_THROTTLE_BEGIN */
+    function clearDragSelectionInspection() {
+        if (selectionDragInspectTimer !== null) {
+            window.clearTimeout(selectionDragInspectTimer);
+            selectionDragInspectTimer = null;
+        }
+    }
+
+    function scheduleDragSelectionInspection() {
+        if (selectionDragInspectTimer !== null) return;
+        selectionDragInspectTimer = window.setTimeout(function() {
+            selectionDragInspectTimer = null;
+            if (selectionHoldActive) inspectSelection("DRAG");
+        }, SELECTION_DRAG_INSPECT_MS);
+    }
+    /* DRAG_SELECTION_THROTTLE_END */
+
     function eventPoint(event) {
         var touch = event && event.touches && event.touches.length ?
                 event.touches[0] :
@@ -780,6 +800,7 @@
                 return;
             } else return;
         }
+        if (event.preventDefault) event.preventDefault();
         if (!selectionDragActive) {
             if (Math.abs(point.x - selectionHoldX) <= 28 &&
                 Math.abs(point.y - selectionHoldY) <= 28) return;
@@ -803,8 +824,7 @@
         selection = window.getSelection();
         selection.removeAllRanges();
         selection.addRange(range);
-        inspectSelection("DRAG");
-        if (event.preventDefault) event.preventDefault();
+        scheduleDragSelectionInspection();
     }
 
     function finishSelectionHold(event) {
@@ -812,9 +832,11 @@
                 new Date().getTime() - selectionHoldStartedAt : 0,
             held = selectionHoldTimer !== null && elapsed >= 700;
         clearSelectionHoldTimer();
+        clearDragSelectionInspection();
         if (held) beginCustomSelection();
         if (selectionHoldActive) {
             moveCustomSelection(event);
+            clearDragSelectionInspection();
             selectionHoldActive = false;
             selectionDragActive = false;
             inspectSelection("SELECT");

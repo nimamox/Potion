@@ -391,10 +391,16 @@ void HttpServer::handle_client(int client) noexcept {
       std::string action;
       {
         std::unique_lock<std::mutex> lock(input_mutex_);
-        const auto generation = input_generation_;
-        input_condition_.wait_for(lock, options_.input_timeout, [this, generation] {
-          return stopping_.load() || input_generation_ != generation || !actions_.empty();
-        });
+        const std::size_t maximum_waiters =
+            std::max<std::size_t>(2, options_.worker_count) - 1;
+        if (actions_.empty() && input_waiters_ < maximum_waiters) {
+          const auto generation = input_generation_;
+          ++input_waiters_;
+          input_condition_.wait_for(lock, options_.input_timeout, [this, generation] {
+            return stopping_.load() || input_generation_ != generation || !actions_.empty();
+          });
+          --input_waiters_;
+        }
         if (!actions_.empty()) { action = std::move(actions_.front()); actions_.pop_front(); }
       }
       respond(client, 200, "OK", "application/json",
