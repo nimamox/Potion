@@ -92,6 +92,8 @@ assert.doesNotMatch(frontend, /localStorage|sessionStorage/);
 assert.doesNotMatch(frontend, /location\.reload/);
 assert.match(appCss, /\.selection-menu\s*{[\s\S]*position:\s*fixed;[\s\S]*z-index:\s*500;/);
 assert.match(appCss, /\.selection-menu button\.selection-active/);
+assert.match(appCss, /\.page-content a,[\s\S]*?\.page-content u[\s\S]*?padding-bottom:\s*5px;[\s\S]*?background-image:\s*url\("data:image\/png;base64,/);
+assert.match(appCss, /background-position:\s*left bottom;[\s\S]*?background-repeat:\s*repeat-x;/);
 assert.match(config, /<kindle:param name="tap" value="no"\/>/);
 assert.match(config, /<kindle:param name="multi_tap" value="no"\/>/);
 assert.match(config, /<kindle:param name="hold" value="no"\/>/);
