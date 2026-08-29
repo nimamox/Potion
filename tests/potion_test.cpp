@@ -86,6 +86,69 @@ int main() {
             formatted.items()[1].get("annotations").get("bold").boolean(),
             "only selected repeated occurrence is bold");
 
+    const auto mixed_rich_text = potion::Json::parse(R"([
+      {"type":"text","text":{"content":"mixed ","link":null},"plain_text":"mixed ",
+       "annotations":{"bold":true,"italic":false,"strikethrough":false,"underline":false,"code":false,"color":"default"}},
+      {"type":"text","text":{"content":"bold","link":null},"plain_text":"bold",
+       "annotations":{"bold":false,"italic":false,"strikethrough":false,"underline":false,"code":false,"color":"default"}}
+    ])");
+    bool format_enabled = false;
+    format_error.clear();
+    require(potion::NotionClient::build_formatted_rich_text(
+                mixed_rich_text, "mixed bold", 0, 10, "mixed bold", "bold",
+                formatted, format_error, &format_enabled) && format_enabled &&
+            formatted.items()[0].get("annotations").get("bold").boolean() &&
+            formatted.items()[1].get("annotations").get("bold").boolean(),
+            "mixed bold selection becomes wholly bold");
+    const auto all_bold = potion::Json::parse(R"([
+      {"type":"text","text":{"content":"mixed ","link":null},"plain_text":"mixed ",
+       "annotations":{"bold":true,"italic":false,"strikethrough":false,"underline":false,"code":false,"color":"default"}},
+      {"type":"text","text":{"content":"bold","link":null},"plain_text":"bold",
+       "annotations":{"bold":true,"italic":false,"strikethrough":false,"underline":false,"code":false,"color":"default"}}
+    ])");
+    format_error.clear();
+    require(potion::NotionClient::build_formatted_rich_text(
+                all_bold, "mixed bold", 0, 10, "mixed bold", "bold",
+                formatted, format_error, &format_enabled) && !format_enabled &&
+            !formatted.items()[0].get("annotations").get("bold").boolean() &&
+            !formatted.items()[1].get("annotations").get("bold").boolean(),
+            "wholly bold selection toggles bold off");
+
+    const auto decorated_rich_text = potion::Json::parse(R"([
+      {"type":"text","text":{"content":"decorated","link":null},"plain_text":"decorated",
+       "annotations":{"bold":false,"italic":false,"strikethrough":false,"underline":true,"code":false,"color":"yellow_background"}}
+    ])");
+    format_error.clear();
+    require(potion::NotionClient::build_formatted_rich_text(
+                decorated_rich_text, "decorated", 0, 9, "decorated", "underline",
+                formatted, format_error, &format_enabled) && !format_enabled &&
+            !formatted.items()[0].get("annotations").get("underline").boolean(),
+            "wholly underlined selection toggles underline off");
+    format_error.clear();
+    require(potion::NotionClient::build_formatted_rich_text(
+                decorated_rich_text, "decorated", 0, 9, "decorated", "highlight",
+                formatted, format_error, &format_enabled) && !format_enabled &&
+            formatted.items()[0].get("annotations").get("color").string() == "default",
+            "wholly highlighted selection toggles highlight off");
+
+    const auto linked_rich_text = potion::Json::parse(R"([
+      {"type":"text","text":{"content":"linked text","link":{"url":"https://example.com"}},
+       "plain_text":"linked text","href":"https://example.com",
+       "annotations":{"bold":true,"italic":true,"strikethrough":true,"underline":true,"code":true,"color":"orange_background"}}
+    ])");
+    format_error.clear();
+    require(potion::NotionClient::build_formatted_rich_text(
+                linked_rich_text, "linked text", 0, 11, "linked text", "clear",
+                formatted, format_error, &format_enabled) && !format_enabled &&
+            !formatted.items()[0].get("annotations").get("bold").boolean() &&
+            !formatted.items()[0].get("annotations").get("italic").boolean() &&
+            !formatted.items()[0].get("annotations").get("strikethrough").boolean() &&
+            !formatted.items()[0].get("annotations").get("underline").boolean() &&
+            formatted.items()[0].get("annotations").get("code").boolean() &&
+            formatted.items()[0].get("annotations").get("color").string() == "default" &&
+            formatted.items()[0].get("text").get("link").get("url").string() == "https://example.com",
+            "clear formatting preserves links and code while removing visual annotations");
+
     const auto emoji_rich_text = potion::Json::parse(R"([
       {"type":"text","text":{"content":"A😀B","link":null},
        "plain_text":"A😀B",

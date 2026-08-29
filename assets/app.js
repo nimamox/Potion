@@ -359,6 +359,62 @@
         menu.style.top = top + "px";
     }
 
+    function nodeHasSelectionFormat(node, content, format) {
+        var tag, classes;
+        node = node.parentNode;
+        while (node && node !== content) {
+            if (node.nodeType === 1) {
+                tag = node.tagName.toLowerCase();
+                classes = " " + node.className + " ";
+                if (format === "bold" && (tag === "strong" || tag === "b")) return true;
+                if (format === "underline" && tag === "u") return true;
+                if (format === "highlight" &&
+                    classes.indexOf(" notion-color-yellow-bg ") >= 0) return true;
+            }
+            node = node.parentNode;
+        }
+        return false;
+    }
+
+    function selectionFormatState(content, start, end) {
+        var at = 0, any = false,
+            state = {highlight: true, bold: true, underline: true};
+        function visit(node) {
+            var next, child;
+            if (node.nodeType === 3) {
+                next = at + node.nodeValue.length;
+                if (at < end && next > start) {
+                    any = true;
+                    if (!nodeHasSelectionFormat(node, content, "highlight")) state.highlight = false;
+                    if (!nodeHasSelectionFormat(node, content, "bold")) state.bold = false;
+                    if (!nodeHasSelectionFormat(node, content, "underline")) state.underline = false;
+                }
+                at = next;
+                return;
+            }
+            child = node.firstChild;
+            while (child) {
+                visit(child);
+                child = child.nextSibling;
+            }
+        }
+        visit(content);
+        if (!any) state.highlight = state.bold = state.underline = false;
+        return state;
+    }
+
+    function updateSelectionButtonStates(state) {
+        var buttons = id("selection-menu").getElementsByTagName("button"),
+            i, format, active;
+        for (i = 0; i < buttons.length; ++i) {
+            format = buttons[i].getAttribute("data-format");
+            active = format !== "clear" && !!state[format];
+            buttons[i].className = buttons[i].className.replace(/\s*selection-active/g, "") +
+                (active ? " selection-active" : "");
+            if (format !== "clear") buttons[i].setAttribute("aria-pressed", active ? "true" : "false");
+        }
+    }
+
     function inspectSelection(source) {
         var selection, range, startContent, endContent, block, before, through,
             index, text, rect = null;
@@ -404,6 +460,9 @@
             start: before.toString().length,
             end: through.toString().length
         };
+        selectionState.formats = selectionFormatState(
+            startContent, selectionState.start, selectionState.end);
+        updateSelectionButtonStates(selectionState.formats);
         positionSelectionMenu(rect);
         show(id("selection-menu"));
     }
@@ -559,15 +618,52 @@
         for (i = 0; i < buttons.length; ++i) buttons[i].disabled = !!value;
     }
 
-    function applySelectionLocally(state, format) {
+    function unwrapElement(element) {
+        var parent = element.parentNode;
+        while (element.firstChild) parent.insertBefore(element.firstChild, element);
+        parent.removeChild(element);
+    }
+
+    function cleanSelectionFragment(root, format) {
+        var elements = [], node;
+        function collect(parent) {
+            var child = parent.firstChild;
+            while (child) {
+                if (child.nodeType === 1) {
+                    collect(child);
+                    elements.push(child);
+                }
+                child = child.nextSibling;
+            }
+        }
+        collect(root);
+        while (elements.length) {
+            node = elements.shift();
+            if (!node.parentNode) continue;
+            var tag = node.tagName.toLowerCase(), classes = " " + node.className + " ", remove = false;
+            if (format === "bold") remove = tag === "strong" || tag === "b";
+            else if (format === "underline") remove = tag === "u";
+            else if (format === "highlight") remove = classes.indexOf(" notion-color ") >= 0;
+            else if (format === "clear")
+                remove = tag === "strong" || tag === "b" || tag === "em" || tag === "i" ||
+                    tag === "u" || tag === "s" || tag === "strike" || tag === "del" ||
+                    classes.indexOf(" notion-color ") >= 0;
+            if (remove) unwrapElement(node);
+        }
+    }
+
+    function applySelectionLocally(state, format, enabled) {
         var wrapper, fragment;
         if (!state || !state.range) return;
-        wrapper = document.createElement(format === "bold" ? "strong" : format === "underline" ? "u" : "span");
-        if (format === "highlight") wrapper.className = "notion-color notion-color-yellow-bg";
         try {
             fragment = state.range.extractContents();
-            wrapper.appendChild(fragment);
-            state.range.insertNode(wrapper);
+            cleanSelectionFragment(fragment, format);
+            if (format !== "clear" && enabled) {
+                wrapper = document.createElement(format === "bold" ? "strong" : format === "underline" ? "u" : "span");
+                if (format === "highlight") wrapper.className = "notion-color notion-color-yellow-bg";
+                wrapper.appendChild(fragment);
+                state.range.insertNode(wrapper);
+            } else state.range.insertNode(fragment);
             if (state.content.normalize) state.content.normalize();
         } catch (ignored) {}
     }
@@ -589,7 +685,7 @@
                 "&format=" + encodeURIComponent(format) +
                 "&blockText=" + encodeURIComponent(state.blockText) +
                 "&selectedText=" + encodeURIComponent(state.selectedText),
-            function(error) {
+            function(error, result) {
                 setBusy(false);
                 setSelectionButtonsDisabled(false);
                 id("status").innerHTML = "";
@@ -598,7 +694,7 @@
                     warning(error);
                     return;
                 }
-                applySelectionLocally(state, format);
+                applySelectionLocally(state, format, result && result.enabled);
                 clearSelectionMenu(true);
                 collectReadingBlocks();
                 applyNightPageAppearance();

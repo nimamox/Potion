@@ -73,14 +73,18 @@ assert.match(appCss, /\.busy-iris\s*{[\s\S]*position:\s*fixed;[\s\S]*width:\s*50
 
 // Selection formatting remains a small ES5 interaction: one block only,
 // exact UTF-16 offsets, block PATCH through potiond, and no page reload.
-assert.match(index, /id="selection-menu"[\s\S]*data-format="highlight"[\s\S]*data-format="bold"[\s\S]*data-format="underline"/);
+assert.match(index, /id="selection-menu"[\s\S]*data-format="highlight"[\s\S]*data-format="bold"[\s\S]*data-format="underline"[\s\S]*data-format="clear"/);
 assert.match(frontend, /startContent !== endContent/);
 assert.match(frontend, /before\.toString\(\)\.length/);
 assert.match(frontend, /\/api\/pages\/" \+ encodeURIComponent\(currentPageId\) \+ "\/format/);
-assert.match(frontend, /function applySelectionLocally\(state, format\)/);
+assert.match(frontend, /function applySelectionLocally\(state, format, enabled\)/);
+assert.match(frontend, /function selectionFormatState\(content, start, end\)/);
+assert.match(frontend, /result && result\.enabled/);
+assert.match(frontend, /format === "clear"[\s\S]*tag === "strong"[\s\S]*classes\.indexOf\(" notion-color "\)/);
 assert.doesNotMatch(frontend, /localStorage|sessionStorage/);
 assert.doesNotMatch(frontend, /location\.reload/);
 assert.match(appCss, /\.selection-menu\s*{[\s\S]*position:\s*fixed;[\s\S]*z-index:\s*500;/);
+assert.match(appCss, /\.selection-menu button\.selection-active/);
 assert.match(config, /<kindle:param name="tap" value="no"\/>/);
 assert.match(config, /<kindle:param name="multi_tap" value="no"\/>/);
 assert.match(config, /<kindle:param name="hold" value="no"\/>/);

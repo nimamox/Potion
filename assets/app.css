@@ -465,17 +465,25 @@ h2 {
   border-right: 0;
 }
 .selection-menu .selection-highlight {
-  width: 54%;
+  width: 46%;
   background: #ccc;
   font-weight: bold;
 }
 .selection-menu .selection-bold {
-  width: 23%;
+  width: 18%;
   font-weight: bold;
 }
 .selection-menu .selection-underline {
-  width: 23%;
+  width: 18%;
   text-decoration: underline;
+}
+.selection-menu .selection-clear {
+  width: 18%;
+  font-size: 28px;
+}
+.selection-menu button.selection-active {
+  background: #111;
+  color: #fff;
 }
 .empty-block {
   min-height: 22px;
@@ -965,6 +973,10 @@ h2 {
 }
 .night-mode .selection-menu .selection-highlight {
   background: #555;
+}
+.night-mode .selection-menu button.selection-active {
+  background: #eee;
+  color: #000;
 }
 /* Do not let KaTeX fraction rules collapse onto fractional device pixels. */
 .katex .mfrac .frac-line {

@@ -59,15 +59,23 @@ bool utf16_byte(const std::string &text, std::size_t wanted, std::size_t &byte) 
   return false;
 }
 Json writable_text(const Json &source, const std::string &content,
-                   const std::string &format, bool apply) {
+                   const std::string &format, bool selected, bool apply) {
   Json item = Json::object(), text = source.get("text"), annotations = source.get("annotations");
   item["type"] = Json(std::string("text"));
   text["content"] = Json(content);
   item["text"] = text;
-  if (apply) {
-    if (format == "bold") annotations["bold"] = Json(true);
-    else if (format == "underline") annotations["underline"] = Json(true);
-    else if (format == "highlight") annotations["color"] = Json(std::string("yellow_background"));
+  if (selected && format == "clear") {
+    annotations["bold"] = Json(false);
+    annotations["italic"] = Json(false);
+    annotations["strikethrough"] = Json(false);
+    annotations["underline"] = Json(false);
+    annotations["color"] = Json(std::string("default"));
+  } else if (selected && format == "bold") {
+    annotations["bold"] = Json(apply);
+  } else if (selected && format == "underline") {
+    annotations["underline"] = Json(apply);
+  } else if (selected && format == "highlight") {
+    annotations["color"] = Json(std::string(apply ? "yellow_background" : "default"));
   }
   item["annotations"] = annotations;
   return item;
@@ -138,8 +146,9 @@ bool NotionClient::build_formatted_rich_text(
     const Json &source, const std::string &expected_text,
     std::uint32_t start_utf16, std::uint32_t end_utf16,
     const std::string &selected_text, const std::string &format,
-    Json &formatted, std::string &error) {
-  if (format != "highlight" && format != "bold" && format != "underline") {
+    Json &formatted, std::string &error, bool *enabled) {
+  if (format != "highlight" && format != "bold" &&
+      format != "underline" && format != "clear") {
     error = "Unsupported text format"; return false;
   }
   std::string plain_text;
@@ -152,24 +161,44 @@ bool NotionClient::build_formatted_rich_text(
       plain_text.substr(selection_start, selection_end - selection_start) != selected_text) {
     error = "The selected text changed; select it again"; return false;
   }
+  bool all_enabled = format != "clear", has_overlap = false;
+  std::size_t state_at = 0;
+  for (const auto &part : source.items()) {
+    if (part.get("type").string() != "text") {
+      error = "Selections containing mentions or equations cannot be formatted"; return false;
+    }
+    const std::size_t part_end = state_at + utf16_length(part.get("text").get("content").string());
+    if (std::max<std::size_t>(state_at, start_utf16) <
+        std::min<std::size_t>(part_end, end_utf16)) {
+      has_overlap = true;
+      const Json &annotations = part.get("annotations");
+      if ((format == "bold" && !annotations.get("bold").boolean()) ||
+          (format == "underline" && !annotations.get("underline").boolean()) ||
+          (format == "highlight" &&
+           annotations.get("color").string() != "yellow_background"))
+        all_enabled = false;
+    }
+    state_at = part_end;
+  }
+  const bool apply = format != "clear" && has_overlap && !all_enabled;
+  if (enabled) *enabled = apply;
   formatted = Json::array();
   std::size_t at = 0;
   for (const auto &part : source.items()) {
-    if (part.get("type").string() != "text") { error = "Selections containing mentions or equations cannot be formatted"; return false; }
     const std::string content = part.get("text").get("content").string();
     const std::size_t length = utf16_length(content), part_end = at + length;
     const std::size_t overlap_start = std::max<std::size_t>(at, start_utf16);
     const std::size_t overlap_end = std::min<std::size_t>(part_end, end_utf16);
-    if (overlap_start >= overlap_end) formatted.items().push_back(writable_text(part, content, format, false));
+    if (overlap_start >= overlap_end) formatted.items().push_back(writable_text(part, content, format, false, false));
     else {
       std::size_t before_byte = 0, after_byte = 0;
       if (!utf16_byte(content, overlap_start - at, before_byte) ||
           !utf16_byte(content, overlap_end - at, after_byte)) {
         error = "Invalid text selection"; return false;
       }
-      if (before_byte) formatted.items().push_back(writable_text(part, content.substr(0, before_byte), format, false));
-      formatted.items().push_back(writable_text(part, content.substr(before_byte, after_byte - before_byte), format, true));
-      if (after_byte < content.size()) formatted.items().push_back(writable_text(part, content.substr(after_byte), format, false));
+      if (before_byte) formatted.items().push_back(writable_text(part, content.substr(0, before_byte), format, false, false));
+      formatted.items().push_back(writable_text(part, content.substr(before_byte, after_byte - before_byte), format, true, apply));
+      if (after_byte < content.size()) formatted.items().push_back(writable_text(part, content.substr(after_byte), format, false, false));
     }
     at = part_end;
   }
@@ -180,7 +209,7 @@ bool NotionClient::format_block_text(const std::string &token,
     const std::string &page_id, std::size_t editable_index,
     const std::string &expected_text, std::uint32_t start_utf16,
     std::uint32_t end_utf16, const std::string &selected_text,
-    const std::string &format, std::string &error) const {
+    const std::string &format, bool &enabled, std::string &error) const {
   try {
     EditableBlock target;
     std::size_t seen = 0;
@@ -219,7 +248,7 @@ bool NotionClient::format_block_text(const std::string &token,
     Json rich_text;
     if (!build_formatted_rich_text(target.rich_text, expected_text, start_utf16,
                                    end_utf16, selected_text, format,
-                                   rich_text, error)) return false;
+                                   rich_text, error, &enabled)) return false;
     Json body = Json::object(), type_body = Json::object();
     type_body["rich_text"] = rich_text; body[target.type] = type_body;
     const auto response = api_patch(token, "/v1/blocks/" + target.id, body);

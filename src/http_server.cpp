@@ -274,14 +274,17 @@ void HttpServer::handle_client(int client) noexcept {
       if (index > 4096 || start > 0xffffffffull || end > 0xffffffffull)
         throw std::runtime_error("Invalid text selection");
       std::string error;
+      bool enabled = false;
       if (!notion_.format_block_text(
               state_.token(), id, static_cast<std::size_t>(index),
               parameter(request.body, "blockText"),
               static_cast<std::uint32_t>(start), static_cast<std::uint32_t>(end),
               parameter(request.body, "selectedText"),
-              parameter(request.body, "format"), error))
+              parameter(request.body, "format"), enabled, error))
         throw std::runtime_error(error);
-      respond(client, 200, "OK", "application/json", R"({"type":"formatted"})");
+      respond(client, 200, "OK", "application/json",
+              std::string(R"({"type":"formatted","enabled":)") +
+                  (enabled ? "true}" : "false}"));
     } else if ((request.method == "GET" || request.method == "POST") &&
                request.target.compare(0, 11, "/api/pages/") == 0 &&
                request.target.size() > 20 &&
