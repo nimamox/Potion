@@ -6,6 +6,9 @@
         inputTimer = null,
         currentPageId = "",
         pageHistory = [];
+    var irisTimer = null,
+        irisFrame = 0,
+        irisRotation = 0;
     var mathNodes = [],
         mathRepairTimer = null,
         imageNodes = [],
@@ -73,6 +76,96 @@
 
     function clear(element) {
         while (element.firstChild) element.removeChild(element.firstChild);
+    }
+
+    function drawIrisFrame() {
+        var canvas = id("busy-iris"),
+            context, radii = [5, 8, 12, 16, 16, 12, 8, 5],
+            center = 25, outer = 22, shoulder = 16,
+            sector = Math.PI / 3,
+            aperture = radii[irisFrame],
+            angle, i, j, point,
+            background = night ? "#000" : "#fff",
+            bladeA = night ? "#eee" : "#111",
+            bladeB = night ? "#aaa" : "#666";
+        if (!canvas || !canvas.getContext) return;
+        context = canvas.getContext("2d");
+        context.fillStyle = background;
+        context.fillRect(0, 0, 50, 50);
+        context.lineWidth = 1;
+        context.strokeStyle = background;
+        for (i = 0; i < 6; ++i) {
+            angle = irisRotation + irisFrame * .035 + i * sector;
+            point = [
+                [outer, angle - .12],
+                [outer, angle + sector * .72],
+                [shoulder, angle + sector * .96],
+                [aperture, angle + sector * .62],
+                [aperture, angle + sector * .08]
+            ];
+            context.beginPath();
+            for (j = 0; j < point.length; ++j) {
+                if (j === 0)
+                    context.moveTo(center + Math.cos(point[j][1]) * point[j][0],
+                        center + Math.sin(point[j][1]) * point[j][0]);
+                else
+                    context.lineTo(center + Math.cos(point[j][1]) * point[j][0],
+                        center + Math.sin(point[j][1]) * point[j][0]);
+            }
+            context.closePath();
+            context.fillStyle = i % 2 ? bladeB : bladeA;
+            context.fill();
+            context.stroke();
+        }
+        context.beginPath();
+        for (i = 0; i < 6; ++i) {
+            angle = irisRotation + irisFrame * .035 + i * sector + sector * .35;
+            if (i === 0)
+                context.moveTo(center + Math.cos(angle) * aperture,
+                    center + Math.sin(angle) * aperture);
+            else
+                context.lineTo(center + Math.cos(angle) * aperture,
+                    center + Math.sin(angle) * aperture);
+        }
+        context.closePath();
+        context.fillStyle = background;
+        context.fill();
+        context.strokeStyle = bladeA;
+        context.stroke();
+        context.beginPath();
+        context.arc(center, center, outer, 0, Math.PI * 2, false);
+        context.stroke();
+    }
+
+    function advanceIris() {
+        irisTimer = null;
+        if (!busy) return;
+        drawIrisFrame();
+        irisFrame += 1;
+        if (irisFrame >= 8) {
+            irisFrame = 0;
+            irisRotation += Math.PI / 18;
+        }
+        irisTimer = window.setTimeout(advanceIris, 275);
+    }
+
+    function setBusy(value) {
+        var canvas = id("busy-iris");
+        value = !!value;
+        busy = value;
+        if (value) {
+            if (canvas) canvas.className = "busy-iris active";
+            if (irisTimer === null) {
+                irisFrame = 0;
+                advanceIris();
+            }
+        } else {
+            if (irisTimer !== null) {
+                window.clearTimeout(irisTimer);
+                irisTimer = null;
+            }
+            if (canvas) canvas.className = "busy-iris";
+        }
     }
 
     function stopAboutLogoAnimation() {
@@ -606,7 +699,7 @@
     }
 
     function connectView() {
-        busy = false;
+        setBusy(false);
         hide(id("pages-view"));
         hide(id("reader-view"));
         show(id("connect-view"));
@@ -1309,7 +1402,7 @@
     }
 
     function loadPages() {
-        busy = true;
+        setBusy(true);
         warning("");
         id("status").innerHTML = "Loading Notion pages...";
 
@@ -1324,12 +1417,11 @@
                 encodeURIComponent(id("search").value || ""),
             null,
             function(error, result) {
-                busy = false;
-
                 var list = id("pages"),
                     i;
 
                 if (error) {
+                    setBusy(false);
                     warning(error);
                     id("status").innerHTML = "Notion unavailable";
                     waitForInput();
@@ -1410,6 +1502,7 @@
                 id("pages").scrollTop = 0;
 
                 updateScroll();
+                setBusy(false);
 
                 request(
                     "POST",
@@ -1437,7 +1530,7 @@
 
         var previous = currentPageId;
 
-        busy = true;
+        setBusy(true);
         warning("");
         show(id("settings"));
         id("status").innerHTML = "Loading page...";
@@ -1448,7 +1541,7 @@
             null,
             function(error, page) {
                 if (error) {
-                    busy = false;
+                    setBusy(false);
                     warning(error);
                     waitForInput();
                     return;
@@ -1504,7 +1597,7 @@
                         scheduleMathRepair(0);
                         restoreReadingPosition(page.position);
                     } finally {
-                        busy = false;
+                        setBusy(false);
                         updateScroll();
 
                         request(
@@ -1587,7 +1680,7 @@
             return;
         }
 
-        busy = true;
+        setBusy(true);
         id("status").innerHTML =
             "Validating Notion token...";
 
@@ -1596,10 +1689,10 @@
             "/api/auth/token",
             "token=" + encodeURIComponent(token),
             function(error) {
-                busy = false;
                 id("token").value = "";
 
                 if (error) {
+                    setBusy(false);
                     warning(error);
                     connectView();
                 } else {

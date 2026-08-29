@@ -56,4 +56,18 @@ assert.match(frontend, /root\.scrollTop \+ root\.clientHeight \* 2\.5/);
 assert.match(frontend, /repaired >= 16/);
 assert.match(frontend, /function scheduleMathRepair\(delay\)/);
 
+// The mechanical loading iris is driven by the existing busy state, uses a
+// single ES5 timeout loop, and occupies a fixed non-reflowing header slot.
+assert.match(index, /<canvas id="busy-iris" class="busy-iris" width="50" height="50"/);
+assert.match(frontend, /function drawIrisFrame\(\)/);
+assert.match(frontend, /for \(i = 0; i < 6; \+\+i\)/);
+assert.match(frontend, /radii = \[5, 8, 12, 16, 16, 12, 8, 5\]/);
+assert.match(frontend, /irisRotation \+= Math\.PI \/ 18/);
+assert.match(frontend, /irisTimer = window\.setTimeout\(advanceIris, 275\)/);
+assert.match(frontend, /function setBusy\(value\)/);
+assert.doesNotMatch(frontend, /requestAnimationFrame/);
+assert.equal((frontend.match(/busy\s*=\s*(?:true|false)/g) || []).length, 1,
+  "only the initial declaration may assign busy directly");
+assert.match(appCss, /\.busy-iris\s*{[\s\S]*position:\s*fixed;[\s\S]*width:\s*50px;[\s\S]*visibility:\s*hidden;/);
+
 console.log("Potion frontend native-math contract tests passed");
