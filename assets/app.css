@@ -424,14 +424,20 @@ h2 {
   color: #666;
   font-size: 17px;
 }
+.page-content a {
+  color: #111;
+}
 .page-content a,
 .page-content u {
-  color: #111;
   padding-bottom: 5px;
   text-decoration: none;
   background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAwAAAAHCAQAAACWu2SvAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAACYktHRAD/h4/MvwAAAAd0SU1FB+oIHQwvChLbftAAAAAldEVYdGRhdGU6Y3JlYXRlADIwMjYtMDgtMjlUMTI6NDc6MTArMDA6MDAdd4O2AAAAJXRFWHRkYXRlOm1vZGlmeQAyMDI2LTA4LTI5VDEyOjQ3OjEwKzAwOjAwbCo7CgAAACh0RVh0ZGF0ZTp0aW1lc3RhbXAAMjAyNi0wOC0yOVQxMjo0NzoxMCswMDowMDs/GtUAAABCSURBVAjXdc6xDcAgAAPBUyo6MlJYiLWYgtmchoJEwp39lmWgelQ/FVNETGUHY8URYwcRzaWJ6CvtPmYvuQ+zpyMvkxQgGAmKtl4AAAAASUVORK5CYII=");
   background-position: left bottom;
   background-repeat: repeat-x;
+}
+.page-content a u {
+  padding-bottom: 0;
+  background-image: none;
 }
 .page-content [dir="rtl"] {
   direction: rtl;
@@ -929,10 +935,16 @@ h2 {
 .night-mode .page-content .callout {
   background: #222;
 }
+.night-mode .page-content a {
+  color: #eee;
+}
 .night-mode .page-content a,
 .night-mode .page-content u {
-  color: #eee;
   background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAwAAAAHCAQAAACWu2SvAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAACYktHRAD/h4/MvwAAAAd0SU1FB+oIHQwvChLbftAAAAAldEVYdGRhdGU6Y3JlYXRlADIwMjYtMDgtMjlUMTI6NDc6MTArMDA6MDAdd4O2AAAAJXRFWHRkYXRlOm1vZGlmeQAyMDI2LTA4LTI5VDEyOjQ3OjEwKzAwOjAwbCo7CgAAACh0RVh0ZGF0ZTp0aW1lc3RhbXAAMjAyNi0wOC0yOVQxMjo0NzoxMCswMDowMDs/GtUAAABFSURBVAjXVc6xDYAwEEPRE1W6MBJZKGtlisz2KEDC2NXpWz6XUrpLV+nSbI+2lmD5tBLAcBhgvmBWHhkqZ7yM2t+SHHIDV+dzxJ5DXSAAAAAASUVORK5CYII=");
+}
+.night-mode .page-content a u {
+  padding-bottom: 0;
+  background-image: none;
 }
 .night-mode .scroll-button {
   background: #000;
