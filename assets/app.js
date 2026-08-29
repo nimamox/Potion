@@ -1905,6 +1905,7 @@
                     currentPagePinned = pinned;
                     setPinButton(id("page-pin"), pinned);
                 }
+                if (button) button.disabled = false;
                 renderSortedPages(false);
             }
         );

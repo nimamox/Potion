@@ -121,6 +121,10 @@ const loadSource = frontend.match(
 assert.doesNotMatch(chooseSource, /loadPages|GET[^\n]*\/api\/pages/);
 assert.doesNotMatch(pinSource, /loadPages|GET[^\n]*\/api\/pages/);
 assert.match(pinSource, /updatePageMetadata\(pageId, "pinned", pinned\)[\s\S]*renderSortedPages\(false\)/);
+assert.equal((pinSource.match(/button\.disabled = false/g) || []).length, 2,
+  "pin buttons must be re-enabled after both failed and successful writes");
+assert.match(pinSource,
+  /updatePageMetadata\(pageId, "pinned", pinned\)[\s\S]*button\.disabled = false;[\s\S]*renderSortedPages\(false\)/);
 assert.match(showSource, /renderSortedPages\(false\)/);
 assert.match(loadSource, /"GET",[\s\S]*"\/api\/pages\?query="/,
   "search/initial load must still fetch page metadata");
