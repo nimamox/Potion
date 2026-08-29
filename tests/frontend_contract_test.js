@@ -255,7 +255,7 @@ assert.match(appCss, /\.busy-iris\s*{[\s\S]*position:\s*fixed;[\s\S]*width:\s*50
 assert.match(index, /id="selection-menu"[\s\S]*data-format="highlight"[\s\S]*data-format="bold"[\s\S]*data-format="underline"[\s\S]*data-format="clear"/);
 assert.match(frontend, /startContent !== endContent/);
 assert.match(frontend, /logicalNodeText\(before\.cloneContents\(\)\)\.length/);
-assert.match(frontend, /\/api\/pages\/" \+ encodeURIComponent\(currentPageId\) \+ "\/format/);
+assert.match(frontend, /\/api\/pages\/" \+ encodeURIComponent\(pageId\) \+ "\/format/);
 assert.match(frontend, /function applySelectionLocally\(state, format, enabled\)/);
 assert.match(frontend, /function selectionFormatState\(content, start, end\)/);
 assert.match(frontend, /function logicalNodeText\(node\)/);
@@ -267,6 +267,91 @@ assert.match(frontend, /blockText = logicalNodeText\(startContent\)/);
 assert.doesNotMatch(frontend, /blockText:\s*startContent\.textContent/);
 assert.match(frontend, /result && result\.enabled/);
 assert.match(frontend, /format === "clear"[\s\S]*tag === "strong"[\s\S]*classes\.indexOf\(" notion-color "\)/);
+assert.match(frontend, /formatSaveBusy/);
+assert.doesNotMatch(frontend,
+  /function formatSelection\(format\)[\s\S]*?setBusy\(true\)[\s\S]*?\/\* OPTIMISTIC_FORMATTING_END \*\//,
+  "formatting must not put the entire application into the busy state");
+
+// Formatting mutates the selected block and closes its popup before the XHR
+// completes. One write is serialized at a time; a failure restores the exact
+// sanitized block markup, including nested formatting and links.
+const optimisticMatch = frontend.match(
+  /\/\* OPTIMISTIC_FORMATTING_BEGIN \*\/([\s\S]*?)\/\* OPTIMISTIC_FORMATTING_END \*\//);
+assert.ok(optimisticMatch, "missing optimistic-formatting test boundary");
+function optimisticContext() {
+  const calls = [];
+  const requests = [];
+  const root = {};
+  const content = {
+    innerHTML: '<a href="https://example.com"><strong class="notion-color">linked</strong></a>',
+    parentNode: root
+  };
+  const state = {
+    content: content,
+    range: {},
+    editableIndex: 2,
+    start: 1,
+    end: 5,
+    blockText: "linked text",
+    selectedText: "inke",
+    formats: {bold: false, underline: false, highlight: false}
+  };
+  const context = {
+    selectionState: state,
+    currentPageId: "page-id",
+    busy: false,
+    formatSaveBusy: false,
+    id: function(name) { assert.equal(name, "page-content"); return root; },
+    applySelectionLocally: function(localState, format, enabled) {
+      calls.push("apply:" + format + ":" + enabled);
+      localState.content.innerHTML = "optimistic";
+      return true;
+    },
+    clearSelectionMenu: function(clearNative) { calls.push("clear:" + clearNative); },
+    collectReadingBlocks: function() { calls.push("blocks"); },
+    applyNightPageAppearance: function() { calls.push("night"); },
+    updateScroll: function() { calls.push("scroll"); },
+    waitForInput: function() { calls.push("input"); },
+    setSelectionButtonsDisabled: function(value) { calls.push("disabled:" + value); },
+    warning: function(message) { calls.push("warning:" + message); },
+    request: function(method, url, body, callback) {
+      calls.push("request");
+      requests.push({method: method, url: url, body: body, callback: callback});
+    },
+    logicalRange: function() { calls.push("range"); return {}; },
+    encodeURIComponent: encodeURIComponent
+  };
+  vm.createContext(context);
+  vm.runInContext(optimisticMatch[1], context);
+  return {context: context, calls: calls, requests: requests, content: content, state: state};
+}
+
+const optimisticFailure = optimisticContext();
+optimisticFailure.context.formatSelection("bold");
+assert.equal(optimisticFailure.content.innerHTML, "optimistic",
+  "the selected DOM changes before the backend responds");
+assert.ok(optimisticFailure.calls.indexOf("clear:true") < optimisticFailure.calls.indexOf("request"),
+  "the selection popup closes before the background request starts");
+assert.equal(optimisticFailure.requests.length, 1);
+optimisticFailure.context.formatSelection("underline");
+assert.equal(optimisticFailure.requests.length, 1,
+  "rapid formatting actions cannot create overlapping writes");
+optimisticFailure.requests[0].callback("Notion rejected the edit", null);
+assert.equal(optimisticFailure.content.innerHTML,
+  '<a href="https://example.com"><strong class="notion-color">linked</strong></a>',
+  "a failed write restores the exact prior nested markup and link");
+assert.ok(optimisticFailure.calls.indexOf(
+  "warning:Formatting could not be saved and was reverted. Notion rejected the edit") >= 0);
+assert.equal(optimisticFailure.context.formatSaveBusy, false);
+
+const optimisticSuccess = optimisticContext();
+optimisticSuccess.context.formatSelection("underline");
+optimisticSuccess.requests[0].callback(null, {enabled: true});
+assert.equal(optimisticSuccess.content.innerHTML, "optimistic",
+  "a successful matching write leaves the optimistic DOM unchanged");
+assert.equal(optimisticSuccess.calls.filter(function(call) {
+  return call.indexOf("apply:") === 0;
+}).length, 1, "success does not apply the same formatting twice");
 assert.doesNotMatch(frontend, /localStorage|sessionStorage/);
 assert.doesNotMatch(frontend, /location\.reload/);
 assert.match(appCss, /\.selection-menu\s*{[\s\S]*position:\s*fixed;[\s\S]*z-index:\s*500;/);

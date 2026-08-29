@@ -31,6 +31,7 @@
     var selectionTimer = null,
         selectionState = null,
         selectionMenuActive = false,
+        formatSaveBusy = false,
         selectionHoldTimer = null,
         selectionHoldActive = false,
         selectionHoldX = 0,
@@ -515,18 +516,24 @@
         return result || {node: content, offset: content.childNodes.length};
     }
 
-    function setLogicalSelection(content, start, end) {
+    function logicalRange(content, start, end) {
         var first = logicalBoundary(content, start),
             last = logicalBoundary(content, end),
-            range = document.createRange(), selection = window.getSelection();
+            range = document.createRange();
         try {
             range.setStart(first.node, first.offset);
             range.setEnd(last.node, last.offset);
-            selection.removeAllRanges();
-            selection.addRange(range);
-            return true;
+            return range;
         } catch (ignored) {}
-        return false;
+        return null;
+    }
+
+    function setLogicalSelection(content, start, end) {
+        var range = logicalRange(content, start, end), selection = window.getSelection();
+        if (!range) return false;
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return true;
     }
 
     function selectMultiTap(event, wholeBlock) {
@@ -675,6 +682,7 @@
         selectionState.formats = selectionFormatState(
             startContent, selectionState.start, selectionState.end);
         updateSelectionButtonStates(selectionState.formats);
+        setSelectionButtonsDisabled(formatSaveBusy);
         positionSelectionMenu(rect);
         show(id("selection-menu"));
     }
@@ -886,7 +894,7 @@
 
     function applySelectionLocally(state, format, enabled) {
         var wrapper, fragment;
-        if (!state || !state.range) return;
+        if (!state || !state.range) return false;
         try {
             fragment = state.range.extractContents();
             cleanSelectionFragment(fragment, format);
@@ -897,44 +905,79 @@
                 state.range.insertNode(wrapper);
             } else state.range.insertNode(fragment);
             if (state.content.normalize) state.content.normalize();
+            return true;
         } catch (ignored) {}
+        return false;
+    }
+
+    /* OPTIMISTIC_FORMATTING_BEGIN */
+    function selectionContentIsCurrent(pageId, content) {
+        var node = content, root = id("page-content");
+        if (pageId !== currentPageId) return false;
+        while (node) {
+            if (node === root) return true;
+            node = node.parentNode;
+        }
+        return false;
+    }
+
+    function refreshAfterLocalFormatting() {
+        collectReadingBlocks();
+        applyNightPageAppearance();
+        updateScroll();
     }
 
     function formatSelection(format) {
-        var state = selectionState;
-        if (!state || busy) return;
-        selectionMenuActive = true;
-        setSelectionButtonsDisabled(true);
-        setBusy(true);
+        var state = selectionState, pageId, previousHtml, enabled, body;
+        if (!state || busy || formatSaveBusy) return;
+        pageId = currentPageId;
+        previousHtml = state.content.innerHTML;
+        enabled = format !== "clear" && !state.formats[format];
+        body = "editableIndex=" + state.editableIndex +
+            "&start=" + state.start +
+            "&end=" + state.end +
+            "&format=" + encodeURIComponent(format) +
+            "&blockText=" + encodeURIComponent(state.blockText) +
+            "&selectedText=" + encodeURIComponent(state.selectedText);
+        formatSaveBusy = true;
         warning("");
-        id("status").innerHTML = "Saving formatting...";
+        if (!applySelectionLocally(state, format, enabled)) {
+            state.content.innerHTML = previousHtml;
+            formatSaveBusy = false;
+            warning("Formatting could not be applied.");
+            return;
+        }
+        clearSelectionMenu(true);
+        refreshAfterLocalFormatting();
+        waitForInput();
         request(
             "POST",
-            "/api/pages/" + encodeURIComponent(currentPageId) + "/format",
-            "editableIndex=" + state.editableIndex +
-                "&start=" + state.start +
-                "&end=" + state.end +
-                "&format=" + encodeURIComponent(format) +
-                "&blockText=" + encodeURIComponent(state.blockText) +
-                "&selectedText=" + encodeURIComponent(state.selectedText),
+            "/api/pages/" + encodeURIComponent(pageId) + "/format",
+            body,
             function(error, result) {
-                setBusy(false);
+                var authoritativeEnabled;
+                formatSaveBusy = false;
                 setSelectionButtonsDisabled(false);
-                id("status").innerHTML = "";
                 if (error) {
-                    selectionMenuActive = false;
-                    warning(error);
+                    if (selectionContentIsCurrent(pageId, state.content)) {
+                        state.content.innerHTML = previousHtml;
+                        refreshAfterLocalFormatting();
+                    }
+                    warning("Formatting could not be saved and was reverted. " + error);
                     return;
                 }
-                applySelectionLocally(state, format, result && result.enabled);
-                clearSelectionMenu(true);
-                collectReadingBlocks();
-                applyNightPageAppearance();
-                updateScroll();
-                waitForInput();
+                authoritativeEnabled = !!(result && result.enabled);
+                if (authoritativeEnabled !== enabled &&
+                    selectionContentIsCurrent(pageId, state.content)) {
+                    state.content.innerHTML = previousHtml;
+                    state.range = logicalRange(state.content, state.start, state.end);
+                    applySelectionLocally(state, format, authoritativeEnabled);
+                    refreshAfterLocalFormatting();
+                }
             }
         );
     }
+    /* OPTIMISTIC_FORMATTING_END */
 
     function warning(message) {
         id("warning").innerHTML = "";
