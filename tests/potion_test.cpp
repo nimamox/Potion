@@ -80,6 +80,24 @@ int main() {
             potion::NotionClient::block_counts_as_editable(text_paragraph),
             "empty Notion paragraphs do not consume an editable index");
 
+    std::string underlined_backgrounds =
+        "<span underline=\"true\">iaculis</span> "
+        "<span color=\"yellow\" underline=\"true\">***lacinia***</span>";
+    potion::NotionClient::restore_underlined_background_colors(
+        underlined_backgrounds, {"red_background", "yellow"});
+    require(underlined_backgrounds.find(
+                "<span underline=\"true\" color=\"red_background\">iaculis</span>") !=
+                std::string::npos &&
+            underlined_backgrounds.find(
+                "<span color=\"yellow\" underline=\"true\">***lacinia***</span>") !=
+                std::string::npos,
+            "block rich text restores background color omitted by Notion Markdown");
+    const std::string mismatched_overlay = underlined_backgrounds;
+    potion::NotionClient::restore_underlined_background_colors(
+        underlined_backgrounds, {"red_background"});
+    require(underlined_backgrounds == mismatched_overlay,
+            "a mismatched underline overlay is ignored safely");
+
     const auto repeated_rich_text = potion::Json::parse(R"([
       {"type":"text","text":{"content":"very important / very important","link":null},
        "plain_text":"very important / very important",
@@ -466,6 +484,12 @@ int main() {
     const std::string inline_only = renderer.render(
       "Plain <span color=\"orange\">orange words</span> remain plain\n");
     require(inline_only.find("<p class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">Plain <span class=\"notion-color notion-color-orange\">") != std::string::npos, "inline color scope");
+    const std::string combined_inline = renderer.render(
+      "<span color=\"yellow\" underline=\"true\">***lacinia***</span>\n");
+    require(combined_inline.find(
+                "<span class=\"notion-color notion-color-yellow\"><u><strong><em>lacinia</em></strong></u></span>") !=
+                std::string::npos && combined_inline.find("*lacinia") == std::string::npos,
+            "combined bold italic underline and color formatting is nested correctly");
     require(inline_only.find("<p class=\"potion-block potion-editable notion-color") == std::string::npos, "inline color did not leak to block");
 
     char directory[] = "/tmp/potion-test.XXXXXX";

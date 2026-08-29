@@ -31,6 +31,8 @@ public:
       const std::string &selected_text, const std::string &format,
       Json &formatted, std::string &error, bool *enabled = nullptr);
   static bool block_counts_as_editable(const Json &block);
+  static void restore_underlined_background_colors(
+      std::string &markdown, const std::vector<std::string> &colors);
   bool retrieve_image(const std::string &url, BinaryResponse &image,
                       std::string &error) const;
 private:
