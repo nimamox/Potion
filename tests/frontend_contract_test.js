@@ -224,6 +224,43 @@ assert.match(frontend, /document\.caretRangeFromPoint/);
 assert.match(frontend, /selectionHoldTimer = window\.setTimeout\(beginCustomSelection, 700\)/);
 assert.match(frontend, /elapsed >= 700/);
 assert.match(frontend, /function moveCustomSelection\(event\)/);
+assert.match(frontend,
+  /function finishSelectionHold\(event\)[\s\S]*if \(held\) beginCustomSelection\(\);[\s\S]*if \(selectionHoldActive\) \{[\s\S]*moveCustomSelection\(event\);/);
+const finishMatch = frontend.match(
+  /(function finishSelectionHold\(event\) \{[\s\S]*?\n    \})\n\n    function setSelectionButtonsDisabled/);
+assert.ok(finishMatch, "missing finishSelectionHold");
+const finishCalls = [];
+const finishContext = {
+  selectionHoldStartedAt: Date.now() - 800,
+  selectionHoldTimer: 1,
+  selectionHoldActive: false,
+  selectionDragActive: false,
+  selectionSuppressClick: true,
+  clearSelectionHoldTimer: function() { finishContext.selectionHoldTimer = null; },
+  beginCustomSelection: function() {
+    finishCalls.push("begin");
+    finishContext.selectionHoldActive = true;
+  },
+  moveCustomSelection: function(event) { finishCalls.push("move:" + event.marker); },
+  inspectSelection: function(source) { finishCalls.push("inspect:" + source); },
+  window: { setTimeout: function() {} },
+  Date: Date
+};
+vm.createContext(finishContext);
+vm.runInContext(finishMatch[1], finishContext);
+finishContext.finishSelectionHold({ marker: "release" });
+assert.deepEqual(finishCalls, ["begin", "move:release", "inspect:SELECT"],
+  "a delayed hold timer must extend to the release point instead of collapsing to one word");
+assert.match(frontend, /document\.onmousemove = moveCustomSelection;/);
+assert.match(frontend, /document\.ontouchmove = moveCustomSelection;/);
+assert.match(frontend,
+  /document\.onmouseup = function\(event\)[\s\S]*finishSelectionHold\(event \|\| window\.event\);[\s\S]*scheduleSelectionInspection\(\);/);
+assert.doesNotMatch(frontend, /id\("page-content"\)\.onmousemove/);
+assert.doesNotMatch(frontend, /id\("page-content"\)\.onmouseup/);
+assert.match(frontend,
+  /id\("page-content"\)\.onscroll = function\(\) \{\s*if \(!selectionHoldActive\) clearSelectionMenu\(true\);/);
+assert.match(frontend,
+  /function applyAppearance\(persist\) \{\s*clearSelectionMenu\(true\);/);
 assert.match(frontend, /source === "NATIVE" && selectionHoldTimer !== null/);
 assert.match(frontend, /selectionDragActive/);
 assert.match(frontend, /point\.x < rect\.left/);

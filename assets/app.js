@@ -631,8 +631,9 @@
                 new Date().getTime() - selectionHoldStartedAt : 0,
             held = selectionHoldTimer !== null && elapsed >= 700;
         clearSelectionHoldTimer();
-        if (held) selectWordAtPoint(selectionHoldX, selectionHoldY);
+        if (held) beginCustomSelection();
         if (selectionHoldActive) {
+            moveCustomSelection(event);
             selectionHoldActive = false;
             selectionDragActive = false;
             inspectSelection("SELECT");
@@ -821,6 +822,7 @@
     }
 
     function applyAppearance(persist) {
+        clearSelectionMenu(true);
         restoreNightPalette(id("page-content"));
         id("page-content").style.fontFamily = fonts[pageFont];
         id("page-content").style.fontSize = Math.round(30 * fontScale) + "px";
@@ -2367,7 +2369,7 @@
     id("pages").onscroll = updateScroll;
 
     id("page-content").onscroll = function() {
-        clearSelectionMenu(true);
+        if (!selectionHoldActive) clearSelectionMenu(true);
         updateScroll();
         scheduleMathRepair();
         scheduleImageLoad();
@@ -2455,6 +2457,7 @@
 
         for (i = 0; i < choices.length; ++i)
             choices[i].onclick = function() {
+                clearSelectionMenu(true);
                 nightPageMode = this.value;
                 saveSetting(
                     "nightPageMode",
@@ -2561,8 +2564,16 @@
     };
 
     id("about-logo").onload = prepareAboutLogo;
-    document.onmouseup = scheduleSelectionInspection;
-    document.ontouchend = scheduleSelectionInspection;
+    document.onmousemove = moveCustomSelection;
+    document.ontouchmove = moveCustomSelection;
+    document.onmouseup = function(event) {
+        finishSelectionHold(event || window.event);
+        scheduleSelectionInspection();
+    };
+    document.ontouchend = function(event) {
+        finishSelectionHold(event || window.event);
+        scheduleSelectionInspection();
+    };
     document.onselectionchange = scheduleSelectionInspection;
     (function() {
         var menu = id("selection-menu"),
@@ -2582,10 +2593,6 @@
     }());
     id("page-content").onmousedown = startSelectionHold;
     id("page-content").ontouchstart = startSelectionHold;
-    id("page-content").onmousemove = moveCustomSelection;
-    id("page-content").ontouchmove = moveCustomSelection;
-    id("page-content").onmouseup = finishSelectionHold;
-    id("page-content").ontouchend = finishSelectionHold;
     id("page-content").onclick = function(event) {
         var point, rect;
         if (selectionSuppressClick) {
