@@ -2,6 +2,7 @@
 
 const assert = require("node:assert/strict");
 const fs = require("node:fs");
+const vm = require("node:vm");
 
 const frontend = fs.readFileSync(process.argv[2], "utf8");
 const index = fs.readFileSync(process.argv[3], "utf8");
@@ -32,6 +33,101 @@ assert.match(frontend, /key=pageSortMode&value=/);
 assert.match(frontend, /\/api\/pages\/" \+ encodeURIComponent\(pageId\) \+ "\/pin"/);
 assert.match(frontend, /page\.pinned === true/);
 assert.doesNotMatch(frontend, /localStorage/);
+
+// Page navigation is an in-memory ES5 model after GET /api/pages. Exercise
+// the production comparator/update functions rather than a duplicate model.
+const navigationMatch = frontend.match(
+  /\/\* PAGE_NAVIGATION_LOGIC_BEGIN \*\/([\s\S]*?)\/\* PAGE_NAVIGATION_LOGIC_END \*\//);
+assert.ok(navigationMatch, "missing page navigation logic test boundary");
+const navigation = { pageList: [], pageSortMode: "opened", Number };
+vm.createContext(navigation);
+vm.runInContext(navigationMatch[1], navigation);
+
+function resetPages(pages, mode) {
+  navigation.pageList = pages;
+  navigation.pageSortMode = mode || "opened";
+  navigation.sortPages();
+  return navigation.pageList.map((page) => page.id);
+}
+
+const fixture = () => [
+  { id: "a", title: "A", edited: "2026-01-04", opened: 40, pinned: false },
+  { id: "b", title: "B", edited: "2026-01-03", opened: 30, pinned: false },
+  { id: "c", title: "C", edited: "2026-01-02", opened: 0, pinned: false },
+  { id: "d", title: "D", edited: "2026-01-01", opened: 10, pinned: true }
+];
+
+assert.deepEqual(resetPages(fixture()), ["d", "a", "b", "c"],
+  "pinned pages precede unpinned pages and unopened pages sort last");
+navigation.updatePageMetadata("c", "pinned", true);
+navigation.sortPages();
+assert.deepEqual(navigation.pageList.map((page) => page.id), ["d", "c", "a", "b"],
+  "pinning a visible page moves it into the pinned group immediately");
+navigation.updatePageMetadata("d", "pinned", false);
+navigation.sortPages();
+assert.deepEqual(navigation.pageList.map((page) => page.id), ["c", "a", "b", "d"],
+  "unpinning returns a page to its opened-time position");
+navigation.updatePageMetadata("d", "opened", 50);
+navigation.sortPages();
+assert.deepEqual(navigation.pageList.map((page) => page.id), ["c", "d", "a", "b"],
+  "opening an older page moves it to the top of its unpinned group");
+assert.deepEqual(resetPages(fixture(), "edited"), ["d", "a", "b", "c"],
+  "Edited mode orders each pin group by edited timestamp");
+
+const chooseMatch = frontend.match(
+  /(function choosePageSort\(mode\) \{[\s\S]*?\n    \})\n\n    function showPages/);
+assert.ok(chooseMatch, "missing choosePageSort");
+function exerciseChoose(failure) {
+  const buttons = { "sort-opened": {}, "sort-edited": {} };
+  const calls = [];
+  const context = {
+    busy: false,
+    pageSortSaveBusy: false,
+    pageSortMode: "opened",
+    id: (name) => buttons[name],
+    setSortButtons: () => calls.push("buttons:" + context.pageSortMode),
+    renderSortedPages: () => calls.push("render:" + context.pageSortMode),
+    warning: () => calls.push("warning"),
+    encodeURIComponent,
+    request: (method, path, body, done) => {
+      calls.push(method + " " + path);
+      done(failure ? "save failed" : null);
+    }
+  };
+  vm.createContext(context);
+  vm.runInContext(chooseMatch[1], context);
+  context.choosePageSort("edited");
+  return { context, calls };
+}
+const successfulSort = exerciseChoose(false);
+assert.equal(successfulSort.context.pageSortMode, "edited");
+assert.deepEqual(successfulSort.calls,
+  ["buttons:edited", "render:edited", "POST /api/settings"]);
+assert.ok(!successfulSort.calls.some((call) => call.indexOf("GET /api/pages") >= 0),
+  "sort switching must not fetch pages");
+const failedSort = exerciseChoose(true);
+assert.equal(failedSort.context.pageSortMode, "opened");
+assert.deepEqual(failedSort.calls,
+  ["buttons:edited", "render:edited", "POST /api/settings",
+    "buttons:opened", "render:opened", "warning"]);
+
+const chooseSource = chooseMatch[1];
+const pinSource = frontend.match(
+  /function setPagePinned\(pageId, pinned, button\) \{([\s\S]*?)\n    \}\n\n    function pageDate/)[1];
+const showSource = frontend.match(
+  /function showPages\(positionSaved\) \{([\s\S]*?)\n    \}\n\n    function loadPages/)[1];
+const loadSource = frontend.match(
+  /function loadPages\(\) \{([\s\S]*?)\n    \}\n\n    function openPage/)[1];
+assert.doesNotMatch(chooseSource, /loadPages|GET[^\n]*\/api\/pages/);
+assert.doesNotMatch(pinSource, /loadPages|GET[^\n]*\/api\/pages/);
+assert.match(pinSource, /updatePageMetadata\(pageId, "pinned", pinned\)[\s\S]*renderSortedPages\(false\)/);
+assert.match(showSource, /renderSortedPages\(false\)/);
+assert.match(loadSource, /"GET",[\s\S]*"\/api\/pages\?query="/,
+  "search/initial load must still fetch page metadata");
+assert.match(frontend, /id\("search-button"\)\.onclick = loadPages/);
+assert.match(frontend, /id\("search"\)\.onkeydown = function\(event\)[\s\S]*event\.keyCode === 13[\s\S]*loadPages\(\)/);
+assert.match(frontend,
+  /updatePageMetadata\([\s\S]*currentPageId,[\s\S]*"opened",[\s\S]*Math\.floor\(new Date\(\)\.getTime\(\) \/ 1000\)/);
 
 const fontReferences = [...katexCss.matchAll(/fonts\/([^)'\"]+\.(?:woff2?|ttf))/g)]
   .map((match) => match[1]);

@@ -243,34 +243,17 @@ void HttpServer::handle_client(int client) noexcept {
       std::string error;
       const auto pages = notion_.search_pages(state_.token(), parameter(request.query, "query"), error);
       if (!error.empty()) throw std::runtime_error(error);
-      struct ListedPage { PageSummary page; bool pinned{}; std::uint32_t opened{}; };
-      std::vector<ListedPage> listed;
-      listed.reserve(pages.size());
+      const std::string sort_mode = state_.settings().page_sort_mode;
+      std::string body = R"({"type":"pages","pages":[)"; bool first_page = true;
       for (const auto &page : pages) {
         const auto position = positions_.get(page.id);
-        listed.push_back({page, state_.page_pinned(page.id),
-                          position ? position->last_seen : 0});
-      }
-      const std::string sort_mode = state_.settings().page_sort_mode;
-      std::stable_sort(listed.begin(), listed.end(),
-          [&](const ListedPage &left, const ListedPage &right) {
-            if (left.pinned != right.pinned) return left.pinned;
-            if (sort_mode == "opened" && left.opened != right.opened)
-              return left.opened > right.opened;
-            if (left.page.edited != right.page.edited)
-              return left.page.edited > right.page.edited;
-            return left.page.title < right.page.title;
-          });
-      std::string body = R"({"type":"pages","pages":[)"; bool first_page = true;
-      for (const auto &entry : listed) {
-        const auto &page = entry.page;
         if (!first_page) body += ',';
         first_page = false;
         body += R"({"id":)" + json_escape(page.id) +
                 R"(,"title":)" + json_escape(page.title) +
                 R"(,"edited":)" + json_escape(page.edited) +
-                R"(,"opened":)" + std::to_string(entry.opened) +
-                R"(,"pinned":)" + (entry.pinned ? "true}" : "false}");
+                R"(,"opened":)" + std::to_string(position ? position->last_seen : 0) +
+                R"(,"pinned":)" + (state_.page_pinned(page.id) ? "true}" : "false}");
       }
       body += R"(],"sortMode":)" + json_escape(sort_mode) + "}";
       respond(client, 200, "OK", "application/json", body);

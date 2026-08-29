@@ -7,6 +7,9 @@
         currentPageId = "",
         currentPagePinned = false,
         pageSortMode = "opened",
+        pageList = [],
+        pageListLoaded = false,
+        pageSortSaveBusy = false,
         pageHistory = [];
     var irisTimer = null,
         irisFrame = 0,
@@ -1835,19 +1838,54 @@
         edited.setAttribute("aria-pressed", openedActive ? "false" : "true");
     }
 
-    function updateListPin(pageId, pinned) {
-        var rows = id("pages").getElementsByClassName("page-row"),
-            wanted = (pageId || "").replace(/-/g, "").toLowerCase(),
-            buttons, rowId, i;
-        for (i = 0; i < rows.length; ++i) {
-            rowId = (rows[i].getAttribute("data-page-id") || "")
-                .replace(/-/g, "").toLowerCase();
-            if (rowId !== wanted) continue;
-            buttons = rows[i].getElementsByClassName("page-pin");
-            if (buttons.length) setPinButton(buttons[0], pinned);
-            break;
-        }
+    /* PAGE_NAVIGATION_LOGIC_BEGIN */
+    function pageIdKey(pageId) {
+        return (pageId || "").replace(/-/g, "").toLowerCase();
     }
+
+    function cachedPage(pageId) {
+        var wanted = pageIdKey(pageId), i;
+        for (i = 0; i < pageList.length; ++i)
+            if (pageIdKey(pageList[i].id) === wanted) return pageList[i];
+        return null;
+    }
+
+    function updatePageMetadata(pageId, key, value) {
+        var page = cachedPage(pageId);
+        if (page) page[key] = value;
+        return page;
+    }
+
+    function comparePageTitles(left, right) {
+        var a = left.title || "", b = right.title || "";
+        if (a < b) return -1;
+        if (a > b) return 1;
+        return 0;
+    }
+
+    function comparePageEdited(left, right) {
+        var a = left.edited || "", b = right.edited || "";
+        if (a > b) return -1;
+        if (a < b) return 1;
+        return comparePageTitles(left, right);
+    }
+
+    function comparePages(left, right) {
+        var leftOpened, rightOpened;
+        if ((left.pinned === true) !== (right.pinned === true))
+            return left.pinned === true ? -1 : 1;
+        if (pageSortMode === "opened") {
+            leftOpened = Number(left.opened) || 0;
+            rightOpened = Number(right.opened) || 0;
+            if (leftOpened !== rightOpened) return rightOpened - leftOpened;
+        }
+        return comparePageEdited(left, right);
+    }
+
+    function sortPages() {
+        pageList.sort(comparePages);
+    }
+    /* PAGE_NAVIGATION_LOGIC_END */
 
     function setPagePinned(pageId, pinned, button) {
         if (button) button.disabled = true;
@@ -1862,14 +1900,12 @@
                     return;
                 }
                 pinned = result && result.pinned === true;
-                setPinButton(button, pinned);
-                updateListPin(pageId, pinned);
-                if ((currentPageId || "").replace(/-/g, "").toLowerCase() ===
-                    (pageId || "").replace(/-/g, "").toLowerCase()) {
+                updatePageMetadata(pageId, "pinned", pinned);
+                if (pageIdKey(currentPageId) === pageIdKey(pageId)) {
                     currentPagePinned = pinned;
                     setPinButton(id("page-pin"), pinned);
                 }
-                if (button) button.disabled = false;
+                renderSortedPages(false);
             }
         );
     }
@@ -1885,27 +1921,110 @@
             (day < 10 ? "0" : "") + day;
     }
 
+    function renderPageList(resetScroll) {
+        var list = id("pages"), previousScroll = list.scrollTop, i;
+        clear(list);
+
+        for (i = 0; i < pageList.length; ++i) {
+            (function(page) {
+                var row = document.createElement("div"),
+                    button = document.createElement("button"),
+                    pin = document.createElement("button"),
+                    icon = document.createElement("span"),
+                    name = document.createElement("span"),
+                    arrow = document.createElement("span"),
+                    small = document.createElement("small");
+
+                row.className = "page-row";
+                row.setAttribute("data-page-id", page.id);
+                button.className = "page-open";
+                button.setAttribute("type", "button");
+                pin.className = "page-pin";
+                pin.setAttribute("type", "button");
+                setPinButton(pin, page.pinned === true);
+
+                icon.className = "page-icon";
+                icon.appendChild(document.createTextNode("\u2637"));
+
+                name.className = "page-name";
+                name.appendChild(document.createTextNode(page.title));
+                small.appendChild(document.createTextNode(
+                    pageSortMode === "opened" ?
+                        (page.opened ?
+                            "Opened " + pageDate(page.opened) :
+                            "Not opened yet") :
+                        (page.edited ?
+                            "Edited " + page.edited.substring(0, 10) :
+                            "Not edited yet")
+                ));
+                name.appendChild(small);
+
+                arrow.className = "page-arrow";
+                arrow.innerHTML = "&rsaquo;";
+                button.appendChild(icon);
+                button.appendChild(name);
+                button.appendChild(arrow);
+
+                button.onclick = function() {
+                    openPage(page.id);
+                };
+                pin.onclick = function() {
+                    setPagePinned(
+                        page.id,
+                        pin.getAttribute("aria-pressed") !== "true",
+                        pin
+                    );
+                };
+
+                row.appendChild(button);
+                row.appendChild(pin);
+                list.appendChild(row);
+            }(pageList[i]));
+        }
+
+        if (!pageList.length) {
+            var empty = document.createElement("p");
+            empty.appendChild(document.createTextNode(
+                "No accessible pages found. " +
+                "Share pages with your Notion connection, then search again."
+            ));
+            list.appendChild(empty);
+        }
+
+        list.scrollTop = resetScroll ? 0 : previousScroll;
+    }
+
+    function renderSortedPages(resetScroll) {
+        sortPages();
+        renderPageList(resetScroll);
+        updateScroll();
+    }
+
     function choosePageSort(mode) {
         var previous;
-        if (busy || mode === pageSortMode ||
+        if (busy || pageSortSaveBusy || mode === pageSortMode ||
             (mode !== "opened" && mode !== "edited")) return;
         previous = pageSortMode;
         pageSortMode = mode;
         setSortButtons();
-        setBusy(true);
+        renderSortedPages(false);
+        pageSortSaveBusy = true;
+        id("sort-opened").disabled = true;
+        id("sort-edited").disabled = true;
         request(
             "POST",
             "/api/settings",
             "key=pageSortMode&value=" + encodeURIComponent(mode),
             function(error) {
-                setBusy(false);
+                pageSortSaveBusy = false;
+                id("sort-opened").disabled = false;
+                id("sort-edited").disabled = false;
                 if (error) {
                     pageSortMode = previous;
                     setSortButtons();
+                    renderSortedPages(false);
                     warning(error);
-                    return;
                 }
-                loadPages();
             }
         );
     }
@@ -1930,6 +2049,13 @@
         pageHistory = [];
         currentPageId = "";
         currentPagePinned = false;
+
+        if (!pageListLoaded) {
+            loadPages();
+            return;
+        }
+
+        renderSortedPages(false);
 
         hide(id("reader-view"));
         show(id("pages-view"));
@@ -1959,9 +2085,6 @@
                 encodeURIComponent(id("search").value || ""),
             null,
             function(error, result) {
-                var list = id("pages"),
-                    i;
-
                 if (error) {
                     setBusy(false);
                     warning(error);
@@ -1970,103 +2093,17 @@
                     return;
                 }
 
-                clear(list);
                 pageSortMode = result.sortMode === "edited" ? "edited" : "opened";
+                pageList = result.pages || [];
+                pageListLoaded = true;
                 setSortButtons();
-
-                for (i = 0; i < result.pages.length; ++i) {
-                    (function(page) {
-                        var row =
-                                document.createElement("div"),
-                            button =
-                                document.createElement("button"),
-                            pin =
-                                document.createElement("button"),
-                            icon =
-                                document.createElement("span"),
-                            name =
-                                document.createElement("span"),
-                            arrow =
-                                document.createElement("span"),
-                            small =
-                                document.createElement("small");
-
-                        row.className = "page-row";
-                        row.setAttribute("data-page-id", page.id);
-                        button.className = "page-open";
-                        button.setAttribute("type", "button");
-                        pin.className = "page-pin";
-                        pin.setAttribute("type", "button");
-                        setPinButton(pin, page.pinned === true);
-
-                        icon.className = "page-icon";
-                        icon.appendChild(
-                            document.createTextNode("\u2637")
-                        );
-
-                        name.className = "page-name";
-                        name.appendChild(
-                            document.createTextNode(page.title)
-                        );
-
-                        small.appendChild(
-                            document.createTextNode(
-                                pageSortMode === "opened" ?
-                                    (page.opened ?
-                                        "Opened " + pageDate(page.opened) :
-                                        "Not opened yet") :
-                                    (page.edited ?
-                                        "Edited " + page.edited.substring(0, 10) :
-                                        "Not edited yet")
-                            )
-                        );
-
-                        name.appendChild(small);
-
-                        arrow.className = "page-arrow";
-                        arrow.innerHTML = "&rsaquo;";
-
-                        button.appendChild(icon);
-                        button.appendChild(name);
-                        button.appendChild(arrow);
-
-                        button.onclick = function() {
-                            openPage(page.id);
-                        };
-                        pin.onclick = function() {
-                            setPagePinned(
-                                page.id,
-                                pin.getAttribute("aria-pressed") !== "true",
-                                pin
-                            );
-                        };
-
-                        row.appendChild(button);
-                        row.appendChild(pin);
-                        list.appendChild(row);
-                    }(result.pages[i]));
-                }
-
-                if (!result.pages.length) {
-                    var empty = document.createElement("p");
-                    empty.appendChild(
-                        document.createTextNode(
-                            "No accessible pages found. " +
-                            "Share pages with your Notion connection, " +
-                            "then search again."
-                        )
-                    );
-                    list.appendChild(empty);
-                }
+                renderSortedPages(true);
 
                 id("status").innerHTML =
-                    result.pages.length +
+                    pageList.length +
                     " accessible page" +
-                    (result.pages.length === 1 ? "" : "s");
+                    (pageList.length === 1 ? "" : "s");
 
-                id("pages").scrollTop = 0;
-
-                updateScroll();
                 setBusy(false);
 
                 request(
@@ -2123,6 +2160,12 @@
 
                 currentPageId = page.id || pageId;
                 currentPagePinned = page.pinned === true;
+                updatePageMetadata(
+                    currentPageId,
+                    "opened",
+                    Math.floor(new Date().getTime() / 1000)
+                );
+                updatePageMetadata(currentPageId, "pinned", currentPagePinned);
                 setPinButton(id("page-pin"), currentPagePinned);
 
                 restoreNightPalette(id("page-content"));
@@ -2486,6 +2529,9 @@
                 } else {
                     clearReadingPositionState();
                     currentPageId = "";
+                    currentPagePinned = false;
+                    pageList = [];
+                    pageListLoaded = false;
                     connectView();
                 }
             }
