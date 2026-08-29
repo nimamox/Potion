@@ -18,10 +18,20 @@ assert.ok(index.indexOf("vendor/katex/katex.min.css") < index.indexOf("app.css")
   "application compatibility CSS must load after KaTeX CSS");
 assert.doesNotMatch(index, /class="eyebrow"/);
 assert.match(index, /<div class="section-heading">\s*<h2>Notion Pages<\/h2>\s*<div class="search-row">/);
+assert.match(index, /id="sort-opened"[^>]*aria-pressed="true">Opened<\/button><button id="sort-edited"[^>]*>Edited<\/button>/);
+assert.match(index, /id="page-pin"[^>]*aria-label="Pin page"[^>]*>&#9734;<\/button>\s*<button id="pages-home"/);
 assert.match(appCss, /\.section-heading\s*{[\s\S]*display:\s*table;[\s\S]*height:\s*74px;/);
 assert.match(appCss, /\.section-heading h2\s*{[\s\S]*display:\s*table-cell;[\s\S]*width:\s*270px;/);
-assert.match(appCss, /\.search-row\s*{[\s\S]*display:\s*table-cell;[\s\S]*width:\s*100%;/);
+assert.match(appCss, /\.search-row\s*{[\s\S]*display:\s*table-cell;[\s\S]*width:\s*auto;/);
+assert.match(appCss, /\.page-sort button\.active\s*{[\s\S]*background:\s*#111;[\s\S]*color:\s*#fff;/);
 assert.match(appCss, /\.page-list\s*{[\s\S]*top:\s*74px;/);
+assert.match(appCss, /\.page-row\s*{[\s\S]*position:\s*relative;/);
+assert.match(appCss, /\.page-pin\s*{[\s\S]*position:\s*absolute;[\s\S]*font:\s*39px/);
+assert.match(frontend, /pageSortMode = "opened"/);
+assert.match(frontend, /key=pageSortMode&value=/);
+assert.match(frontend, /\/api\/pages\/" \+ encodeURIComponent\(pageId\) \+ "\/pin"/);
+assert.match(frontend, /page\.pinned === true/);
+assert.doesNotMatch(frontend, /localStorage/);
 
 const fontReferences = [...katexCss.matchAll(/fonts\/([^)'\"]+\.(?:woff2?|ttf))/g)]
   .map((match) => match[1]);

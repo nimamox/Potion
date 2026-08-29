@@ -235,6 +235,7 @@ void HttpServer::handle_client(int client) noexcept {
     } else if (request.method == "POST" && request.target == "/api/auth/logout") {
       std::string error; if (!state_.clear_token(error)) throw std::runtime_error(error);
       if (!positions_.clear(error)) throw std::runtime_error(error);
+      if (!state_.clear_page_pins(error)) throw std::runtime_error(error);
       images_.clear();
       respond(client, 200, "OK", "application/json", R"({"type":"logged-out"})");
     } else if (request.method == "GET" && request.target == "/api/pages") {
@@ -242,15 +243,52 @@ void HttpServer::handle_client(int client) noexcept {
       std::string error;
       const auto pages = notion_.search_pages(state_.token(), parameter(request.query, "query"), error);
       if (!error.empty()) throw std::runtime_error(error);
-      std::string body = R"({"type":"pages","pages":[)"; bool first_page = true;
+      struct ListedPage { PageSummary page; bool pinned{}; std::uint32_t opened{}; };
+      std::vector<ListedPage> listed;
+      listed.reserve(pages.size());
       for (const auto &page : pages) {
+        const auto position = positions_.get(page.id);
+        listed.push_back({page, state_.page_pinned(page.id),
+                          position ? position->last_seen : 0});
+      }
+      const std::string sort_mode = state_.settings().page_sort_mode;
+      std::stable_sort(listed.begin(), listed.end(),
+          [&](const ListedPage &left, const ListedPage &right) {
+            if (left.pinned != right.pinned) return left.pinned;
+            if (sort_mode == "opened" && left.opened != right.opened)
+              return left.opened > right.opened;
+            if (left.page.edited != right.page.edited)
+              return left.page.edited > right.page.edited;
+            return left.page.title < right.page.title;
+          });
+      std::string body = R"({"type":"pages","pages":[)"; bool first_page = true;
+      for (const auto &entry : listed) {
+        const auto &page = entry.page;
         if (!first_page) body += ',';
         first_page = false;
         body += R"({"id":)" + json_escape(page.id) +
                 R"(,"title":)" + json_escape(page.title) +
-                R"(,"edited":)" + json_escape(page.edited) + "}";
+                R"(,"edited":)" + json_escape(page.edited) +
+                R"(,"opened":)" + std::to_string(entry.opened) +
+                R"(,"pinned":)" + (entry.pinned ? "true}" : "false}");
       }
-      body += "]}"; respond(client, 200, "OK", "application/json", body);
+      body += R"(],"sortMode":)" + json_escape(sort_mode) + "}";
+      respond(client, 200, "OK", "application/json", body);
+    } else if (request.method == "POST" &&
+               request.target.compare(0, 11, "/api/pages/") == 0 &&
+               request.target.size() > 15 &&
+               request.target.compare(request.target.size() - 4, 4, "/pin") == 0) {
+      if (!state_.authenticated()) throw std::runtime_error("Connect Potion to Notion first");
+      const std::string id = request.target.substr(11, request.target.size() - 15);
+      if (!valid_page_id(id)) throw std::runtime_error("Invalid page id");
+      const std::string value = parameter(request.body, "pinned");
+      if (value != "0" && value != "1") throw std::runtime_error("Invalid pinned state");
+      std::string error;
+      if (!state_.set_page_pinned(id, value == "1", error))
+        throw std::runtime_error(error);
+      respond(client, 200, "OK", "application/json",
+              std::string(R"({"type":"pin","pinned":)") +
+                  (value == "1" ? "true}" : "false}"));
     } else if (request.method == "POST" &&
                request.target.compare(0, 11, "/api/pages/") == 0 &&
                request.target.size() > 18 &&
@@ -331,6 +369,7 @@ void HttpServer::handle_client(int client) noexcept {
         R"(,"title":)" + json_escape(page.title) +
         R"(,"html":)" + json_escape(renderer_.render(page.markdown)) +
         R"(,"truncated":)" + (page.truncated ? "true" : "false") +
+        R"(,"pinned":)" + (state_.page_pinned(page.id) ? "true" : "false") +
         R"(,"position":)";
       if (position)
         body += R"({"blockIndex":)" + std::to_string(position->block_index) +

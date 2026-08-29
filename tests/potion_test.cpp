@@ -587,8 +587,29 @@ int main() {
       require(state.settings_json().find("\"nightPageMode\":\"palette-images\"") != std::string::npos, "night page mode JSON");
       require(state.set_setting("pageButtonMode", "reversed", error), "save page button mode");
       require(state.settings_json().find("\"pageButtonMode\":\"reversed\"") != std::string::npos, "page button mode JSON");
+      require(state.settings().page_sort_mode == "opened", "opened sort is default");
+      require(state.set_setting("pageSortMode", "edited", error), "save page sort mode");
+      require(state.settings_json().find("\"pageSortMode\":\"edited\"") != std::string::npos,
+              "page sort mode JSON");
+      error.clear();
+      require(!state.set_setting("pageSortMode", "random", error), "reject invalid page sort mode");
+      error.clear();
+      require(state.set_page_pinned("5908cc548ef342b6b84e254fa1785a21", true, error),
+              "persist page pin");
+      require(state.set_page_pinned("5908cc54-8ef3-42b6-b84e-254fa1785a21", true, error),
+              "updating page pin does not duplicate it");
+      require(state.page_pinned("5908cc548ef342b6b84e254fa1785a21"), "page is pinned");
+      require(::stat((std::string(directory) + "/pins.conf").c_str(), &info) == 0 &&
+                  (info.st_mode & 0777) == 0600,
+              "page pin file permissions");
     }
-    require(potion::AppState(directory).token() == "test-token", "reload token");
+    {
+      potion::AppState reloaded(directory);
+      require(reloaded.token() == "test-token", "reload token");
+      require(reloaded.settings().page_sort_mode == "edited", "reload page sort mode");
+      require(reloaded.page_pinned("5908cc54-8ef3-42b6-b84e-254fa1785a21"),
+              "reload normalized page pin");
+    }
 
     {
       potion::AppState state(directory);
@@ -648,6 +669,10 @@ int main() {
       require(potion::Json::parse(request(port, "/api/input")).get("action").string() == "backward", "FIFO second");
 
       const std::string page_id = "5908cc548ef342b6b84e254fa1785a21";
+      const std::string pin_page = "pinned=1";
+      require(potion::Json::parse(request(port, "/api/pages/" + page_id + "/pin", &pin_page))
+                  .get("pinned").boolean(), "page pin API");
+      require(potion::AppState(directory).page_pinned(page_id), "page pin API persists");
       const std::string saved_position = "blockIndex=173&blockFraction=16384";
       request(port, "/api/pages/" + page_id + "/position", &saved_position);
       auto position = potion::Json::parse(request(port, "/api/pages/" + page_id + "/position")).get("position");
@@ -666,6 +691,9 @@ int main() {
                   .get("position").is_null(), "logout clears reading positions");
       require(::access((std::string(directory) + "/positions.dat").c_str(), F_OK) != 0,
               "logout removes persisted positions");
+      require(!potion::AppState(directory).page_pinned(page_id), "logout clears page pins");
+      require(::access((std::string(directory) + "/pins.conf").c_str(), F_OK) != 0,
+              "logout removes persisted page pins");
 
       auto shutdown_wait = std::async(std::launch::async, [port] {
         try { request(port, "/api/input"); } catch (...) {}
@@ -676,6 +704,7 @@ int main() {
     }
     ::unlink((std::string(directory) + "/token").c_str());
     ::unlink((std::string(directory) + "/state.conf").c_str());
+    ::unlink((std::string(directory) + "/pins.conf").c_str());
     const std::string position_test_dirs[] = {
       positions_dir, malformed_dir, expiry_dir, cap_dir
     };

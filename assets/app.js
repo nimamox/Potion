@@ -5,6 +5,8 @@
         inputBusy = false,
         inputTimer = null,
         currentPageId = "",
+        currentPagePinned = false,
+        pageSortMode = "opened",
         pageHistory = [];
     var irisTimer = null,
         irisFrame = 0,
@@ -1816,6 +1818,98 @@
                 inlineLinks[i].onclick = openLinkedPage;
     }
 
+    function setPinButton(button, pinned) {
+        if (!button) return;
+        button.innerHTML = pinned ? "&#9733;" : "&#9734;";
+        button.setAttribute("aria-pressed", pinned ? "true" : "false");
+        button.setAttribute("aria-label", pinned ? "Unpin page" : "Pin page");
+    }
+
+    function setSortButtons() {
+        var opened = id("sort-opened"),
+            edited = id("sort-edited"),
+            openedActive = pageSortMode === "opened";
+        opened.className = openedActive ? "active" : "";
+        edited.className = openedActive ? "" : "active";
+        opened.setAttribute("aria-pressed", openedActive ? "true" : "false");
+        edited.setAttribute("aria-pressed", openedActive ? "false" : "true");
+    }
+
+    function updateListPin(pageId, pinned) {
+        var rows = id("pages").getElementsByClassName("page-row"),
+            wanted = (pageId || "").replace(/-/g, "").toLowerCase(),
+            buttons, rowId, i;
+        for (i = 0; i < rows.length; ++i) {
+            rowId = (rows[i].getAttribute("data-page-id") || "")
+                .replace(/-/g, "").toLowerCase();
+            if (rowId !== wanted) continue;
+            buttons = rows[i].getElementsByClassName("page-pin");
+            if (buttons.length) setPinButton(buttons[0], pinned);
+            break;
+        }
+    }
+
+    function setPagePinned(pageId, pinned, button) {
+        if (button) button.disabled = true;
+        request(
+            "POST",
+            "/api/pages/" + encodeURIComponent(pageId) + "/pin",
+            "pinned=" + (pinned ? "1" : "0"),
+            function(error, result) {
+                if (error) {
+                    if (button) button.disabled = false;
+                    warning(error);
+                    return;
+                }
+                pinned = result && result.pinned === true;
+                setPinButton(button, pinned);
+                updateListPin(pageId, pinned);
+                if ((currentPageId || "").replace(/-/g, "").toLowerCase() ===
+                    (pageId || "").replace(/-/g, "").toLowerCase()) {
+                    currentPagePinned = pinned;
+                    setPinButton(id("page-pin"), pinned);
+                }
+                if (button) button.disabled = false;
+            }
+        );
+    }
+
+    function pageDate(timestamp) {
+        var date, month, day;
+        if (!timestamp) return "Not opened yet";
+        date = new Date(timestamp * 1000);
+        month = date.getMonth() + 1;
+        day = date.getDate();
+        return date.getFullYear() + "-" +
+            (month < 10 ? "0" : "") + month + "-" +
+            (day < 10 ? "0" : "") + day;
+    }
+
+    function choosePageSort(mode) {
+        var previous;
+        if (busy || mode === pageSortMode ||
+            (mode !== "opened" && mode !== "edited")) return;
+        previous = pageSortMode;
+        pageSortMode = mode;
+        setSortButtons();
+        setBusy(true);
+        request(
+            "POST",
+            "/api/settings",
+            "key=pageSortMode&value=" + encodeURIComponent(mode),
+            function(error) {
+                setBusy(false);
+                if (error) {
+                    pageSortMode = previous;
+                    setSortButtons();
+                    warning(error);
+                    return;
+                }
+                loadPages();
+            }
+        );
+    }
+
     function showPages(positionSaved) {
         if (busy) return;
 
@@ -1835,6 +1929,7 @@
 
         pageHistory = [];
         currentPageId = "";
+        currentPagePinned = false;
 
         hide(id("reader-view"));
         show(id("pages-view"));
@@ -1876,19 +1971,33 @@
                 }
 
                 clear(list);
+                pageSortMode = result.sortMode === "edited" ? "edited" : "opened";
+                setSortButtons();
 
                 for (i = 0; i < result.pages.length; ++i) {
                     (function(page) {
-                        var button =
+                        var row =
+                                document.createElement("div"),
+                            button =
+                                document.createElement("button"),
+                            pin =
                                 document.createElement("button"),
                             icon =
                                 document.createElement("span"),
                             name =
                                 document.createElement("span"),
                             arrow =
-                                document.createElement("span");
+                                document.createElement("span"),
+                            small =
+                                document.createElement("small");
 
-                        button.className = "page-row";
+                        row.className = "page-row";
+                        row.setAttribute("data-page-id", page.id);
+                        button.className = "page-open";
+                        button.setAttribute("type", "button");
+                        pin.className = "page-pin";
+                        pin.setAttribute("type", "button");
+                        setPinButton(pin, page.pinned === true);
 
                         icon.className = "page-icon";
                         icon.appendChild(
@@ -1900,15 +2009,15 @@
                             document.createTextNode(page.title)
                         );
 
-                        var small =
-                            document.createElement("small");
-
                         small.appendChild(
                             document.createTextNode(
-                                page.edited ?
-                                    "Edited " +
-                                        page.edited.substring(0, 10) :
-                                    ""
+                                pageSortMode === "opened" ?
+                                    (page.opened ?
+                                        "Opened " + pageDate(page.opened) :
+                                        "Not opened yet") :
+                                    (page.edited ?
+                                        "Edited " + page.edited.substring(0, 10) :
+                                        "Not edited yet")
                             )
                         );
 
@@ -1924,8 +2033,17 @@
                         button.onclick = function() {
                             openPage(page.id);
                         };
+                        pin.onclick = function() {
+                            setPagePinned(
+                                page.id,
+                                pin.getAttribute("aria-pressed") !== "true",
+                                pin
+                            );
+                        };
 
-                        list.appendChild(button);
+                        row.appendChild(button);
+                        row.appendChild(pin);
+                        list.appendChild(row);
                     }(result.pages[i]));
                 }
 
@@ -2004,6 +2122,8 @@
                     pageHistory = [];
 
                 currentPageId = page.id || pageId;
+                currentPagePinned = page.pinned === true;
+                setPinButton(id("page-pin"), currentPagePinned);
 
                 restoreNightPalette(id("page-content"));
                 resetMathRepair();
@@ -2084,9 +2204,15 @@
                     settings.pageButtonMode === "reversed" ?
                         "reversed" :
                         "normal";
+
+                pageSortMode =
+                    settings.pageSortMode === "edited" ?
+                        "edited" :
+                        "opened";
             }
 
             applyAppearance(false);
+            setSortButtons();
 
             request(
                 "GET",
@@ -2153,6 +2279,14 @@
 
     id("search-button").onclick = loadPages;
 
+    id("sort-opened").onclick = function() {
+        choosePageSort("opened");
+    };
+
+    id("sort-edited").onclick = function() {
+        choosePageSort("edited");
+    };
+
     id("search").onkeydown = function(event) {
         event = event || window.event;
         if (event.keyCode === 13)
@@ -2172,6 +2306,11 @@
     };
 
     id("pages-home").onclick = showPages;
+
+    id("page-pin").onclick = function() {
+        if (currentPageId)
+            setPagePinned(currentPageId, !currentPagePinned, this);
+    };
 
     id("scroll-up").onclick = function() {
         pageScroll(-1);

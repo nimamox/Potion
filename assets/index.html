@@ -40,6 +40,7 @@
     <div class="section-heading">
       <h2>Notion Pages</h2>
       <div class="search-row"><input id="search" type="text" placeholder="Search accessible pages"><button id="search-button" type="button">Search</button></div>
+      <div class="page-sort-cell"><div class="page-sort" role="group" aria-label="Sort pages"><button id="sort-opened" type="button" aria-pressed="true">Opened</button><button id="sort-edited" type="button" aria-pressed="false">Edited</button></div></div>
     </div>
     <div id="pages" class="page-list"></div>
   </section>
@@ -48,6 +49,7 @@
     <div class="reader-toolbar">
       <button id="back" type="button">&lsaquo;&nbsp; Back</button>
       <h2 id="page-title">Page</h2>
+      <button id="page-pin" class="reader-page-pin" type="button" aria-label="Pin page" aria-pressed="false">&#9734;</button>
       <button id="pages-home" type="button">Pages</button>
     </div>
     <article id="page-content" class="page-content"></article>

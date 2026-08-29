@@ -237,15 +237,42 @@ h2 {
 }
 .section-heading h2 {
   display: table-cell;
-  width: 50%;
+  width: 270px;
   vertical-align: middle;
   white-space: nowrap;
 }
 .search-row {
   display: table-cell;
-  width: 50%;
+  width: auto;
   margin: 0;
   vertical-align: middle;
+}
+.page-sort-cell {
+  display: table-cell;
+  width: 236px;
+  padding-left: 14px;
+  vertical-align: middle;
+}
+.page-sort {
+  display: table;
+  width: 100%;
+  table-layout: fixed;
+}
+.page-sort button {
+  display: table-cell;
+  width: 50%;
+  height: 62px;
+  padding: 0;
+  border: 2px solid #111;
+  background: #fff;
+  font: bold 18px "Amazon Ember", Arial, sans-serif;
+}
+.page-sort button + button {
+  border-left: 0;
+}
+.page-sort button.active {
+  background: #111;
+  color: #fff;
 }
 .search-row input,
 .search-row button {
@@ -273,14 +300,32 @@ h2 {
   border-top: 2px solid #111;
 }
 .page-row {
-  display: table;
+  position: relative;
   width: 100%;
   min-height: 96px;
-  padding: 12px 10px;
-  border: 0;
   border-bottom: 2px solid #aaa;
   background: #fff;
+}
+.page-open {
+  display: table;
+  width: 100%;
+  min-height: 94px;
+  padding: 12px 78px 12px 10px;
+  border: 0;
+  background: #fff;
   text-align: left;
+}
+.page-pin {
+  position: absolute;
+  z-index: 2;
+  top: 15px;
+  right: 7px;
+  width: 60px;
+  height: 64px;
+  padding: 0;
+  border: 0;
+  background: #fff;
+  font: 39px/1 "Kindle Symbol", "Amazon Ember", Arial, sans-serif;
 }
 .page-icon,
 .page-name,
@@ -332,11 +377,17 @@ h2 {
 #pages-home {
   right: 0;
 }
+.reader-toolbar .reader-page-pin {
+  right: 160px;
+  width: 58px;
+  padding: 0;
+  font: 39px/1 "Kindle Symbol", "Amazon Ember", Arial, sans-serif;
+}
 .reader-toolbar h2 {
   position: absolute;
   top: 0;
-  right: 152px;
-  left: 152px;
+  right: 220px;
+  left: 220px;
   height: 88px;
   margin: 0;
   padding: 0 8px;
@@ -919,6 +970,8 @@ h2 {
 .night-mode .view,
 .night-mode .reader-toolbar,
 .night-mode .page-row,
+.night-mode .page-open,
+.night-mode .page-pin,
 .night-mode .square,
 .night-mode .font-buttons button,
 .night-mode .overlay,
@@ -929,6 +982,10 @@ h2 {
   background: #000;
   color: #eee;
   border-color: #eee;
+}
+.night-mode .page-sort button.active {
+  background: #eee;
+  color: #111;
 }
 .night-mode #status,
 .night-mode .page-name small {
