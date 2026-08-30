@@ -30,9 +30,11 @@
         positionRestoring = false,
         positionRestoreAnchor = null,
         transientReadingPosition = null,
+        transientPositionTimer = null,
         viewportRestoreTimer = null,
-        viewportRestoreAnchor = null;
-    var POSITION_RESTORE_QUIET_MS = 400;
+        readingViewportWidth = 0;
+    var POSITION_RESTORE_QUIET_MS = 400,
+        TRANSIENT_POSITION_UPDATE_MS = 100;
     var selectionTimer = null,
         selectionState = null,
         selectionMenuActive = false,
@@ -1020,6 +1022,7 @@
         max = Math.max(0, target.scrollHeight - target.clientHeight);
         target.scrollTop = Math.max(0, Math.min(max, target.scrollTop + direction * distance));
         updateScroll();
+        scheduleTransientReadingPositionUpdate();
         scheduleReadingPositionSave();
     }
 
@@ -1451,11 +1454,16 @@
             viewportRestoreTimer = null;
         }
 
+        if (transientPositionTimer !== null) {
+            window.clearTimeout(transientPositionTimer);
+            transientPositionTimer = null;
+        }
+
         readingBlocks = [];
         positionRestoring = false;
         positionRestoreAnchor = null;
         transientReadingPosition = null;
-        viewportRestoreAnchor = null;
+        readingViewportWidth = 0;
         id("page-content").style.visibility = "";
     }
 
@@ -1467,6 +1475,8 @@
 
         for (i = 0; i < nodes.length; ++i)
             readingBlocks.push(nodes[i]);
+
+        readingViewportWidth = id("page-content").clientWidth;
     }
 
     function currentReadingPosition() {
@@ -1565,6 +1575,33 @@
             positionSaveTimer = null;
             saveCurrentReadingPosition();
         }, 5000);
+    }
+
+    function rememberCurrentReadingPosition() {
+        var position;
+        if (positionRestoring ||
+            !currentPageId ||
+            id("reader-view").className.indexOf("hidden") >= 0 ||
+            !readingBlocks.length)
+            return;
+        position = currentReadingPosition();
+        if (position) transientReadingPosition = position;
+    }
+
+    function scheduleTransientReadingPositionUpdate() {
+        if (positionRestoring) return;
+        if (readingViewportWidth &&
+            id("page-content").clientWidth !== readingViewportWidth) {
+            scheduleViewportReadingRestore();
+            return;
+        }
+        if (transientPositionTimer === null) {
+            rememberCurrentReadingPosition();
+            transientPositionTimer = window.setTimeout(function() {
+                transientPositionTimer = null;
+                rememberCurrentReadingPosition();
+            }, TRANSIENT_POSITION_UPDATE_MS);
+        }
     }
 
     /* READING_POSITION_MAINTENANCE_BEGIN */
@@ -1702,28 +1739,29 @@
         beginReadingRestore(position, true);
     }
 
-    function scheduleViewportReadingRestore(capture) {
+    function scheduleViewportReadingRestore() {
         if (!currentPageId ||
             id("reader-view").className.indexOf("hidden") >= 0 ||
             !readingBlocks.length) {
             updateScroll();
             return;
         }
-        if (capture && !positionRestoring)
-            viewportRestoreAnchor = currentReadingPosition();
+        if (transientPositionTimer !== null) {
+            window.clearTimeout(transientPositionTimer);
+            transientPositionTimer = null;
+        }
         if (viewportRestoreTimer !== null)
             window.clearTimeout(viewportRestoreTimer);
         viewportRestoreTimer = window.setTimeout(function() {
             var position;
             viewportRestoreTimer = null;
             updateScroll();
+            readingViewportWidth = id("page-content").clientWidth;
             if (positionRestoreAnchor) {
                 maintainReadingRestore(null, true);
                 return;
             }
-            position = viewportRestoreAnchor || transientReadingPosition ||
-                currentReadingPosition();
-            viewportRestoreAnchor = null;
+            position = transientReadingPosition || currentReadingPosition();
             if (position) beginReadingRestore(position, false);
         }, 0);
     }
@@ -2756,6 +2794,7 @@
         updateScroll();
         scheduleMathRepair();
         scheduleImageLoad();
+        scheduleTransientReadingPositionUpdate();
         scheduleReadingPositionSave();
     };
 
@@ -3011,11 +3050,11 @@
         return false;
     };
     window.onorientationchange = function() {
-        scheduleViewportReadingRestore(true);
+        scheduleViewportReadingRestore();
     };
     window.onresize = function() {
         updateScroll();
-        scheduleViewportReadingRestore(false);
+        scheduleViewportReadingRestore();
     };
 
     start();

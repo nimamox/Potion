@@ -12,6 +12,9 @@ const fontDirectory = process.argv[6];
 const appCss = fs.readFileSync(process.argv[7], "utf8");
 const config = fs.readFileSync(process.argv[8], "utf8");
 const runKindle = fs.readFileSync(process.argv[9], "utf8");
+const simulatorIndex = fs.readFileSync(process.argv[10], "utf8");
+const simulatorJs = fs.readFileSync(process.argv[11], "utf8");
+const simulatorCss = fs.readFileSync(process.argv[12], "utf8");
 
 assert.doesNotMatch(frontend, /window\.katex|katex\.render|loadKatex|katexState|data-expr/);
 assert.match(index, /vendor\/katex\/katex\.min\.css\?v=0\.16\.25-native/);
@@ -28,6 +31,15 @@ assert.match(appCss, /\.header-actions\s*{[\s\S]*width:\s*439px;[\s\S]*font-size
 assert.match(appCss,
   /\.header-actions button,[\s\S]*?\.header-actions \.header-button\.icon-button\s*{[\s\S]*width:\s*69px;[\s\S]*height:\s*69px;/);
 assert.match(runKindle, /'supportedOrientation','UDLR'/);
+assert.match(simulatorIndex,
+  /id="orientation"[\s\S]*value="portrait">Portrait<[\s\S]*value="landscape">Landscape</);
+assert.match(simulatorJs, /orientation="portrait"/,
+  "the simulator defaults to portrait");
+assert.match(simulatorJs,
+  /orientation==="landscape"\?\{width:current\.height,height:current\.width\}/,
+  "landscape swaps the simulated viewport dimensions");
+assert.match(simulatorJs, /initEvent\("orientationchange",false,false\)/);
+assert.match(simulatorCss, /\.toolbar #orientation\s*\{[\s\S]*min-width:\s*110px;/);
 assert.match(appCss, /\.section-heading\s*{[\s\S]*display:\s*table;[\s\S]*height:\s*74px;/);
 assert.match(appCss, /\.section-heading h2\s*{[\s\S]*display:\s*table-cell;[\s\S]*width:\s*270px;/);
 assert.match(appCss, /\.search-row\s*{[\s\S]*display:\s*table-cell;[\s\S]*width:\s*auto;/);
@@ -538,6 +550,58 @@ assert.match(frontend,
   /detail >= 3[\s\S]*selectMultiTap\(event, true\)[\s\S]*detail === 2[\s\S]*selectMultiTap\(event, false\)/);
 assert.match(frontend, /id\("page-content"\)\.ondblclick = function\(event\)/);
 
+const transientPositionMatch = frontend.match(
+  /(function rememberCurrentReadingPosition\(\) \{[\s\S]*?\n    \})\n\n    \/\* READING_POSITION_MAINTENANCE_BEGIN/);
+assert.ok(transientPositionMatch, "missing transient reading-position updater");
+const transientTimers = [];
+let transientReads = 0;
+let transientViewportRestores = 0;
+const transientRoot = {clientWidth: 600};
+const transientContext = {
+  positionRestoring: false,
+  currentPageId: "page",
+  readingBlocks: [{}],
+  transientReadingPosition: null,
+  transientPositionTimer: null,
+  readingViewportWidth: 600,
+  TRANSIENT_POSITION_UPDATE_MS: 100,
+  id: function(name) {
+    return name === "page-content" ? transientRoot : {className: ""};
+  },
+  scheduleViewportReadingRestore: function() {
+    transientViewportRestores++;
+  },
+  currentReadingPosition: function() {
+    transientReads++;
+    return {blockIndex: transientReads, blockFraction: 0};
+  },
+  window: {setTimeout: function(callback, delay) {
+    const timer = {callback, delay};
+    transientTimers.push(timer);
+    return timer;
+  }}
+};
+vm.createContext(transientContext);
+vm.runInContext(transientPositionMatch[1], transientContext);
+transientContext.scheduleTransientReadingPositionUpdate();
+transientContext.scheduleTransientReadingPositionUpdate();
+assert.equal(transientReads, 1,
+  "the first scroll remembers its logical position immediately");
+assert.equal(transientTimers.length, 1,
+  "rapid scroll events share one in-memory update timer");
+assert.equal(transientTimers[0].delay, 100);
+transientTimers[0].callback();
+assert.equal(transientReads, 2,
+  "the throttle also captures the latest position at its trailing edge");
+transientRoot.clientWidth = 800;
+transientContext.scheduleTransientReadingPositionUpdate();
+assert.equal(transientReads, 2,
+  "a reflow-induced scroll cannot overwrite the pre-rotation anchor");
+assert.equal(transientViewportRestores, 1,
+  "a changed viewport width starts semantic restoration instead");
+assert.match(frontend,
+  /id\("page-content"\)\.onscroll = function\(\)[\s\S]*scheduleTransientReadingPositionUpdate\(\)/);
+
 // Reading-position restoration remains anchored while asynchronous layout
 // above the saved block settles. The first correction reveals the page; later
 // image/math completions merely reapply the same logical block + fraction.
@@ -551,6 +615,7 @@ function readingRestoreFixture() {
     scrollTop: 0,
     scrollHeight: 2000,
     clientHeight: 600,
+    clientWidth: 600,
     style: {visibility: "hidden"}
   };
   const block = {
@@ -564,8 +629,9 @@ function readingRestoreFixture() {
     positionRestoring: false,
     positionRestoreAnchor: null,
     transientReadingPosition: null,
+    transientPositionTimer: null,
     viewportRestoreTimer: null,
-    viewportRestoreAnchor: null,
+    readingViewportWidth: 600,
     POSITION_RESTORE_QUIET_MS: 400,
     currentPageId: "page",
     mathRepairTimer: null,
@@ -656,7 +722,14 @@ assert.equal(irrelevantRestore.root.scrollTop, 123,
   "layout changes below the restore anchor do not cause correction");
 
 const rotatedRestore = readingRestoreFixture();
-rotatedRestore.context.scheduleViewportReadingRestore(true);
+rotatedRestore.context.transientReadingPosition = {
+  blockIndex: 0,
+  blockFraction: 32768
+};
+rotatedRestore.context.currentReadingPosition = function() {
+  return {blockIndex: 0, blockFraction: 0};
+};
+rotatedRestore.context.scheduleViewportReadingRestore();
 rotatedRestore.block.offsetTop = 500;
 rotatedRestore.timers[0].callback();
 assert.equal(rotatedRestore.root.scrollTop, 600,
@@ -671,8 +744,8 @@ assert.match(frontend,
 assert.match(frontend,
   /function saveCurrentReadingPosition\(done\)[\s\S]*if \(positionRestoring \|\|/);
 assert.match(frontend,
-  /window\.onorientationchange = function\(\) \{\s*scheduleViewportReadingRestore\(true\)/);
+  /window\.onorientationchange = function\(\) \{\s*scheduleViewportReadingRestore\(\)/);
 assert.match(frontend,
-  /window\.onresize = function\(\) \{[\s\S]*scheduleViewportReadingRestore\(false\)/);
+  /window\.onresize = function\(\) \{[\s\S]*scheduleViewportReadingRestore\(\)/);
 
 console.log("Potion frontend native-math contract tests passed");
