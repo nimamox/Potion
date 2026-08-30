@@ -1446,8 +1446,16 @@
             positionRestoreTimer = null;
         }
 
+        if (viewportRestoreTimer !== null) {
+            window.clearTimeout(viewportRestoreTimer);
+            viewportRestoreTimer = null;
+        }
+
         readingBlocks = [];
         positionRestoring = false;
+        positionRestoreAnchor = null;
+        transientReadingPosition = null;
+        viewportRestoreAnchor = null;
         id("page-content").style.visibility = "";
     }
 
@@ -1515,7 +1523,8 @@
 
         done = done || function() {};
 
-        if (!pageId ||
+        if (positionRestoring ||
+            !pageId ||
             id("reader-view").className.indexOf("hidden") >= 0 ||
             !readingBlocks.length) {
             done();
@@ -1528,6 +1537,8 @@
             done();
             return;
         }
+
+        transientReadingPosition = position;
 
         request(
             "POST",
@@ -1556,16 +1567,99 @@
         }, 5000);
     }
 
-    function restoreReadingPosition(position) {
+    /* READING_POSITION_MAINTENANCE_BEGIN */
+    function readingRestoreAffects(node) {
+        var root = id("page-content"), anchor = positionRestoreAnchor,
+            anchorBottom;
+        if (!anchor || !node || node.offsetParent === null) return false;
+        anchorBottom = mathTop(anchor.block, root) +
+            Math.max(1, anchor.block.offsetHeight || 1);
+        return mathTop(node, root) <= anchorBottom;
+    }
+
+    function applyReadingRestoreAnchor() {
+        var root = id("page-content"), anchor = positionRestoreAnchor,
+            top, height, maximum, index, block;
+        if (!anchor || !readingBlocks.length) return;
+        block = anchor.block;
+        index = anchor.blockIndex;
+        while (index > 0 && (!block || block.offsetParent === null))
+            block = readingBlocks[--index];
+        if (!block || block.offsetParent === null) return;
+        anchor.block = block;
+        top = mathTop(block, root);
+        height = Math.max(1, block.offsetHeight || 1);
+        maximum = Math.max(0, root.scrollHeight - root.clientHeight);
+        root.scrollTop = Math.max(
+            0,
+            Math.min(maximum, Math.round(top + height * anchor.fraction))
+        );
+        updateScroll();
+    }
+
+    function readingRestoreHasPendingLayout() {
+        var i, image;
+        if (!positionRestoreAnchor) return false;
+        if (mathRepairTimer !== null) return true;
+        for (i = 0; i < imageNodes.length; ++i) {
+            image = imageNodes[i];
+            if (!readingRestoreAffects(image)) continue;
+            if (image._potionImageLoading ||
+                (image._potionImageRequested && !image.complete) ||
+                (!image._potionImageRequested &&
+                    image._potionImageAttempts < 2 &&
+                    image.getAttribute("data-src")))
+                return true;
+        }
+        return false;
+    }
+
+    function finishReadingRestore() {
+        var root = id("page-content");
+        if (positionRestoreTimer !== null) {
+            window.clearTimeout(positionRestoreTimer);
+            positionRestoreTimer = null;
+        }
+        applyReadingRestoreAnchor();
+        positionRestoring = false;
+        positionRestoreAnchor = null;
+        root.style.visibility = "";
+        transientReadingPosition = currentReadingPosition();
+    }
+
+    function armReadingRestoreQuietPeriod() {
+        if (!positionRestoreAnchor) return;
+        if (positionRestoreTimer !== null)
+            window.clearTimeout(positionRestoreTimer);
+        positionRestoreTimer = window.setTimeout(function() {
+            positionRestoreTimer = null;
+            if (!positionRestoreAnchor) return;
+            if (readingRestoreHasPendingLayout()) {
+                armReadingRestoreQuietPeriod();
+                return;
+            }
+            finishReadingRestore();
+        }, POSITION_RESTORE_QUIET_MS);
+    }
+
+    function maintainReadingRestore(node, force) {
+        if (!positionRestoreAnchor || (!force && !readingRestoreAffects(node)))
+            return;
+        applyReadingRestoreAnchor();
+        armReadingRestoreQuietPeriod();
+    }
+
+    function beginReadingRestore(position, initiallyHidden) {
         var root = id("page-content"),
             index, fraction, block;
-
-        positionRestoring = false;
 
         if (!position || !readingBlocks.length) {
             root.scrollTop = 0;
             root.style.visibility = "";
-            return;
+            positionRestoring = false;
+            positionRestoreAnchor = null;
+            transientReadingPosition = currentReadingPosition();
+            return false;
         }
 
         index = parseInt(position.blockIndex, 10);
@@ -1584,36 +1678,56 @@
         while (index > 0 && block.offsetParent === null)
             block = readingBlocks[--index];
 
-        root.style.visibility = "hidden";
-        positionRestoring = true;
-
-        function apply() {
-            var top = mathTop(block, root),
-                height = Math.max(1, block.offsetHeight || 1),
-                maximum = Math.max(0, root.scrollHeight - root.clientHeight);
-
-            root.scrollTop = Math.max(
-                0,
-                Math.min(
-                    maximum,
-                    Math.round(top + height * fraction)
-                )
-            );
-
-            updateScroll();
-            scheduleMathRepair(0);
-            scheduleImageLoad(0);
-        }
-
-        apply();
-
-        positionRestoreTimer = window.setTimeout(function() {
+        if (positionRestoreTimer !== null) {
+            window.clearTimeout(positionRestoreTimer);
             positionRestoreTimer = null;
-            apply();
-            positionRestoring = false;
-            root.style.visibility = "";
-        }, 180);
+        }
+        positionRestoreAnchor = {
+            blockIndex: index,
+            blockFraction: Math.round(fraction * 65535),
+            fraction: fraction,
+            block: block
+        };
+        positionRestoring = true;
+        if (initiallyHidden) root.style.visibility = "hidden";
+        applyReadingRestoreAnchor();
+        root.style.visibility = "";
+        scheduleMathRepair(0);
+        scheduleImageLoad(0);
+        armReadingRestoreQuietPeriod();
+        return true;
     }
+
+    function restoreReadingPosition(position) {
+        beginReadingRestore(position, true);
+    }
+
+    function scheduleViewportReadingRestore(capture) {
+        if (!currentPageId ||
+            id("reader-view").className.indexOf("hidden") >= 0 ||
+            !readingBlocks.length) {
+            updateScroll();
+            return;
+        }
+        if (capture && !positionRestoring)
+            viewportRestoreAnchor = currentReadingPosition();
+        if (viewportRestoreTimer !== null)
+            window.clearTimeout(viewportRestoreTimer);
+        viewportRestoreTimer = window.setTimeout(function() {
+            var position;
+            viewportRestoreTimer = null;
+            updateScroll();
+            if (positionRestoreAnchor) {
+                maintainReadingRestore(null, true);
+                return;
+            }
+            position = viewportRestoreAnchor || transientReadingPosition ||
+                currentReadingPosition();
+            viewportRestoreAnchor = null;
+            if (position) beginReadingRestore(position, false);
+        }, 0);
+    }
+    /* READING_POSITION_MAINTENANCE_END */
 
     /*
      * Mesquite math compatibility
@@ -1851,7 +1965,7 @@
     function repairMathNearViewport() {
         var root = id("page-content"),
             limit = root.scrollTop + root.clientHeight * 2.5,
-            i, node, repaired = 0;
+            i, node, repaired = 0, restoreChanged = false;
 
         mathRepairTimer = null;
 
@@ -1870,6 +1984,7 @@
 
             node._potionMathRepaired = true;
             repairKindleMath(node);
+            if (readingRestoreAffects(node)) restoreChanged = true;
             repaired++;
 
             if (repaired >= 16) {
@@ -1879,6 +1994,10 @@
         }
 
         updateScroll();
+        if (restoreChanged)
+            maintainReadingRestore(null, true);
+        else if (positionRestoreAnchor)
+            armReadingRestoreQuietPeriod();
     }
 
     function scheduleMathRepair(delay) {
@@ -1929,6 +2048,8 @@
             image._potionImageRequested = false;
         }
 
+        maintainReadingRestore(image, false);
+
         scheduleImageLoad(loaded ? 20 : 500);
     }
 
@@ -1963,6 +2084,9 @@
             image._potionImageAttempts++;
             image._potionImageGeneration = imageGeneration;
             imageLoads++;
+
+            if (readingRestoreAffects(image))
+                armReadingRestoreQuietPeriod();
 
             image.setAttribute(
                 "src",
@@ -2004,6 +2128,7 @@
                 this.className =
                     this.className === "expanded" ? "" : "expanded";
                 updateScroll();
+                maintainReadingRestore(this, false);
                 scheduleMathRepair();
                 scheduleImageLoad();
             };
@@ -2047,6 +2172,7 @@
                         expanded ? "&#9656;" : "&#9662;";
 
                 updateScroll();
+                maintainReadingRestore(this, false);
                 scheduleMathRepair();
                 scheduleImageLoad();
             };
@@ -2884,7 +3010,13 @@
         selectMultiTap(event || window.event, false);
         return false;
     };
-    window.onresize = updateScroll;
+    window.onorientationchange = function() {
+        scheduleViewportReadingRestore(true);
+    };
+    window.onresize = function() {
+        updateScroll();
+        scheduleViewportReadingRestore(false);
+    };
 
     start();
 }());

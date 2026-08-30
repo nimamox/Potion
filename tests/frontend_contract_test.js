@@ -538,4 +538,141 @@ assert.match(frontend,
   /detail >= 3[\s\S]*selectMultiTap\(event, true\)[\s\S]*detail === 2[\s\S]*selectMultiTap\(event, false\)/);
 assert.match(frontend, /id\("page-content"\)\.ondblclick = function\(event\)/);
 
+// Reading-position restoration remains anchored while asynchronous layout
+// above the saved block settles. The first correction reveals the page; later
+// image/math completions merely reapply the same logical block + fraction.
+const readingRestoreMatch = frontend.match(
+  /\/\* READING_POSITION_MAINTENANCE_BEGIN \*\/([\s\S]*?)\/\* READING_POSITION_MAINTENANCE_END \*\//);
+assert.ok(readingRestoreMatch, "missing reading-position maintenance boundary");
+
+function readingRestoreFixture() {
+  const timers = [];
+  const root = {
+    scrollTop: 0,
+    scrollHeight: 2000,
+    clientHeight: 600,
+    style: {visibility: "hidden"}
+  };
+  const block = {
+    offsetTop: 300,
+    offsetHeight: 200,
+    offsetParent: root
+  };
+  const context = {
+    readingBlocks: [block],
+    positionRestoreTimer: null,
+    positionRestoring: false,
+    positionRestoreAnchor: null,
+    transientReadingPosition: null,
+    viewportRestoreTimer: null,
+    viewportRestoreAnchor: null,
+    POSITION_RESTORE_QUIET_MS: 400,
+    currentPageId: "page",
+    mathRepairTimer: null,
+    imageNodes: [],
+    window: {
+      setTimeout: function(callback, delay) {
+        const timer = {callback, delay, cancelled: false};
+        timers.push(timer);
+        return timer;
+      },
+      clearTimeout: function(timer) {
+        if (timer) timer.cancelled = true;
+      }
+    },
+    id: function(name) {
+      if (name === "page-content") return root;
+      if (name === "reader-view") return {className: ""};
+      throw new Error("unexpected id " + name);
+    },
+    mathTop: function(node) { return node.offsetTop || 0; },
+    updateScroll: function() {},
+    scheduleMathRepair: function() {},
+    scheduleImageLoad: function() {},
+    currentReadingPosition: function() {
+      return {blockIndex: 0, blockFraction: 32768};
+    },
+    Math,
+    parseInt,
+    isFinite
+  };
+  vm.createContext(context);
+  vm.runInContext(readingRestoreMatch[1], context);
+  return {context, timers, root, block};
+}
+
+const stableRestore = readingRestoreFixture();
+assert.equal(stableRestore.context.beginReadingRestore(
+  {blockIndex: 0, blockFraction: 32768}, true), true);
+assert.equal(stableRestore.root.scrollTop, 400,
+  "initial restore applies the saved block fraction");
+assert.equal(stableRestore.root.style.visibility, "",
+  "the page is revealed immediately after the initial correction");
+assert.equal(stableRestore.context.positionRestoring, true,
+  "transient corrected scroll positions remain protected from persistence");
+assert.equal(stableRestore.timers[0].delay, 400);
+
+stableRestore.root.scrollTop = 120;
+const relevantImage = {
+  offsetTop: 100,
+  offsetHeight: 20,
+  offsetParent: stableRestore.root,
+  complete: false,
+  _potionImageLoading: true,
+  _potionImageRequested: true,
+  _potionImageAttempts: 1,
+  getAttribute: function() { return "image"; }
+};
+stableRestore.context.imageNodes.push(relevantImage);
+stableRestore.context.maintainReadingRestore(relevantImage, false);
+assert.equal(stableRestore.root.scrollTop, 400,
+  "a relevant image completion reapplies the active anchor");
+assert.equal(stableRestore.timers.filter(function(timer) {
+  return !timer.cancelled;
+}).length, 1, "layout changes share one debounced quiet timer");
+
+let activeTimer = stableRestore.timers[stableRestore.timers.length - 1];
+activeTimer.callback();
+assert.equal(stableRestore.context.positionRestoring, true,
+  "restoration stays active while relevant layout remains pending");
+relevantImage._potionImageLoading = false;
+relevantImage.complete = true;
+activeTimer = stableRestore.timers[stableRestore.timers.length - 1];
+activeTimer.callback();
+assert.equal(stableRestore.context.positionRestoring, false,
+  "restoration ends after the page has been quiet");
+assert.equal(stableRestore.context.positionRestoreAnchor, null);
+
+const irrelevantRestore = readingRestoreFixture();
+irrelevantRestore.context.beginReadingRestore(
+  {blockIndex: 0, blockFraction: 32768}, false);
+irrelevantRestore.root.scrollTop = 123;
+irrelevantRestore.context.maintainReadingRestore({
+  offsetTop: 900,
+  offsetHeight: 20,
+  offsetParent: irrelevantRestore.root
+}, false);
+assert.equal(irrelevantRestore.root.scrollTop, 123,
+  "layout changes below the restore anchor do not cause correction");
+
+const rotatedRestore = readingRestoreFixture();
+rotatedRestore.context.scheduleViewportReadingRestore(true);
+rotatedRestore.block.offsetTop = 500;
+rotatedRestore.timers[0].callback();
+assert.equal(rotatedRestore.root.scrollTop, 600,
+  "a captured logical viewport anchor is reapplied after rotation layout");
+assert.equal(rotatedRestore.context.positionRestoring, true,
+  "rotation correction also remains anchored through asynchronous relayout");
+
+assert.match(frontend,
+  /function imageFinished\(image, loaded\)[\s\S]*maintainReadingRestore\(image, false\)/);
+assert.match(frontend,
+  /function repairMathNearViewport\(\)[\s\S]*maintainReadingRestore\(null, true\)/);
+assert.match(frontend,
+  /function saveCurrentReadingPosition\(done\)[\s\S]*if \(positionRestoring \|\|/);
+assert.match(frontend,
+  /window\.onorientationchange = function\(\) \{\s*scheduleViewportReadingRestore\(true\)/);
+assert.match(frontend,
+  /window\.onresize = function\(\) \{[\s\S]*scheduleViewportReadingRestore\(false\)/);
+
 console.log("Potion frontend native-math contract tests passed");
