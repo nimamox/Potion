@@ -105,24 +105,6 @@ int main() {
             potion::NotionClient::block_counts_as_editable(text_paragraph),
             "empty Notion paragraphs do not consume an editable index");
 
-    std::string underlined_backgrounds =
-        "<span underline=\"true\">iaculis</span> "
-        "<span color=\"yellow\" underline=\"true\">***lacinia***</span>";
-    potion::NotionClient::restore_underlined_background_colors(
-        underlined_backgrounds, {"red_background", "yellow"});
-    require(underlined_backgrounds.find(
-                "<span underline=\"true\" color=\"red_background\">iaculis</span>") !=
-                std::string::npos &&
-            underlined_backgrounds.find(
-                "<span color=\"yellow\" underline=\"true\">***lacinia***</span>") !=
-                std::string::npos,
-            "block rich text restores background color omitted by Notion Markdown");
-    const std::string mismatched_overlay = underlined_backgrounds;
-    potion::NotionClient::restore_underlined_background_colors(
-        underlined_backgrounds, {"red_background"});
-    require(underlined_backgrounds == mismatched_overlay,
-            "a mismatched underline overlay is ignored safely");
-
     const auto repeated_rich_text = potion::Json::parse(R"([
       {"type":"text","text":{"content":"very important / very important","link":null},
        "plain_text":"very important / very important",

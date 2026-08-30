@@ -27,7 +27,12 @@
     var readingBlocks = [],
         positionSaveTimer = null,
         positionRestoreTimer = null,
-        positionRestoring = false;
+        positionRestoring = false,
+        positionRestoreAnchor = null,
+        transientReadingPosition = null,
+        viewportRestoreTimer = null,
+        viewportRestoreAnchor = null;
+    var POSITION_RESTORE_QUIET_MS = 400;
     var selectionTimer = null,
         selectionState = null,
         selectionMenuActive = false,

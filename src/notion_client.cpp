@@ -195,39 +195,6 @@ bool NotionClient::retrieve_page(const std::string &token, const std::string &pa
     if (markdown.status != 200) { error = error_message(markdown); return false; }
     Json meta = Json::parse(metadata.body), content = Json::parse(markdown.body);
     std::string source = content.get("markdown").string();
-    if (source.find("underline=\"true\"") != std::string::npos) {
-      std::vector<std::string> colors;
-      bool complete = true;
-      std::size_t blocks = 0;
-      std::function<void(const std::string &, unsigned)> collect;
-      collect = [&](const std::string &parent, unsigned depth) {
-        if (!complete || depth > 32 || blocks > 4096) { complete = false; return; }
-        std::string cursor;
-        do {
-          std::string path = "/v1/blocks/" + parent + "/children?page_size=100";
-          if (!cursor.empty()) path += "&start_cursor=" + cursor;
-          const auto response = api_get(token, path);
-          if (response.status != 200) { complete = false; return; }
-          const Json root = Json::parse(response.body);
-          for (const auto &block : root.get("results").items()) {
-            if (++blocks > 4096) { complete = false; return; }
-            const std::string type = block.get("type").string();
-            for (const auto &part : block.get(type).get("rich_text").items())
-              if (part.get("type").string() == "text" &&
-                  part.get("annotations").get("underline").boolean())
-                colors.push_back(part.get("annotations").get("color").string());
-            if (block.get("has_children").boolean() &&
-                type != "child_page" && type != "child_database")
-              collect(block.get("id").string(), depth + 1);
-            if (!complete) return;
-          }
-          cursor = root.get("has_more").boolean() ?
-              root.get("next_cursor").string() : std::string{};
-        } while (!cursor.empty());
-      };
-      collect(page_id, 0);
-      if (complete) restore_underlined_background_colors(source, colors);
-    }
     page = {page_id, title_of(meta), {}, std::move(source),
             content.get("truncated").boolean()};
     return true;
@@ -319,32 +286,6 @@ bool NotionClient::block_counts_as_editable(const Json &block) {
   for (const auto &part : block.get(type).get("rich_text").items())
     if (!part.get("plain_text").string().empty()) return true;
   return false;
-}
-void NotionClient::restore_underlined_background_colors(
-    std::string &markdown, const std::vector<std::string> &colors) {
-  std::vector<std::size_t> ends;
-  for (std::size_t at = 0; (at = markdown.find("<span ", at)) != std::string::npos;) {
-    const std::size_t end = markdown.find('>', at);
-    if (end == std::string::npos) break;
-    if (markdown.substr(at, end - at).find("underline=\"true\"") != std::string::npos)
-      ends.push_back(end);
-    at = end + 1;
-  }
-  if (ends.size() != colors.size()) return;
-  static const char *backgrounds[] = {
-    "gray_background", "brown_background", "orange_background",
-    "yellow_background", "green_background", "blue_background",
-    "purple_background", "pink_background", "red_background"
-  };
-  for (std::size_t i = ends.size(); i-- > 0;) {
-    bool background = false;
-    for (const char *candidate : backgrounds)
-      if (colors[i] == candidate) { background = true; break; }
-    const std::size_t start = markdown.rfind("<span ", ends[i]);
-    if (background && start != std::string::npos &&
-        markdown.substr(start, ends[i] - start).find("color=\"") == std::string::npos)
-      markdown.insert(ends[i], " color=\"" + colors[i] + "\"");
-  }
 }
 bool NotionClient::format_block_text(const std::string &token,
     const std::string &page_id, std::size_t editable_index,
