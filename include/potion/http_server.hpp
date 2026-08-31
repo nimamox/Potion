@@ -4,7 +4,6 @@
 #include "potion/notion_client.hpp"
 #include "potion/reading_positions.hpp"
 #include <atomic>
-#include <chrono>
 #include <condition_variable>
 #include <cstdint>
 #include <deque>
@@ -24,7 +23,6 @@ struct ServerOptions {
   std::uint16_t port{8766};
   bool simulator{};
   std::size_t worker_count{4};
-  std::chrono::milliseconds input_timeout{25000};
 };
 class HttpServer {
 public:
@@ -37,7 +35,6 @@ public:
 private:
   void handle_client(int client) noexcept;
   void worker_loop() noexcept;
-  void queue_action(std::string action);
   void wake_listener() noexcept;
   ServerOptions options_;
   AppState state_;
@@ -46,11 +43,6 @@ private:
   ImageRegistry images_;
   MarkdownRenderer renderer_;
   std::string token_import_message_;
-  std::mutex input_mutex_;
-  std::condition_variable input_condition_;
-  std::deque<std::string> actions_;
-  std::uint64_t input_generation_{};
-  std::size_t input_waiters_{};
   std::atomic<bool> stopping_{false};
   std::atomic<std::uint16_t> bound_port_{0};
   std::mutex clients_mutex_;

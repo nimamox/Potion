@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.20)
-project(Potion VERSION 0.1.0 LANGUAGES CXX)
+project(Potion VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -53,6 +53,13 @@ target_link_libraries(potiond PRIVATE potion_core)
 target_compile_options(potiond PRIVATE -Wall -Wextra -Wpedantic)
 set_target_properties(potiond PROPERTIES INSTALL_RPATH "$ORIGIN/../lib")
 
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+  add_library(potion_mesquite_whisper_touch SHARED src/mesquite_whisper_touch.c)
+  set_target_properties(potion_mesquite_whisper_touch PROPERTIES
+    OUTPUT_NAME mesquite-whisper-touch)
+  add_dependencies(potiond potion_mesquite_whisper_touch)
+endif()
+
 if(POTION_BUILD_SIMULATOR)
   if(CMAKE_CROSSCOMPILING)
     message(FATAL_ERROR "POTION_BUILD_SIMULATOR requires a native build")
@@ -83,6 +90,8 @@ if(POTION_BUILD_TESTS)
               "${CMAKE_SOURCE_DIR}/scripts/run-kindle.sh"
               "${CMAKE_SOURCE_DIR}/simulator/index.html"
               "${CMAKE_SOURCE_DIR}/simulator/simulator.js"
-              "${CMAKE_SOURCE_DIR}/simulator/simulator.css")
+              "${CMAKE_SOURCE_DIR}/simulator/simulator.css"
+              "${CMAKE_SOURCE_DIR}/src/http_server.cpp"
+              "${CMAKE_SOURCE_DIR}/src/mesquite_whisper_touch.c")
   endif()
 endif()

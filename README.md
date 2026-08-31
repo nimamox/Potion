@@ -21,6 +21,10 @@ The reader toolbar keeps navigation unambiguous: Back follows page history,
 while Pages always returns directly to the main page list.
 The settings dialog also supports normal or reversed Kindle physical page-button
 scrolling and provides contextual help for these display/input choices.
+The Kindle launcher marks Potion's Mesquite window Whisper-Touch capable through
+the firmware's window-manager utility. AwesomeWM then delivers Oasis page
+buttons directly to WebKit as Page Up/Page Down key events; `potiond` does not
+monitor `/dev/input` or expose an input-polling endpoint.
 Authentication and settings are stored by `potiond`, not Mesquite. On Kindle
 the token is `/var/local/potion/token` (mode 0600); on the simulator state is
 kept in `.potion-simulator/`. Both locations are ignored by Git.

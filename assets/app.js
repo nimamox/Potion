@@ -2,8 +2,6 @@
     "use strict";
     var API = "http://127.0.0.1:8766",
         busy = false,
-        inputBusy = false,
-        inputTimer = null,
         currentPageId = "",
         currentPagePinned = false,
         pageSortMode = "opened",
@@ -349,7 +347,6 @@
         stopAboutLogoAnimation();
         if (aboutLogoReady) drawAboutLogoClean();
         hide(id("about-dialog"));
-        waitForInput();
     }
 
     function request(method, path, body, done) {
@@ -956,7 +953,6 @@
         }
         clearSelectionMenu(true);
         refreshAfterLocalFormatting();
-        waitForInput();
         request(
             "POST",
             "/api/pages/" + encodeURIComponent(pageId) + "/format",
@@ -1036,33 +1032,46 @@
             !!activeScroll();
     }
 
-    function waitForInput(delay) {
-        if (!readyForInput() || inputBusy || inputTimer !== null) return;
-        inputTimer = window.setTimeout(function() {
-            inputTimer = null;
-            pollInput();
-        }, delay || 0);
+    var pageButtonDownCode = 0,
+        pageButtonDownAt = 0;
+
+    function handlePageButtonAction(action) {
+        var down;
+        if (!readyForInput()) return;
+        down = (pageButtonMode === "normal" && action === "forward") ||
+            (pageButtonMode === "reversed" && action === "backward");
+        pageScroll(down ? 1 : -1);
     }
 
-    function pollInput() {
-        if (!readyForInput() || inputBusy) return;
-        inputBusy = true;
-        request("GET", "/api/input", null, function(error, result) {
-            var down;
-            inputBusy = false;
-            if (!readyForInput()) return;
-            if (error) {
-                waitForInput(500);
-                return;
-            }
-            if (result.action) {
-                down = (pageButtonMode === "normal" && result.action === "forward") ||
-                    (pageButtonMode === "reversed" && result.action === "backward");
-                pageScroll(down ? 1 : -1);
-            }
-            waitForInput();
-        });
+    function pageButtonKeyDown(event) {
+        var code, now;
+        event = event || window.event;
+        code = event.keyCode || event.which;
+        if (code !== 33 && code !== 34) return;
+        if (event.preventDefault) event.preventDefault();
+        event.returnValue = false;
+        if (event.stopPropagation) event.stopPropagation();
+        event.cancelBubble = true;
+        now = new Date().getTime();
+        if (pageButtonDownCode === code && now - pageButtonDownAt < 1000)
+            return false;
+        pageButtonDownCode = code;
+        pageButtonDownAt = now;
+        handlePageButtonAction(code === 34 ? "forward" : "backward");
+        return false;
     }
+
+    function pageButtonKeyUp(event) {
+        var code;
+        event = event || window.event;
+        code = event.keyCode || event.which;
+        if (code === pageButtonDownCode) pageButtonDownCode = 0;
+    }
+
+    document.addEventListener("keydown", pageButtonKeyDown, false);
+    document.addEventListener("keyup", pageButtonKeyUp, false);
+    if (window.location.protocol === "http:")
+        window.potionSimulatorPageButton = handlePageButtonAction;
 
     function saveSetting(key, value) {
         request(
@@ -2481,10 +2490,6 @@
         id("status").innerHTML = "Pages";
 
         updateScroll();
-
-        request("POST", "/api/input/clear", "", function() {
-            waitForInput();
-        });
     }
 
     function loadPages() {
@@ -2507,7 +2512,6 @@
                     setBusy(false);
                     warning(error);
                     id("status").innerHTML = "Notion unavailable";
-                    waitForInput();
                     return;
                 }
 
@@ -2523,15 +2527,6 @@
                     (pageList.length === 1 ? "" : "s");
 
                 setBusy(false);
-
-                request(
-                    "POST",
-                    "/api/input/clear",
-                    "",
-                    function() {
-                        waitForInput();
-                    }
-                );
             }
         );
     }
@@ -2565,7 +2560,6 @@
                 if (error) {
                     setBusy(false);
                     warning(error);
-                    waitForInput();
                     return;
                 }
 
@@ -2629,15 +2623,6 @@
                     } finally {
                         setBusy(false);
                         updateScroll();
-
-                        request(
-                            "POST",
-                            "/api/input/clear",
-                            "",
-                            function() {
-                                waitForInput();
-                            }
-                        );
                     }
                 }, 0);
             }
@@ -2851,7 +2836,6 @@
     id("settings-done").onclick = function() {
         hideSettingsTooltip();
         hide(id("settings-dialog"));
-        waitForInput();
     };
 
     id("page-font").onchange = function() {

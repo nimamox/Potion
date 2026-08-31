@@ -54,8 +54,7 @@ struct RunningServer {
   explicit RunningServer(const std::string &state, const std::string &start_page = {})
       : server([&] { potion::ServerOptions options; options.data_dir = state;
           options.port = 0; options.simulator = true; options.worker_count = 4;
-          options.start_page_id = start_page;
-          options.input_timeout = std::chrono::milliseconds(120); return options; }()),
+          options.start_page_id = start_page; return options; }()),
         thread([this] { server.run(); }) {
     for (int i = 0; i < 100 && server.bound_port() == 0; ++i)
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -661,46 +660,6 @@ int main() {
       require(potion::Json::parse(request(port, "/api/status")).get("startPageId").string() ==
                   "3c5d2870a15280b48d7fe83c9f24b96e",
               "startup page status");
-      const auto start = std::chrono::steady_clock::now();
-      const auto idle = potion::Json::parse(request(port, "/api/input"));
-      require(idle.get("action").string().empty(), "idle long-poll action");
-      require(std::chrono::steady_clock::now() - start >= std::chrono::milliseconds(80),
-              "input endpoint busy-polled");
-
-      auto waiting = std::async(std::launch::async, [port] {
-        return potion::Json::parse(request(port, "/api/input")).get("action").string();
-      });
-      std::this_thread::sleep_for(std::chrono::milliseconds(30));
-      const auto status_start = std::chrono::steady_clock::now();
-      require(potion::Json::parse(request(port, "/api/status")).get("type").string() == "status", "concurrent HTTP request");
-      require(std::chrono::steady_clock::now() - status_start < std::chrono::milliseconds(80), "long-poll blocked another request");
-      const std::string forward = "action=forward";
-      request(port, "/api/simulator/input", &forward);
-      require(waiting.get() == "forward", "long-poll wake");
-
-      std::vector<std::future<std::string>> stale_tabs;
-      for (int i = 0; i < 4; ++i)
-        stale_tabs.push_back(std::async(std::launch::async, [port] {
-          return potion::Json::parse(request(port, "/api/input")).get("action").string();
-        }));
-      std::this_thread::sleep_for(std::chrono::milliseconds(30));
-      const auto stale_status_start = std::chrono::steady_clock::now();
-      require(potion::Json::parse(request(port, "/api/status")).get("type").string() ==
-                  "status",
-              "stale simulator input polls starved API traffic");
-      require(std::chrono::steady_clock::now() - stale_status_start <
-                  std::chrono::milliseconds(80),
-              "a worker is reserved from simulator long polls");
-      for (auto &poll : stale_tabs)
-        require(poll.wait_for(std::chrono::seconds(1)) == std::future_status::ready,
-                "stale simulator poll did not finish");
-
-      const std::string backward = "action=backward";
-      request(port, "/api/simulator/input", &forward);
-      request(port, "/api/simulator/input", &backward);
-      require(potion::Json::parse(request(port, "/api/input")).get("action").string() == "forward", "FIFO first");
-      require(potion::Json::parse(request(port, "/api/input")).get("action").string() == "backward", "FIFO second");
-
       const std::string page_id = "5908cc548ef342b6b84e254fa1785a21";
       const std::string pin_page = "pinned=1";
       require(potion::Json::parse(request(port, "/api/pages/" + page_id + "/pin", &pin_page))
@@ -728,12 +687,6 @@ int main() {
       require(::access((std::string(directory) + "/pins.conf").c_str(), F_OK) != 0,
               "logout removes persisted page pins");
 
-      auto shutdown_wait = std::async(std::launch::async, [port] {
-        try { request(port, "/api/input"); } catch (...) {}
-      });
-      std::this_thread::sleep_for(std::chrono::milliseconds(20));
-      running.server.stop();
-      require(shutdown_wait.wait_for(std::chrono::seconds(1)) == std::future_status::ready, "shutdown did not wake long-poll");
     }
     ::unlink((std::string(directory) + "/token").c_str());
     ::unlink((std::string(directory) + "/state.conf").c_str());

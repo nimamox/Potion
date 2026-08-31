@@ -15,6 +15,8 @@ const runKindle = fs.readFileSync(process.argv[9], "utf8");
 const simulatorIndex = fs.readFileSync(process.argv[10], "utf8");
 const simulatorJs = fs.readFileSync(process.argv[11], "utf8");
 const simulatorCss = fs.readFileSync(process.argv[12], "utf8");
+const httpServer = fs.readFileSync(process.argv[13], "utf8");
+const whisperTouch = fs.readFileSync(process.argv[14], "utf8");
 
 assert.doesNotMatch(frontend, /window\.katex|katex\.render|loadKatex|katexState|data-expr/);
 assert.match(index, /vendor\/katex\/katex\.min\.css\?v=0\.16\.25-native/);
@@ -31,6 +33,51 @@ assert.match(appCss, /\.header-actions\s*{[\s\S]*width:\s*439px;[\s\S]*font-size
 assert.match(appCss,
   /\.header-actions button,[\s\S]*?\.header-actions \.header-button\.icon-button\s*{[\s\S]*width:\s*69px;[\s\S]*height:\s*69px;/);
 assert.match(runKindle, /'supportedOrientation','UDLR'/);
+assert.match(runKindle, /LD_PRELOAD=.*libmesquite-whisper-touch\.so \/usr\/bin\/mesquite/);
+assert.match(whisperTouch, /win_mgr_utils_new_application_name/);
+assert.match(whisperTouch, /win_mgr_utils_add_is_wisper_touch_supported/);
+assert.match(whisperTouch, /win_mgr_utils_new_name\(0, "application"\)/);
+assert.match(whisperTouch, /win_mgr_utils_add_is_wisper_touch_supported\(name, 1\)/);
+assert.doesNotMatch(frontend, /\/api\/input|\/api\/simulator\/input|pollInput|waitForInput/);
+assert.doesNotMatch(httpServer, /\/api\/input|\/api\/simulator\/input|gpiokey|\/dev\/input|input_event/);
+assert.match(httpServer, /select\(highest \+ 1, &set, nullptr, nullptr, nullptr\)/);
+assert.match(simulatorJs, /potionSimulatorPageButton/);
+{
+  const match = frontend.match(
+    /var pageButtonDownCode = 0,([\s\S]*?)function saveSetting\(key, value\)/);
+  assert.ok(match, "missing direct page-button handler");
+  const calls = [];
+  const listeners = {};
+  const context = {
+    Date,
+    pageButtonMode: "normal",
+    readyForInput: function() { return true; },
+    pageScroll: function(direction) { calls.push(direction); },
+    document: {addEventListener: function(name, listener) { listeners[name] = listener; }},
+    window: {event: null, location: {protocol: "file:"}}
+  };
+  function key(code) {
+    return {keyCode: code, prevented: 0, stopped: 0,
+      preventDefault: function() { this.prevented += 1; },
+      stopPropagation: function() { this.stopped += 1; }};
+  }
+  vm.createContext(context);
+  vm.runInContext("var pageButtonDownCode = 0," + match[1], context);
+  const forward = key(34);
+  listeners.keydown(forward);
+  listeners.keydown(key(34));
+  assert.deepEqual(calls, [1], "held/repeated keydown scrolls exactly once");
+  assert.equal(forward.prevented, 1);
+  assert.equal(forward.stopped, 1);
+  listeners.keyup(key(34));
+  listeners.keydown(key(33));
+  assert.deepEqual(calls, [1, -1]);
+  listeners.keyup(key(33));
+  context.pageButtonMode = "reversed";
+  listeners.keydown(key(33));
+  assert.deepEqual(calls, [1, -1, 1],
+    "reversed mode maps backward to downward scrolling");
+}
 assert.match(simulatorIndex,
   /id="orientation"[\s\S]*value="portrait">Portrait<[\s\S]*value="landscape">Landscape</);
 assert.match(simulatorJs, /orientation="portrait"/,
@@ -323,7 +370,6 @@ function optimisticContext() {
     collectReadingBlocks: function() { calls.push("blocks"); },
     applyNightPageAppearance: function() { calls.push("night"); },
     updateScroll: function() { calls.push("scroll"); },
-    waitForInput: function() { calls.push("input"); },
     setSelectionButtonsDisabled: function(value) { calls.push("disabled:" + value); },
     warning: function(message) { calls.push("warning:" + message); },
     request: function(method, url, body, callback) {

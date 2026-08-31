@@ -6,10 +6,12 @@ ROOT=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
 READELF=${CROSS_COMPILE:-arm-linux-gnueabi-}readelf
 STRIP=${CROSS_COMPILE:-arm-linux-gnueabi-}strip
 [ -x "$BUILD/potiond" ] || { echo "Missing $BUILD/potiond" >&2; exit 1; }
+[ -f "$BUILD/libmesquite-whisper-touch.so" ] || { echo "Missing $BUILD/libmesquite-whisper-touch.so" >&2; exit 1; }
 [ ! -e "$OUTPUT" ] || { echo "Output already exists: $OUTPUT" >&2; exit 1; }
 mkdir -p "$OUTPUT/bin" "$OUTPUT/lib" "$OUTPUT/etc" "$OUTPUT/share/potion" \
   "$OUTPUT/kual-extension/Potion" "$OUTPUT/library-launcher"
 cp "$BUILD/potiond" "$OUTPUT/bin/potiond"
+cp "$BUILD/libmesquite-whisper-touch.so" "$OUTPUT/lib/"
 cp "$ROOT/assets/index.html" "$ROOT/assets/app.css" "$ROOT/assets/app.js" \
   "$ROOT/assets/config.xml" "$ROOT/assets/potion_logo.png" "$ROOT/assets/potion_logo_night.png" "$ROOT/logo/potion_logo_orig_size.png" "$OUTPUT/share/potion/"
 cp -R "$ROOT/assets/vendor" "$OUTPUT/share/potion/"

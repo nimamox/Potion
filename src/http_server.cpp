@@ -17,13 +17,10 @@
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
-#ifdef __linux__
-#include <linux/input.h>
-#endif
-
 namespace potion {
 namespace {
 volatile std::sig_atomic_t stop_requested = 0;
+volatile std::sig_atomic_t stop_wake_fd = -1;
 struct Request { std::string method, target, query, body; };
 std::string trim(const std::string &s) {
   const auto a = s.find_first_not_of(" \t\r\n");
@@ -137,16 +134,6 @@ bool valid_page_id(const std::string &id) {
   PageUuid uuid;
   return parse_page_uuid(id, uuid);
 }
-#ifdef __linux__
-int open_page_keys() {
-  for (int i = 0; i < 16; ++i) {
-    const std::string event = "event" + std::to_string(i);
-    if (trim(read_file("/sys/class/input/" + event + "/device/name")) == "gpiokey")
-      return ::open(("/dev/input/" + event).c_str(), O_RDONLY | O_NONBLOCK);
-  }
-  return -1;
-}
-#endif
 }
 
 HttpServer::HttpServer(ServerOptions options)
@@ -181,19 +168,23 @@ HttpServer::~HttpServer() {
     apply_kindle_rotation("auto", ignored);
   }
 }
-void HttpServer::request_stop() noexcept { stop_requested = 1; }
+void HttpServer::request_stop() noexcept {
+  stop_requested = 1;
+  const int fd = stop_wake_fd;
+  if (fd >= 0) {
+    const char byte = 1;
+    const auto ignored = ::write(fd, &byte, 1);
+    (void)ignored;
+  }
+}
 void HttpServer::wake_listener() noexcept {
   if (wake_write_ >= 0) { const char byte = 1; (void)::write(wake_write_, &byte, 1); }
 }
 void HttpServer::stop() noexcept {
   if (stopping_.exchange(true)) return;
-  input_condition_.notify_all(); pending_condition_.notify_all(); wake_listener();
+  pending_condition_.notify_all(); wake_listener();
   std::lock_guard<std::mutex> lock(clients_mutex_);
   for (const int client : active_clients_) ::shutdown(client, SHUT_RDWR);
-}
-void HttpServer::queue_action(std::string action) {
-  { std::lock_guard<std::mutex> lock(input_mutex_); actions_.push_back(std::move(action)); }
-  input_condition_.notify_one();
 }
 void HttpServer::worker_loop() noexcept {
   for (;;) {
@@ -387,34 +378,6 @@ void HttpServer::handle_client(int client) noexcept {
         respond(client, 404, "Not Found", "text/plain", "Not found\n");
       else if (!notion_.retrieve_image(url, image, error)) throw std::runtime_error(error);
       else respond(client, 200, "OK", image.content_type, image.body);
-    } else if (request.method == "GET" && request.target == "/api/input") {
-      std::string action;
-      {
-        std::unique_lock<std::mutex> lock(input_mutex_);
-        const std::size_t maximum_waiters =
-            std::max<std::size_t>(2, options_.worker_count) - 1;
-        if (actions_.empty() && input_waiters_ < maximum_waiters) {
-          const auto generation = input_generation_;
-          ++input_waiters_;
-          input_condition_.wait_for(lock, options_.input_timeout, [this, generation] {
-            return stopping_.load() || input_generation_ != generation || !actions_.empty();
-          });
-          --input_waiters_;
-        }
-        if (!actions_.empty()) { action = std::move(actions_.front()); actions_.pop_front(); }
-      }
-      respond(client, 200, "OK", "application/json",
-              R"({"type":"input","action":)" + json_escape(action) + "}");
-    } else if (request.method == "POST" && request.target == "/api/input/clear") {
-      { std::lock_guard<std::mutex> lock(input_mutex_); actions_.clear(); ++input_generation_; }
-      input_condition_.notify_all();
-      respond(client, 200, "OK", "application/json", R"({"type":"input-cleared"})");
-    } else if (request.method == "POST" && request.target == "/api/simulator/input") {
-      if (!options_.simulator) throw std::runtime_error("Simulator input is disabled");
-      const std::string action = parameter(request.body, "action");
-      if (action != "forward" && action != "backward") throw std::runtime_error("Invalid action");
-      queue_action(action);
-      respond(client, 200, "OK", "application/json", R"({"type":"queued"})");
     } else if (request.method == "POST" && request.target == "/api/refresh") {
       if (!options_.simulator) {
         const int result = std::system(
@@ -460,12 +423,17 @@ int HttpServer::run() {
   int pipes[2];
   if (::pipe(pipes) != 0) { ::close(listener); throw std::runtime_error("pipe failed"); }
   wake_read_ = pipes[0]; wake_write_ = pipes[1];
+  stop_wake_fd = wake_write_;
   ::fcntl(wake_read_, F_SETFL, O_NONBLOCK); ::fcntl(wake_write_, F_SETFL, O_NONBLOCK);
   int reuse = 1; setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
   sockaddr_in address{}; address.sin_family = AF_INET;
   address.sin_addr.s_addr = htonl(INADDR_LOOPBACK); address.sin_port = htons(options_.port);
   if (::bind(listener, reinterpret_cast<sockaddr *>(&address), sizeof(address)) != 0 ||
       ::listen(listener, 16) != 0) {
+    stop_wake_fd = -1;
+    ::close(wake_read_); ::close(wake_write_);
+    wake_read_ = wake_write_ = -1;
+    ::close(listener);
     throw std::runtime_error(std::string("listen: ") + std::strerror(errno));
   }
   socklen_t address_length = sizeof(address);
@@ -473,30 +441,15 @@ int HttpServer::run() {
   bound_port_.store(ntohs(address.sin_port));
   for (std::size_t i = 0; i < std::max<std::size_t>(2, options_.worker_count); ++i)
     workers_.emplace_back(&HttpServer::worker_loop, this);
-  int keys = -1;
-#ifdef __linux__
-  keys = open_page_keys();
-#endif
   std::cout << "Potion daemon listening at http://127.0.0.1:" << bound_port() << "/\n";
   while (!stopping_.load() && !stop_requested) {
     fd_set set; FD_ZERO(&set); FD_SET(listener, &set); FD_SET(wake_read_, &set);
     int highest = std::max(listener, wake_read_);
-    if (keys >= 0) { FD_SET(keys, &set); highest = std::max(highest, keys); }
-    timeval timeout{1,0}; const int ready = select(highest + 1, &set, nullptr, nullptr, &timeout);
+    const int ready = select(highest + 1, &set, nullptr, nullptr, nullptr);
     if (ready <= 0) continue;
     if (FD_ISSET(wake_read_, &set)) {
       char bytes[32]; while (::read(wake_read_, bytes, sizeof(bytes)) > 0) {}
     }
-#ifdef __linux__
-    if (keys >= 0 && FD_ISSET(keys, &set)) {
-      input_event event{};
-      while (::read(keys, &event, sizeof(event)) == sizeof(event))
-        if (event.type == EV_KEY && event.value == 1) {
-          if (event.code == KEY_PAGEUP) queue_action("forward");
-          else if (event.code == KEY_PAGEDOWN) queue_action("backward");
-        }
-    }
-#endif
     if (!FD_ISSET(listener, &set) || stopping_.load()) continue;
     const int client = ::accept(listener, nullptr, nullptr); if (client < 0) continue;
     timeval io{5,0}; setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &io, sizeof(io));
@@ -509,8 +462,9 @@ int HttpServer::run() {
     }
     pending_condition_.notify_one();
   }
-  stop(); if (keys >= 0) ::close(keys); ::close(listener);
+  stop(); ::close(listener);
   for (auto &worker : workers_) if (worker.joinable()) worker.join();
+  stop_wake_fd = -1;
   if (wake_read_ >= 0) ::close(wake_read_);
   if (wake_write_ >= 0) ::close(wake_write_);
   return 0;
