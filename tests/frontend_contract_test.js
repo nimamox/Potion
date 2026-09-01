@@ -15,10 +15,11 @@ const runKindle = fs.readFileSync(process.argv[9], "utf8");
 const simulatorIndex = fs.readFileSync(process.argv[10], "utf8");
 const simulatorJs = fs.readFileSync(process.argv[11], "utf8");
 const simulatorCss = fs.readFileSync(process.argv[12], "utf8");
-const httpServer = fs.readFileSync(process.argv[13], "utf8");
-const whisperTouch = fs.readFileSync(process.argv[14], "utf8");
-const bionicFontDirectory = process.argv[15];
-const potionFontconfig = fs.readFileSync(process.argv[16], "utf8");
+const simulatorHostFonts = fs.readFileSync(process.argv[13], "utf8");
+const httpServer = fs.readFileSync(process.argv[14], "utf8");
+const whisperTouch = fs.readFileSync(process.argv[15], "utf8");
+const bionicFontDirectory = process.argv[16];
+const potionFontconfig = fs.readFileSync(process.argv[17], "utf8");
 
 assert.doesNotMatch(frontend, /window\.katex|katex\.render|loadKatex|katexState|data-expr/);
 assert.match(index, /vendor\/katex\/katex\.min\.css\?v=0\.16\.25-native/);
@@ -65,6 +66,17 @@ assert.match(httpServer,
   /is_immutable_asset_path\(relative\)[\s\S]*?CachePolicy::immutable_asset/);
 assert.match(httpServer, /vendor\/fast-font\/[\s\S]*?\.otf/);
 assert.match(simulatorJs, /potionSimulatorPageButton/);
+assert.match(simulatorJs,
+  /link\.href="\/simulator\/host-fonts\.css"/,
+  "host-only font declarations must be injected by the simulator wrapper");
+assert.equal((simulatorHostFonts.match(/font-family:\s*"Potion Fast Sans"/g) || []).length, 4);
+for (const face of ["Regular", "Italic", "Bold", "BoldItalic"])
+  assert.match(simulatorHostFonts,
+    new RegExp(`url\\("/vendor/fast-font/fonts/PotionFastSans-${face}\\.otf"\\)`));
+assert.doesNotMatch(appCss, /@font-face[\s\S]*Potion Fast Sans/,
+  "Kindle application CSS must keep using process-local Fontconfig, not web-font loading");
+assert.doesNotMatch(runKindle, /host-fonts\.css/,
+  "the Kindle launch path must not acquire simulator font declarations");
 
 const bionicLogic = frontend.match(
   /\/\* BIONIC_READING_LOGIC_BEGIN \*\/([\s\S]*?)\/\* BIONIC_READING_LOGIC_END \*\//);

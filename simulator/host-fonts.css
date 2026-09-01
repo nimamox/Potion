@@ -21,6 +21,36 @@
   font-weight: 400;
 }
 
+/* Simulator only: Mesquite discovers this family through Potion's private
+   Fontconfig file. A normal host browser needs explicit web-font faces. */
+@font-face {
+  font-family: "Potion Fast Sans";
+  src: url("/vendor/fast-font/fonts/PotionFastSans-Regular.otf") format("opentype");
+  font-style: normal;
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "Potion Fast Sans";
+  src: url("/vendor/fast-font/fonts/PotionFastSans-Italic.otf") format("opentype");
+  font-style: italic;
+  font-weight: 400;
+}
+
+@font-face {
+  font-family: "Potion Fast Sans";
+  src: url("/vendor/fast-font/fonts/PotionFastSans-Bold.otf") format("opentype");
+  font-style: normal;
+  font-weight: 700;
+}
+
+@font-face {
+  font-family: "Potion Fast Sans";
+  src: url("/vendor/fast-font/fonts/PotionFastSans-BoldItalic.otf") format("opentype");
+  font-style: italic;
+  font-weight: 700;
+}
+
 /* Code2000 supplies many Kindle fallback symbols absent from the first two. */
 .page-icon, .setting-help, .about-mark {
   font-family: "Kindle Symbol", "Amazon Ember", "Code2000", Arial, sans-serif !important;
