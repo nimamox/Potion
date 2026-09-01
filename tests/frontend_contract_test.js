@@ -17,6 +17,8 @@ const simulatorJs = fs.readFileSync(process.argv[11], "utf8");
 const simulatorCss = fs.readFileSync(process.argv[12], "utf8");
 const httpServer = fs.readFileSync(process.argv[13], "utf8");
 const whisperTouch = fs.readFileSync(process.argv[14], "utf8");
+const bionicFontDirectory = process.argv[15];
+const potionFontconfig = fs.readFileSync(process.argv[16], "utf8");
 
 assert.doesNotMatch(frontend, /window\.katex|katex\.render|loadKatex|katexState|data-expr/);
 assert.match(index, /vendor\/katex\/katex\.min\.css\?v=0\.16\.25-native/);
@@ -29,11 +31,27 @@ assert.match(index, /id="sort-opened"[^>]*aria-pressed="true">Opened<\/button><b
 assert.match(index, /id="page-pin"[^>]*aria-label="Pin page"[^>]*>&#9734;<\/button>\s*<button id="pages-home"/);
 assert.match(index,
   /id="night"[\s\S]*id="rotation"[^>]*title="Rotation locked"[^>]*aria-label="Rotation locked"[^>]*>⌽<\/button>[\s\S]*id="refresh"/);
+assert.match(index,
+  /<h3>Reading<\/h3>[\s\S]*Page font[\s\S]*Bionic Reading[\s\S]*Experimental/);
+assert.match(index,
+  /name="bionic-reading" value="off"[\s\S]*name="bionic-reading" value="on"/);
 assert.match(appCss, /\.header-actions\s*{[\s\S]*width:\s*439px;[\s\S]*font-size:\s*0;/);
 assert.match(appCss,
   /\.header-actions button,[\s\S]*?\.header-actions \.header-button\.icon-button\s*{[\s\S]*width:\s*69px;[\s\S]*height:\s*69px;/);
 assert.match(runKindle, /'supportedOrientation','UDLR'/);
 assert.match(runKindle, /LD_PRELOAD=.*libmesquite-whisper-touch\.so \/usr\/bin\/mesquite/);
+assert.match(runKindle,
+  /FONTCONFIG_FILE=\$POTION_ROOT\/etc\/fontconfig-potion\.conf/);
+assert.match(potionFontconfig, /<include ignore_missing="no">\/etc\/fonts\/fonts\.conf<\/include>/);
+assert.match(potionFontconfig,
+  /<dir>\/mnt\/us\/potion\/share\/potion\/vendor\/fast-font\/fonts<\/dir>/);
+assert.doesNotMatch(potionFontconfig, /\/usr\/share\/fonts|\/etc\/fonts\/conf\.d/);
+assert.deepEqual(fs.readdirSync(bionicFontDirectory).sort(), [
+  "PotionFastSans-Bold.otf",
+  "PotionFastSans-BoldItalic.otf",
+  "PotionFastSans-Italic.otf",
+  "PotionFastSans-Regular.otf"
+]);
 assert.match(whisperTouch, /win_mgr_utils_new_application_name/);
 assert.match(whisperTouch, /win_mgr_utils_add_is_wisper_touch_supported/);
 assert.match(whisperTouch, /win_mgr_utils_new_name\(0, "application"\)/);
@@ -45,7 +63,36 @@ assert.match(httpServer,
   /retrieve_image\(url, image, error\)[\s\S]*?CachePolicy::proxied_image/);
 assert.match(httpServer,
   /is_immutable_asset_path\(relative\)[\s\S]*?CachePolicy::immutable_asset/);
+assert.match(httpServer, /vendor\/fast-font\/[\s\S]*?\.otf/);
 assert.match(simulatorJs, /potionSimulatorPageButton/);
+
+const bionicLogic = frontend.match(
+  /\/\* BIONIC_READING_LOGIC_BEGIN \*\/([\s\S]*?)\/\* BIONIC_READING_LOGIC_END \*\//);
+assert.ok(bionicLogic, "missing Bionic Reading logic test boundary");
+assert.match(bionicLogic[1], /currentReadingPosition\(\)[\s\S]*applyBionicClass\(\)[\s\S]*beginReadingRestore\(position, false\)/,
+  "Bionic reflow must preserve Potion's logical block/fraction anchor");
+assert.match(bionicLogic[1], /setBusy\(true\)[\s\S]*setBusy\(false\)/);
+assert.match(bionicLogic[1], /root\.offsetHeight/,
+  "Bionic activation must finish its one-time reflow inside the busy operation");
+assert.doesNotMatch(bionicLogic[1],
+  /createElement|createTextNode|innerHTML\s*=\s*page|textContent\s*=|MutationObserver|setInterval/,
+  "Bionic Reading must not rewrite page text or create per-word DOM");
+assert.match(frontend, /bionicReading = settings\.bionicReading === true/);
+assert.match(frontend, /key=bionicReading&value=/);
+assert.match(frontend,
+  /selectedRadio\("bionic-reading", bionicReading \? "on" : "off"\)/);
+
+assert.match(appCss,
+  /#page-content\.bionic-reading \.potion-editable-content,[\s\S]*#page-content\.bionic-reading blockquote\s*\{[\s\S]*font-family:\s*"Potion Fast Sans"[\s\S]*text-rendering:\s*optimizeLegibility/);
+assert.doesNotMatch(appCss,
+  /(?:^|\n)\s*(?:body|\.page-content)\.bionic-reading[^\{]*\{[^}]*Potion Fast Sans/,
+  "Bionic family must never be scoped at an application-wide ancestor");
+assert.match(appCss,
+  /#page-content\.bionic-reading \.potion-editable-content code,[\s\S]*font-family:\s*monospace/);
+assert.match(appCss,
+  /#page-content\.bionic-reading \.math,[\s\S]*#page-content\.bionic-reading \.katex[\s\S]*text-rendering:\s*auto/);
+assert.doesNotMatch(appCss,
+  /#page-content\.bionic-reading\s+(?:h[1-6]|table|th|td|\.toggle-summary|\.child-page)[^{,]*[,{][^}]*Potion Fast Sans/);
 {
   const match = frontend.match(
     /var pageButtonDownCode = 0,([\s\S]*?)function saveSetting\(key, value\)/);

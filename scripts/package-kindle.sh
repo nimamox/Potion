@@ -15,6 +15,7 @@ cp "$BUILD/libmesquite-whisper-touch.so" "$OUTPUT/lib/"
 cp "$ROOT/assets/index.html" "$ROOT/assets/app.css" "$ROOT/assets/app.js" \
   "$ROOT/assets/config.xml" "$ROOT/assets/potion_logo.png" "$ROOT/assets/potion_logo_night.png" "$ROOT/logo/potion_logo_orig_size.png" "$OUTPUT/share/potion/"
 cp -R "$ROOT/assets/vendor" "$OUTPUT/share/potion/"
+cp "$ROOT/packaging/fontconfig-potion.conf" "$OUTPUT/etc/"
 cp "$ROOT/scripts/run-kindle.sh" "$OUTPUT/potion.sh"
 cp "$ROOT/packaging/README-KINDLE.txt" "$OUTPUT/README.txt"
 cp "$ROOT/LICENSE" "$ROOT/THIRD_PARTY_NOTICES.md" "$ROOT/SOURCE.md" "$OUTPUT/"

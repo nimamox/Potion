@@ -628,7 +628,18 @@ int main() {
       require(::stat((std::string(directory) + "/token").c_str(), &info) == 0,
               "token file");
       require((info.st_mode & 0777) == 0600, "token permissions");
+      require(!state.settings().bionic_reading,
+              "Bionic Reading defaults off for existing settings files");
       require(state.set_setting("cardFont", "Palatino", error), "save setting");
+      require(state.set_setting("bionicReading", "1", error),
+              "save Bionic Reading setting");
+      require(state.settings().bionic_reading &&
+                  state.settings_json().find("\"bionicReading\":true") !=
+                      std::string::npos,
+              "Bionic Reading setting JSON");
+      error.clear();
+      require(!state.set_setting("bionicReading", "experimental", error),
+              "reject invalid Bionic Reading setting");
       require(state.set_setting("nightPageMode", "palette-images", error), "save night page mode");
       require(state.settings_json().find("\"nightPageMode\":\"palette-images\"") != std::string::npos, "night page mode JSON");
       require(state.set_setting("pageButtonMode", "reversed", error), "save page button mode");
@@ -662,6 +673,8 @@ int main() {
       require(reloaded.token() == "test-token", "reload token");
       require(reloaded.settings().page_sort_mode == "edited", "reload page sort mode");
       require(reloaded.settings().rotation_mode == "locked", "reload rotation mode");
+      require(reloaded.settings().bionic_reading,
+              "reload Bionic Reading setting");
       require(reloaded.page_pinned("5908cc54-8ef3-42b6-b84e-254fa1785a21"),
               "reload normalized page pin");
     }
@@ -695,7 +708,7 @@ int main() {
     }
 
     {
-      RunningServer running(directory, "3c5d2870a15280b48d7fe83c9f24b96e");
+      RunningServer running(directory, "0123456789abcdef0123456789abcdef");
       const unsigned port = running.server.bound_port();
       const std::string no_store = "Cache-Control: no-store\r\n";
       const std::string immutable =
@@ -725,6 +738,13 @@ int main() {
                   "/vendor/katex/fonts/KaTeX_Main-Regular.woff").headers.find(immutable) !=
                   std::string::npos,
               "bundled WOFF fonts use the immutable policy");
+      const auto bionic_font = raw_request(
+          port, "/vendor/fast-font/fonts/PotionFastSans-Regular.otf");
+      require(bionic_font.status == 200 &&
+                  bionic_font.headers.find("Content-Type: font/otf") !=
+                      std::string::npos &&
+                  bionic_font.headers.find(immutable) != std::string::npos,
+              "bundled Bionic Reading OTF uses the immutable font policy");
       require(raw_request(port, "/api/status").headers.find(no_store) !=
                   std::string::npos,
               "dynamic API responses are no-store");
@@ -735,7 +755,7 @@ int main() {
               "unknown image keys return a non-cacheable 404");
 
       require(potion::Json::parse(request(port, "/api/status")).get("startPageId").string() ==
-                  "3c5d2870a15280b48d7fe83c9f24b96e",
+                  "0123456789abcdef0123456789abcdef",
               "startup page status");
       const std::string page_id = "5908cc548ef342b6b84e254fa1785a21";
       const std::string pin_page = "pinned=1";

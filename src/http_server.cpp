@@ -130,6 +130,7 @@ std::string mime_type(const std::string &path) {
   if (path.size() >= 4 && path.substr(path.size()-4) == ".css") return "text/css; charset=utf-8";
   if (path.size() >= 3 && path.substr(path.size()-3) == ".js") return "application/javascript; charset=utf-8";
   if (path.size() >= 5 && path.substr(path.size()-5) == ".woff") return "font/woff";
+  if (path.size() >= 4 && path.substr(path.size()-4) == ".otf") return "font/otf";
   return "application/octet-stream";
 }
 bool valid_page_id(const std::string &id) {
@@ -152,8 +153,11 @@ const char *cache_control_value(CachePolicy policy) noexcept {
 
 bool is_immutable_asset_path(const std::string &relative_path) noexcept {
   if (relative_path.compare(0, 13, "vendor/katex/") == 0) return true;
-  return relative_path.size() >= 5 &&
-         relative_path.compare(relative_path.size() - 5, 5, ".woff") == 0;
+  if (relative_path.compare(0, 17, "vendor/fast-font/") == 0) return true;
+  return (relative_path.size() >= 5 &&
+          relative_path.compare(relative_path.size() - 5, 5, ".woff") == 0) ||
+         (relative_path.size() >= 4 &&
+          relative_path.compare(relative_path.size() - 4, 4, ".otf") == 0);
 }
 
 HttpServer::HttpServer(ServerOptions options)

@@ -94,6 +94,8 @@ if(POTION_BUILD_TESTS)
               "${CMAKE_SOURCE_DIR}/simulator/simulator.js"
               "${CMAKE_SOURCE_DIR}/simulator/simulator.css"
               "${CMAKE_SOURCE_DIR}/src/http_server.cpp"
-              "${CMAKE_SOURCE_DIR}/src/mesquite_whisper_touch.c")
+              "${CMAKE_SOURCE_DIR}/src/mesquite_whisper_touch.c"
+              "${CMAKE_SOURCE_DIR}/assets/vendor/fast-font/fonts"
+              "${CMAKE_SOURCE_DIR}/packaging/fontconfig-potion.conf")
   endif()
 endif()

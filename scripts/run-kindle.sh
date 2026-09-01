@@ -45,7 +45,7 @@ BEGIN IMMEDIATE;
 INSERT OR IGNORE INTO interfaces(interface) VALUES('application');
 INSERT OR IGNORE INTO handlerIds(handlerId) VALUES('$POTION_APP_ID');
 INSERT OR REPLACE INTO properties(handlerId,name,value) VALUES('$POTION_APP_ID','lipcId','$POTION_APP_ID');
-INSERT OR REPLACE INTO properties(handlerId,name,value) VALUES('$POTION_APP_ID','command','/usr/bin/env LD_PRELOAD=$POTION_ROOT/lib/libmesquite-whisper-touch.so /usr/bin/mesquite -l $POTION_APP_ID -c $POTION_URL');
+INSERT OR REPLACE INTO properties(handlerId,name,value) VALUES('$POTION_APP_ID','command','/usr/bin/env FONTCONFIG_FILE=$POTION_ROOT/etc/fontconfig-potion.conf LD_PRELOAD=$POTION_ROOT/lib/libmesquite-whisper-touch.so /usr/bin/mesquite -l $POTION_APP_ID -c $POTION_URL');
 INSERT OR REPLACE INTO properties(handlerId,name,value) VALUES('$POTION_APP_ID','supportedOrientation','UDLR');
 INSERT OR REPLACE INTO properties(handlerId,name,value) VALUES('$POTION_APP_ID','unloadPolicy','unloadOnPause');
 COMMIT;

@@ -39,6 +39,21 @@ Copyright OpenSSL contributors.
 
 Copyright (C) 2013-2020 Khan Academy and other contributors.
 
+## Potion Fast Sans (Bionic Reading)
+
+- Fast-Font upstream: <https://github.com/Born2Root/Fast-Font>, commit
+  `aeae0775d9251365eae3b133cbf26ce0366f6108`
+- Fast-Font license: MIT, reproduced in `LICENSES/Fast-Font-MIT.txt`
+- Base typeface: Inter, <https://github.com/rsms/inter>
+- Inter license: SIL Open Font License 1.1, reproduced in
+  `LICENSES/Inter-OFL-1.1.txt`
+- Use: four locally bundled, renamed Potion Fast Sans faces provide the
+  optional experimental Bionic Reading presentation for reader prose.
+
+Copyright (c) 2023 Born2Root. Inter copyright (c) 2016 The Inter Project
+Authors. The generated derivative font family remains under the SIL Open Font
+License 1.1; Potion's application code remains AGPL-3.0-or-later.
+
 ## GNU runtime libraries
 
 The Kindle bundle includes unmodified runtime files from Debian cross packages:

@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
   <title>Potion</title>
   <link rel="stylesheet" href="vendor/katex/katex.min.css?v=0.16.25-native">
-  <link rel="stylesheet" href="app.css?v=20260825-3-night-logo">
+  <link rel="stylesheet" href="app.css?v=20260901-2-bionic-reading">
 </head>
 <body>
   <header class="app-header">
@@ -70,6 +70,7 @@
         <div class="setting-choice-row"><label class="setting-choice"><input type="radio" name="page-buttons" value="reversed"> <strong>Reverse page buttons</strong></label><button class="setting-help" type="button" aria-label="Explain reversed page buttons" data-help="Backward scrolls down. Forward scrolls up.">ⓘ</button></div>
       </div>
       <div class="settings-section">
+        <h3>Reading</h3>
         <label class="setting-select" for="page-font"><strong>Page font</strong>
           <select id="page-font">
             <option>Amazon Ember</option><option>Baskerville</option><option selected>Bookerly</option>
@@ -83,6 +84,9 @@
           <button data-scale="1.1">Aa</button><button data-scale="1.25">Aa</button>
           <button data-scale="1.4">Aa</button><button data-scale="1.6">Aa</button>
         </div>
+        <h3 class="settings-subheading">Bionic Reading <span class="experimental-label">Experimental</span></h3>
+        <div class="setting-choice-row"><label class="setting-choice"><input type="radio" name="bionic-reading" value="off"> <strong>Off</strong></label></div>
+        <div class="setting-choice-row"><label class="setting-choice"><input type="radio" name="bionic-reading" value="on"> <strong>On</strong></label><button class="setting-help" type="button" aria-label="Explain Bionic Reading" data-help="Uses Fast Sans fixation points for ordinary page prose. Headings, code, equations, tables, navigation controls, and the Potion interface keep their normal fonts. Very long pages can take several seconds to reflow.">ⓘ</button></div>
       </div>
       <div class="settings-section">
         <h3>Night-mode pages</h3>
@@ -125,6 +129,6 @@
     <button id="scroll-up" class="scroll-button hidden" title="Scroll up">&#9650;</button>
     <button id="scroll-down" class="scroll-button hidden" title="Scroll down">&#9660;</button>
   </div>
-  <script src="app.js?v=20260901-1-night-palette-restore"></script>
+  <script src="app.js?v=20260901-2-bionic-reading"></script>
 </body>
 </html>

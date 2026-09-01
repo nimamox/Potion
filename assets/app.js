@@ -50,6 +50,8 @@
     var fontScales = [0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6],
         fontScale = 1,
         pageFont = "Bookerly",
+        bionicReading = false,
+        bionicApplyBusy = false,
         night = false,
         nightPageMode = "standard",
         pageButtonMode = "normal",
@@ -65,6 +67,16 @@
         "Helvetica": '"Helvetica Neue LT",Helvetica,Arial,sans-serif',
         "OpenDyslexic": "OpenDyslexic,Arial,sans-serif",
         "Palatino": "Palatino,Georgia,serif"
+    }, pageFontClasses = {
+        "Amazon Ember": "page-font-amazon-ember",
+        "Baskerville": "page-font-baskerville",
+        "Bookerly": "page-font-bookerly",
+        "Caecilia": "page-font-caecilia",
+        "Caecilia Condensed": "page-font-caecilia-condensed",
+        "Futura": "page-font-futura",
+        "Helvetica": "page-font-helvetica",
+        "OpenDyslexic": "page-font-open-dyslexic",
+        "Palatino": "page-font-palatino"
     };
 
     function id(name) {
@@ -1084,11 +1096,94 @@
         );
     }
 
+    /* BIONIC_READING_LOGIC_BEGIN */
+    function applyBionicClass() {
+        var root = id("page-content");
+        root.className = root.className.replace(
+            /(^|\s)bionic-reading(?=\s|$)/g,
+            ""
+        );
+        if (bionicReading) root.className += " bionic-reading";
+    }
+
+    function setBionicChoicesDisabled(disabled) {
+        var choices = document.getElementsByName("bionic-reading"), i;
+        for (i = 0; i < choices.length; ++i)
+            choices[i].disabled = !!disabled;
+    }
+
+    function chooseBionicReading(enabled, persist) {
+        var previous = bionicReading,
+            root = id("page-content"),
+            readerOpen = currentPageId &&
+                id("reader-view").className.indexOf("hidden") < 0,
+            position = readerOpen && readingBlocks.length ?
+                currentReadingPosition() : null,
+            previousStatus = id("status").innerHTML;
+
+        if (bionicApplyBusy) {
+            selectedRadio("bionic-reading", bionicReading ? "on" : "off");
+            return;
+        }
+
+        bionicReading = !!enabled;
+        selectedRadio("bionic-reading", bionicReading ? "on" : "off");
+
+        function saveOrRollback() {
+            if (!persist) return;
+            request(
+                "POST",
+                "/api/settings",
+                "key=bionicReading&value=" + (bionicReading ? "1" : "0"),
+                function(error) {
+                    if (!error) return;
+                    warning(error);
+                    chooseBionicReading(previous, false);
+                }
+            );
+        }
+
+        if (!readerOpen) {
+            applyBionicClass();
+            saveOrRollback();
+            return;
+        }
+
+        clearSelectionMenu(true);
+        bionicApplyBusy = true;
+        setBionicChoicesDisabled(true);
+        setBusy(true);
+        id("status").innerHTML = bionicReading ?
+            "Applying Bionic Reading..." : "Restoring page font...";
+
+        window.setTimeout(function() {
+            try {
+                applyBionicClass();
+                root.offsetHeight;
+                if (position) beginReadingRestore(position, false);
+                else updateScroll();
+            } finally {
+                id("status").innerHTML = previousStatus;
+                bionicApplyBusy = false;
+                setBionicChoicesDisabled(false);
+                setBusy(false);
+            }
+            saveOrRollback();
+        }, 0);
+    }
+    /* BIONIC_READING_LOGIC_END */
+
     function applyAppearance(persist) {
         clearSelectionMenu(true);
-        restoreNightPalette(id("page-content"));
-        id("page-content").style.fontFamily = fonts[pageFont];
-        id("page-content").style.fontSize = Math.round(30 * fontScale) + "px";
+        var root = id("page-content");
+        restoreNightPalette(root);
+        root.style.fontFamily = fonts[pageFont];
+        root.style.fontSize = Math.round(30 * fontScale) + "px";
+        root.className = root.className.replace(
+            /(^|\s)page-font-[a-z-]+(?=\s|$)/g,
+            ""
+        ) + " " + pageFontClasses[pageFont];
+        applyBionicClass();
 
         if (night) {
             if (document.documentElement.className.indexOf("night-mode") < 0)
@@ -2669,6 +2764,8 @@
                         settings.cardFont :
                         "Bookerly";
 
+                bionicReading = settings.bionicReading === true;
+
                 night = settings.nightMode === true;
                 nightPageMode = settings.nightPageMode;
 
@@ -2856,6 +2953,7 @@
     id("settings").onclick = function() {
         id("page-font").value = pageFont;
         selectedRadio("page-buttons", pageButtonMode);
+        selectedRadio("bionic-reading", bionicReading ? "on" : "off");
         selectedRadio("night-page-mode", nightPageMode);
         hideSettingsTooltip();
         show(id("settings-dialog"));
@@ -2887,6 +2985,17 @@
                         this.getAttribute("data-scale")
                     );
                 applyAppearance(true);
+            };
+    }());
+
+    (function() {
+        var choices =
+                document.getElementsByName("bionic-reading"),
+            i;
+
+        for (i = 0; i < choices.length; ++i)
+            choices[i].onclick = function() {
+                chooseBionicReading(this.value === "on", true);
             };
     }());
 

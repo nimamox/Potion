@@ -81,9 +81,9 @@ Command-line equivalent:
 
 For debugging, append `?page=PAGE_ID` to Potion's URL to open that Notion page
 directly. The packaged Kindle launcher accepts the same page ID as its optional
-first argument:
+first argument (replace the placeholder with the page's 32-hex Notion ID):
 
-    /mnt/us/potion/potion.sh 3c5d2870a15280b48d7fe83c9f24b96e
+    /mnt/us/potion/potion.sh <32-hex-page-id>
 
 Normal Library and KUAL launches still open the main Pages view.
 
@@ -95,7 +95,7 @@ Potion's build cross-compiles its small Rust renderer as an ARMv7 static
 library and links it into the C++ `potiond` executable.
 
     ./build_on_docker.sh
-    ./push_over_ssh.sh root@192.168.15.244
+    ./push_over_ssh.sh root@KINDLE_IP
 
 The build produces a USB-root layout:
 
