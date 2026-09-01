@@ -52,12 +52,18 @@
         pageFont = "Bookerly",
         bionicReading = false,
         bionicApplyBusy = false,
+        wordSpacing = "normal",
+        lineSpacing = "normal",
         night = false,
         nightPageMode = "standard",
         pageButtonMode = "normal",
         rotationMode = "auto",
         brandLogoDaySrc = null;
-    var fonts = {
+    var fontNames = [
+        "Amazon Ember", "Baskerville", "Bookerly", "Caecilia",
+        "Caecilia Condensed", "Futura", "Helvetica", "OpenDyslexic",
+        "Palatino"
+    ], fonts = {
         "Amazon Ember": '"Amazon Ember",Arial,sans-serif',
         "Baskerville": "Baskerville,Georgia,serif",
         "Bookerly": "Bookerly,Georgia,serif",
@@ -348,6 +354,7 @@
     }
 
     function openAbout() {
+        closeAppearanceSheet();
         hideSettingsTooltip();
         show(id("about-dialog"));
         loadAboutLogo();
@@ -1037,6 +1044,7 @@
     function readyForInput() {
         return !busy &&
             id("selection-menu").className.indexOf("hidden") >= 0 &&
+            id("appearance-sheet").className.indexOf("hidden") >= 0 &&
             id("connect-view").className.indexOf("hidden") >= 0 &&
             id("settings-dialog").className.indexOf("hidden") >= 0 &&
             id("logout-dialog").className.indexOf("hidden") >= 0 &&
@@ -1107,7 +1115,7 @@
     }
 
     function setBionicChoicesDisabled(disabled) {
-        var choices = document.getElementsByName("bionic-reading"), i;
+        var choices = id("appearance-bionic-reading").getElementsByTagName("button"), i;
         for (i = 0; i < choices.length; ++i)
             choices[i].disabled = !!disabled;
     }
@@ -1122,12 +1130,12 @@
             previousStatus = id("status").innerHTML;
 
         if (bionicApplyBusy) {
-            selectedRadio("bionic-reading", bionicReading ? "on" : "off");
+            updateAppearanceSheet();
             return;
         }
 
         bionicReading = !!enabled;
-        selectedRadio("bionic-reading", bionicReading ? "on" : "off");
+        updateAppearanceSheet();
 
         function saveOrRollback() {
             if (!persist) return;
@@ -1173,6 +1181,61 @@
     }
     /* BIONIC_READING_LOGIC_END */
 
+    function fontIndex() {
+        var i;
+        for (i = 0; i < fontNames.length; ++i)
+            if (fontNames[i] === pageFont) return i;
+        return 2;
+    }
+
+    function setSelectedButtons(containerId, value, attribute) {
+        var buttons = id(containerId).getElementsByTagName("button"), i, selected;
+        for (i = 0; i < buttons.length; ++i) {
+            selected = buttons[i].getAttribute(attribute) === value;
+            buttons[i].className = selected ? "selected" : "";
+            buttons[i].setAttribute("aria-pressed", selected ? "true" : "false");
+        }
+    }
+
+    function updateAppearanceSheet() {
+        var sample = id("appearance-sample"),
+            sizeButtons = id("appearance-font-sizes").getElementsByTagName("button"),
+            dots = "", i, current = fontIndex();
+        id("appearance-font-name").innerHTML = pageFont.toUpperCase();
+        sample.style.fontFamily = fonts[pageFont];
+        for (i = 0; i < fontNames.length; ++i)
+            dots += i === current ? "&#9679;" : "&#9675;";
+        id("appearance-font-dots").innerHTML = dots;
+        for (i = 0; i < sizeButtons.length; ++i) {
+            sizeButtons[i].className =
+                parseFloat(sizeButtons[i].getAttribute("data-scale")) === fontScale ?
+                    "selected" : "";
+            sizeButtons[i].style.fontFamily = fonts[pageFont];
+            sizeButtons[i].setAttribute(
+                "aria-pressed",
+                sizeButtons[i].className === "selected" ? "true" : "false"
+            );
+        }
+        setSelectedButtons("appearance-word-spacing", wordSpacing, "data-value");
+        setSelectedButtons("appearance-line-spacing", lineSpacing, "data-value");
+        setSelectedButtons(
+            "appearance-bionic-reading",
+            bionicReading ? "on" : "off",
+            "data-value"
+        );
+    }
+
+    function applySpacingClasses(root) {
+        root.className = root.className.replace(
+            /(^|\s)(?:word|line)-spacing-(?:plus|plusplus|plusplusplus)(?=\s|$)/g,
+            ""
+        );
+        if (wordSpacing !== "normal")
+            root.className += " word-spacing-" + wordSpacing;
+        if (lineSpacing !== "normal")
+            root.className += " line-spacing-" + lineSpacing;
+    }
+
     function applyAppearance(persist) {
         clearSelectionMenu(true);
         var root = id("page-content");
@@ -1184,6 +1247,7 @@
             ""
         ) + " " + pageFontClasses[pageFont];
         applyBionicClass();
+        applySpacingClasses(root);
 
         if (night) {
             if (document.documentElement.className.indexOf("night-mode") < 0)
@@ -1203,25 +1267,84 @@
                 brandLogo.src = night ? brandNightSrc : brandLogoDaySrc;
         }
 
-        id("page-font").value = pageFont;
-
-        var buttons = id("font-sizes").getElementsByTagName("button"),
-            i;
-        for (i = 0; i < buttons.length; ++i) {
-            buttons[i].className =
-                parseFloat(buttons[i].getAttribute("data-scale")) === fontScale ? "selected" : "";
-            buttons[i].style.fontFamily = fonts[pageFont];
-        }
+        updateAppearanceSheet();
 
         if (persist) {
             saveSetting("fontScale", String(fontScale));
             saveSetting("cardFont", pageFont);
+            saveSetting("wordSpacing", wordSpacing);
+            saveSetting("lineSpacing", lineSpacing);
             saveSetting("nightMode", night ? "1" : "0");
         }
 
         applyNightPageAppearance();
         scheduleMathRepair();
         scheduleImageLoad();
+    }
+
+    function closeAppearanceSheet() {
+        hide(id("appearance-sheet"));
+        id("appearance").setAttribute("aria-pressed", "false");
+    }
+
+    function setAppearanceButtonVisible(visible) {
+        var button = id("appearance");
+        button.className = button.className.replace(
+            /(^|\s)reader-only-action-hidden(?=\s|$)/g,
+            ""
+        );
+        if (!visible) {
+            closeAppearanceSheet();
+            button.className += " reader-only-action-hidden";
+        }
+    }
+
+    function toggleAppearanceSheet() {
+        var sheet = id("appearance-sheet");
+        if (sheet.className.indexOf("hidden") < 0) {
+            closeAppearanceSheet();
+            return;
+        }
+        if (id("reader-view").className.indexOf("hidden") >= 0) return;
+        clearSelectionMenu(true);
+        updateAppearanceSheet();
+        show(sheet);
+        id("appearance").setAttribute("aria-pressed", "true");
+    }
+
+    function changeReaderAppearance(kind, value) {
+        var root = id("page-content"),
+            readerOpen = currentPageId &&
+                id("reader-view").className.indexOf("hidden") < 0,
+            position = readerOpen && readingBlocks.length ?
+                currentReadingPosition() : null,
+            settingKey = "";
+
+        if (kind === "bionic") {
+            chooseBionicReading(value === "on", true);
+            return;
+        }
+        if (kind === "font") {
+            pageFont = value;
+            settingKey = "cardFont";
+        } else if (kind === "size") {
+            fontScale = parseFloat(value);
+            settingKey = "fontScale";
+            value = String(fontScale);
+        } else if (kind === "word") {
+            wordSpacing = value;
+            settingKey = "wordSpacing";
+        } else if (kind === "line") {
+            lineSpacing = value;
+            settingKey = "lineSpacing";
+        } else return;
+
+        clearSelectionMenu(true);
+        applyAppearance(false);
+        root.offsetHeight;
+        if (position) beginReadingRestore(position, false);
+        else updateScroll();
+        saveSetting(settingKey, value);
     }
 
     /* NIGHT_PALETTE_LOGIC_BEGIN */
@@ -1535,6 +1658,7 @@
 
     function connectView() {
         setBusy(false);
+        setAppearanceButtonVisible(false);
         hide(id("pages-view"));
         hide(id("reader-view"));
         show(id("connect-view"));
@@ -2593,6 +2717,7 @@
             return;
         }
 
+        setAppearanceButtonVisible(false);
         clearSelectionMenu(true);
         resetMathRepair();
         resetImageLoading();
@@ -2621,6 +2746,7 @@
         setBusy(true);
         warning("");
         id("status").innerHTML = "Loading Notion pages...";
+        setAppearanceButtonVisible(false);
 
         hide(id("connect-view"));
         hide(id("reader-view"));
@@ -2659,6 +2785,8 @@
     function openPage(pageId, navigation, positionSaved) {
         if (busy) return;
 
+        closeAppearanceSheet();
+
         if (!positionSaved &&
             currentPageId &&
             id("reader-view").className.indexOf("hidden") < 0) {
@@ -2668,9 +2796,11 @@
             return;
         }
 
-        var previous = currentPageId;
+        var previous = currentPageId,
+            readerWasOpen = id("reader-view").className.indexOf("hidden") < 0;
 
         clearSelectionMenu(true);
+        setAppearanceButtonVisible(false);
 
         setBusy(true);
         warning("");
@@ -2684,6 +2814,7 @@
             function(error, page) {
                 if (error) {
                     setBusy(false);
+                    setAppearanceButtonVisible(readerWasOpen);
                     warning(error);
                     return;
                 }
@@ -2712,6 +2843,7 @@
 
                 hide(id("pages-view"));
                 show(id("reader-view"));
+                setAppearanceButtonVisible(true);
 
                 id("page-title").innerHTML = "";
                 id("page-title").appendChild(
@@ -2765,6 +2897,16 @@
                         "Bookerly";
 
                 bionicReading = settings.bionicReading === true;
+
+                wordSpacing = settings.wordSpacing === "plus" ||
+                    settings.wordSpacing === "plusplus" ||
+                    settings.wordSpacing === "plusplusplus" ?
+                        settings.wordSpacing : "normal";
+
+                lineSpacing = settings.lineSpacing === "plus" ||
+                    settings.lineSpacing === "plusplus" ||
+                    settings.lineSpacing === "plusplusplus" ?
+                        settings.lineSpacing : "normal";
 
                 night = settings.nightMode === true;
                 nightPageMode = settings.nightPageMode;
@@ -2910,25 +3052,40 @@
         scheduleReadingPositionSave();
     };
 
-    id("font-plus").onclick = function() {
-        var i = Math.min(
-            fontScales.length - 1,
-            scaleIndex() + 1
-        );
-
-        fontScale = fontScales[i];
-        applyAppearance(true);
+    id("appearance").onclick = toggleAppearanceSheet;
+    id("appearance-close").onclick = closeAppearanceSheet;
+    id("appearance-sheet").onclick = function(event) {
+        event = event || window.event;
+        if ((event.target || event.srcElement) === this)
+            closeAppearanceSheet();
+    };
+    id("appearance-font-previous").onclick = function() {
+        var i = (fontIndex() + fontNames.length - 1) % fontNames.length;
+        changeReaderAppearance("font", fontNames[i]);
+    };
+    id("appearance-font-next").onclick = function() {
+        var i = (fontIndex() + 1) % fontNames.length;
+        changeReaderAppearance("font", fontNames[i]);
     };
 
-    id("font-minus").onclick = function() {
-        var i = Math.max(
-            0,
-            scaleIndex() - 1
-        );
+    (function() {
+        var buttons = id("appearance-font-sizes").getElementsByTagName("button"), i;
+        for (i = 0; i < buttons.length; ++i)
+            buttons[i].onclick = function() {
+                changeReaderAppearance("size", this.getAttribute("data-scale"));
+            };
+    }());
 
-        fontScale = fontScales[i];
-        applyAppearance(true);
-    };
+    function connectAppearanceSegments(containerId, kind) {
+        var buttons = id(containerId).getElementsByTagName("button"), i;
+        for (i = 0; i < buttons.length; ++i)
+            buttons[i].onclick = function() {
+                changeReaderAppearance(kind, this.getAttribute("data-value"));
+            };
+    }
+    connectAppearanceSegments("appearance-word-spacing", "word");
+    connectAppearanceSegments("appearance-line-spacing", "line");
+    connectAppearanceSegments("appearance-bionic-reading", "bionic");
 
     id("night").onclick = function() {
         night = !night;
@@ -2951,9 +3108,8 @@
     };
 
     id("settings").onclick = function() {
-        id("page-font").value = pageFont;
+        closeAppearanceSheet();
         selectedRadio("page-buttons", pageButtonMode);
-        selectedRadio("bionic-reading", bionicReading ? "on" : "off");
         selectedRadio("night-page-mode", nightPageMode);
         hideSettingsTooltip();
         show(id("settings-dialog"));
@@ -2965,39 +3121,6 @@
         hideSettingsTooltip();
         hide(id("settings-dialog"));
     };
-
-    id("page-font").onchange = function() {
-        if (fonts[this.value]) {
-            pageFont = this.value;
-            applyAppearance(true);
-        }
-    };
-
-    (function() {
-        var buttons =
-                id("font-sizes").getElementsByTagName("button"),
-            i;
-
-        for (i = 0; i < buttons.length; ++i)
-            buttons[i].onclick = function() {
-                fontScale =
-                    parseFloat(
-                        this.getAttribute("data-scale")
-                    );
-                applyAppearance(true);
-            };
-    }());
-
-    (function() {
-        var choices =
-                document.getElementsByName("bionic-reading"),
-            i;
-
-        for (i = 0; i < choices.length; ++i)
-            choices[i].onclick = function() {
-                chooseBionicReading(this.value === "on", true);
-            };
-    }());
 
     (function() {
         var choices =

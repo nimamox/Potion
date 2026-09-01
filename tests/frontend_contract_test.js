@@ -33,12 +33,35 @@ assert.match(index, /id="page-pin"[^>]*aria-label="Pin page"[^>]*>&#9734;<\/butt
 assert.match(index,
   /id="night"[\s\S]*id="rotation"[^>]*title="Rotation locked"[^>]*aria-label="Rotation locked"[^>]*>⌽<\/button>[\s\S]*id="refresh"/);
 assert.match(index,
-  /<h3>Reading<\/h3>[\s\S]*Page font[\s\S]*Bionic Reading[\s\S]*Experimental/);
+  /id="appearance"[^>]*class="[^"]*reader-only-action-hidden[^"]*"[^>]*aria-pressed="false"[^>]*>Aa<\/button>/);
+assert.doesNotMatch(index, /id="font-plus"|id="font-minus"/);
+assert.match(appCss,
+  /\.header-actions \.reader-only-action-hidden\s*\{[\s\S]*visibility:\s*hidden/);
 assert.match(index,
-  /name="bionic-reading" value="off"[\s\S]*name="bionic-reading" value="on"/);
-assert.match(appCss, /\.header-actions\s*{[\s\S]*width:\s*439px;[\s\S]*font-size:\s*0;/);
+  /id="appearance-font-previous"[^>]*>&#10162;<\/button>[\s\S]*id="appearance-font-next"[^>]*>&#10162;<\/button>[\s\S]*id="appearance-close"[^>]*>&#10005;<\/button>/);
+assert.match(index, /id="appearance-font-dots"/);
+assert.match(index,
+  /id="appearance-word-spacing"[\s\S]*data-value="normal">Normal[\s\S]*data-value="plus">\+[\s\S]*data-value="plusplus">\+\+[\s\S]*data-value="plusplusplus">\+\+\+/);
+assert.match(index,
+  /id="appearance-line-spacing"[\s\S]*data-value="normal">Normal[\s\S]*data-value="plus">\+[\s\S]*data-value="plusplus">\+\+[\s\S]*data-value="plusplusplus">\+\+\+/);
+assert.match(index,
+  /id="appearance-bionic-reading"[\s\S]*data-value="off">Off[\s\S]*data-value="on">On/);
+const appearanceSizes = index.match(/id="appearance-font-sizes"[\s\S]*?<\/div>/)[0];
+assert.equal((appearanceSizes.match(/data-scale=/g) || []).length, 8);
+const settingsMarkup = index.match(/id="settings-dialog"[\s\S]*?id="logout-dialog"/)[0];
+assert.doesNotMatch(settingsMarkup, /Page font|font-sizes|Bionic Reading|<h3>Reading<\/h3>/);
+assert.match(appCss, /\.header-actions\s*{[\s\S]*width:\s*365px;[\s\S]*font-size:\s*0;/);
 assert.match(appCss,
   /\.header-actions button,[\s\S]*?\.header-actions \.header-button\.icon-button\s*{[\s\S]*width:\s*69px;[\s\S]*height:\s*69px;/);
+assert.match(appCss,
+  /\.appearance-symbol,[\s\S]*\.appearance-font-dots\s*\{[\s\S]*font-family:\s*"Code2000"/);
+assert.match(appCss,
+  /\.appearance-font-previous\s*\{[\s\S]*-webkit-transform:\s*rotate\(180deg\)/);
+assert.doesNotMatch(appCss, /\.appearance-sheet[^\{]*\{[^}]*animation|\.appearance-sheet[^\{]*\{[^}]*transition/);
+assert.match(appCss,
+  /\.appearance-sheet\s*\{[\s\S]*top:\s*0;[\s\S]*bottom:\s*0;[\s\S]*background:\s*transparent/);
+assert.match(appCss,
+  /\.appearance-sheet-inner\s*\{[\s\S]*width:\s*96%;[\s\S]*height:\s*520px/);
 assert.match(runKindle, /'supportedOrientation','UDLR'/);
 assert.match(runKindle, /LD_PRELOAD=.*libmesquite-whisper-touch\.so \/usr\/bin\/mesquite/);
 assert.match(runKindle,
@@ -92,7 +115,35 @@ assert.doesNotMatch(bionicLogic[1],
 assert.match(frontend, /bionicReading = settings\.bionicReading === true/);
 assert.match(frontend, /key=bionicReading&value=/);
 assert.match(frontend,
-  /selectedRadio\("bionic-reading", bionicReading \? "on" : "off"\)/);
+  /setSelectedButtons\([\s\S]*"appearance-bionic-reading",[\s\S]*bionicReading \? "on" : "off"/);
+
+assert.match(frontend, /wordSpacing = settings\.wordSpacing === "plus"/);
+assert.match(frontend, /lineSpacing = settings\.lineSpacing === "plus"/);
+assert.match(frontend, /settings\.wordSpacing === "plusplusplus"/);
+assert.match(frontend, /settings\.lineSpacing === "plusplusplus"/);
+assert.match(frontend, /saveSetting\("wordSpacing", wordSpacing\)/);
+assert.match(frontend, /saveSetting\("lineSpacing", lineSpacing\)/);
+assert.match(frontend,
+  /function changeReaderAppearance\(kind, value\)[\s\S]*currentReadingPosition\(\)[\s\S]*applyAppearance\(false\)[\s\S]*beginReadingRestore\(position, false\)/,
+  "appearance reflow must preserve Potion's logical reading anchor");
+assert.match(frontend,
+  /fontNames = \[[\s\S]*"Amazon Ember"[\s\S]*"Palatino"[\s\S]*\]/);
+assert.match(frontend,
+  /\(fontIndex\(\) \+ fontNames\.length - 1\) % fontNames\.length/);
+assert.match(frontend,
+  /\(fontIndex\(\) \+ 1\) % fontNames\.length/);
+assert.match(frontend,
+  /id\("appearance-sheet"\)\.onclick = function\(event\)[\s\S]*\(event\.target \|\| event\.srcElement\) === this[\s\S]*closeAppearanceSheet\(\)/,
+  "only a tap on the full-screen sheet backdrop should dismiss the panel");
+assert.match(frontend,
+  /function connectView\(\)[\s\S]*setAppearanceButtonVisible\(false\)[\s\S]*hide\(id\("reader-view"\)\)/);
+assert.match(frontend,
+  /function showPages\(positionSaved\)[\s\S]*setAppearanceButtonVisible\(false\)[\s\S]*show\(id\("pages-view"\)\)/);
+assert.match(frontend,
+  /function loadPages\(\)[\s\S]*setAppearanceButtonVisible\(false\)[\s\S]*show\(id\("pages-view"\)\)/);
+assert.match(frontend,
+  /show\(id\("reader-view"\)\);\s*setAppearanceButtonVisible\(true\);/,
+  "Aa must become visible only after a reader page opens");
 
 assert.match(appCss,
   /#page-content\.bionic-reading \.potion-editable-content,[\s\S]*#page-content\.bionic-reading blockquote\s*\{[\s\S]*font-family:\s*"Potion Fast Sans"[\s\S]*text-rendering:\s*optimizeLegibility/);
@@ -105,6 +156,16 @@ assert.match(appCss,
   /#page-content\.bionic-reading \.math,[\s\S]*#page-content\.bionic-reading \.katex[\s\S]*text-rendering:\s*auto/);
 assert.doesNotMatch(appCss,
   /#page-content\.bionic-reading\s+(?:h[1-6]|table|th|td|\.toggle-summary|\.child-page)[^{,]*[,{][^}]*Potion Fast Sans/);
+assert.match(appCss,
+  /#page-content\.word-spacing-plus \.potion-editable-content,[\s\S]*word-spacing:\s*\.08em/);
+assert.match(appCss,
+  /#page-content\.line-spacing-plusplus \.potion-editable-content,[\s\S]*line-height:\s*1\.8/);
+assert.match(appCss,
+  /#page-content\.word-spacing-plusplusplus \.potion-editable-content,[\s\S]*word-spacing:\s*\.24em/);
+assert.match(appCss,
+  /#page-content\.line-spacing-plusplusplus \.potion-editable-content,[\s\S]*line-height:\s*2/);
+assert.doesNotMatch(appCss,
+  /#page-content\.(?:word|line)-spacing-(?:plus|plusplus)\s+(?:h[1-6]|table|th|td|\.toggle-summary|\.child-page)/);
 {
   const match = frontend.match(
     /var pageButtonDownCode = 0,([\s\S]*?)function saveSetting\(key, value\)/);

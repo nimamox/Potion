@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
   <title>Potion</title>
   <link rel="stylesheet" href="vendor/katex/katex.min.css?v=0.16.25-native">
-  <link rel="stylesheet" href="app.css?v=20260901-2-bionic-reading">
+  <link rel="stylesheet" href="app.css?v=20260901-5-reader-appearance">
 </head>
 <body>
   <header class="app-header">
@@ -20,7 +20,7 @@
       </div>
     </div>
     <div class="header-actions">
-      <span class="font-buttons"><button id="font-plus">+</button><button id="font-minus">&minus;</button></span>
+      <button id="appearance" class="mode-button appearance-button reader-only-action-hidden" type="button" title="Reading appearance" aria-label="Reading appearance" aria-pressed="false">Aa</button>
       <button id="night" class="mode-button" type="button" title="Night mode">&#9789;</button>
       <button id="rotation" class="mode-button rotation-button" type="button" title="Rotation locked" aria-label="Rotation locked">⌽</button>
       <button id="refresh" class="header-button icon-button" type="button" title="Full refresh">↯</button>
@@ -56,6 +56,38 @@
     <article id="page-content" class="page-content"></article>
   </section>
 
+  <div id="appearance-sheet" class="appearance-sheet hidden" role="dialog" aria-label="Reading appearance">
+    <div class="appearance-sheet-inner">
+      <div class="appearance-font-row">
+        <button id="appearance-font-previous" class="appearance-symbol appearance-font-previous" type="button" aria-label="Previous font">&#10162;</button>
+        <strong id="appearance-font-name" class="appearance-font-name">BOOKERLY</strong>
+        <button id="appearance-font-next" class="appearance-symbol" type="button" aria-label="Next font">&#10162;</button>
+        <button id="appearance-close" class="appearance-symbol appearance-close" type="button" aria-label="Close reading appearance">&#10005;</button>
+      </div>
+      <p id="appearance-sample" class="appearance-sample">The quick brown fox jumps over<br>the lazy dog. Reading should<br>feel effortless and comfortable.</p>
+      <div id="appearance-font-dots" class="appearance-font-dots" aria-label="Selected reader font"></div>
+      <div class="appearance-size-label">SIZE</div>
+      <div id="appearance-font-sizes" class="appearance-font-sizes">
+        <button data-scale="0.7" type="button">Aa</button><button data-scale="0.8" type="button">Aa</button>
+        <button data-scale="0.9" type="button">Aa</button><button data-scale="1" type="button">Aa</button>
+        <button data-scale="1.1" type="button">Aa</button><button data-scale="1.25" type="button">Aa</button>
+        <button data-scale="1.4" type="button">Aa</button><button data-scale="1.6" type="button">Aa</button>
+      </div>
+      <div class="appearance-setting-row">
+        <strong>WORD SPACING</strong>
+        <div id="appearance-word-spacing" class="appearance-segments" role="group" aria-label="Word spacing"><button type="button" data-value="normal">Normal</button><button type="button" data-value="plus">+</button><button type="button" data-value="plusplus">++</button><button type="button" data-value="plusplusplus">+++</button></div>
+      </div>
+      <div class="appearance-setting-row">
+        <strong>LINE SPACING</strong>
+        <div id="appearance-line-spacing" class="appearance-segments" role="group" aria-label="Line spacing"><button type="button" data-value="normal">Normal</button><button type="button" data-value="plus">+</button><button type="button" data-value="plusplus">++</button><button type="button" data-value="plusplusplus">+++</button></div>
+      </div>
+      <div class="appearance-setting-row">
+        <strong>BIONIC READING <span class="experimental-label">EXPERIMENTAL</span></strong>
+        <div id="appearance-bionic-reading" class="appearance-segments appearance-bionic-segments" role="group" aria-label="Bionic Reading"><button type="button" data-value="off">Off</button><button type="button" data-value="on">On</button></div>
+      </div>
+    </div>
+  </div>
+
   <div id="selection-menu" class="selection-menu hidden" role="toolbar" aria-label="Format selected text">
     <button type="button" data-format="highlight" class="selection-highlight" aria-pressed="false">Highlight</button><button type="button" data-format="bold" class="selection-bold" aria-pressed="false">B</button><button type="button" data-format="underline" class="selection-underline" aria-pressed="false">U</button><button type="button" data-format="clear" class="selection-clear" aria-label="Clear formatting">×</button>
   </div>
@@ -68,25 +100,6 @@
         <h3>Physical page buttons</h3>
         <div class="setting-choice-row"><label class="setting-choice"><input type="radio" name="page-buttons" value="normal"> <strong>Normal direction</strong></label><button class="setting-help" type="button" aria-label="Explain normal page buttons" data-help="Forward scrolls down. Backward scrolls up.">ⓘ</button></div>
         <div class="setting-choice-row"><label class="setting-choice"><input type="radio" name="page-buttons" value="reversed"> <strong>Reverse page buttons</strong></label><button class="setting-help" type="button" aria-label="Explain reversed page buttons" data-help="Backward scrolls down. Forward scrolls up.">ⓘ</button></div>
-      </div>
-      <div class="settings-section">
-        <h3>Reading</h3>
-        <label class="setting-select" for="page-font"><strong>Page font</strong>
-          <select id="page-font">
-            <option>Amazon Ember</option><option>Baskerville</option><option selected>Bookerly</option>
-            <option>Caecilia</option><option>Caecilia Condensed</option><option>Futura</option>
-            <option>Helvetica</option><option>OpenDyslexic</option><option>Palatino</option>
-          </select>
-        </label>
-        <div id="font-sizes" class="font-sizes">
-          <button data-scale="0.7">Aa</button><button data-scale="0.8">Aa</button>
-          <button data-scale="0.9">Aa</button><button data-scale="1">Aa</button>
-          <button data-scale="1.1">Aa</button><button data-scale="1.25">Aa</button>
-          <button data-scale="1.4">Aa</button><button data-scale="1.6">Aa</button>
-        </div>
-        <h3 class="settings-subheading">Bionic Reading <span class="experimental-label">Experimental</span></h3>
-        <div class="setting-choice-row"><label class="setting-choice"><input type="radio" name="bionic-reading" value="off"> <strong>Off</strong></label></div>
-        <div class="setting-choice-row"><label class="setting-choice"><input type="radio" name="bionic-reading" value="on"> <strong>On</strong></label><button class="setting-help" type="button" aria-label="Explain Bionic Reading" data-help="Uses Fast Sans fixation points for ordinary page prose. Headings, code, equations, tables, navigation controls, and the Potion interface keep their normal fonts. Very long pages can take several seconds to reflow.">ⓘ</button></div>
       </div>
       <div class="settings-section">
         <h3>Night-mode pages</h3>
@@ -129,6 +142,6 @@
     <button id="scroll-up" class="scroll-button hidden" title="Scroll up">&#9650;</button>
     <button id="scroll-down" class="scroll-button hidden" title="Scroll down">&#9660;</button>
   </div>
-  <script src="app.js?v=20260901-2-bionic-reading"></script>
+  <script src="app.js?v=20260901-5-reader-appearance"></script>
 </body>
 </html>

@@ -8,6 +8,8 @@ struct Settings {
   double font_scale{1.0};
   std::string card_font{"Bookerly"};
   bool bionic_reading{};
+  std::string word_spacing{"normal"};
+  std::string line_spacing{"normal"};
   bool night_mode{};
   std::string night_page_mode{"standard"};
   std::string page_button_mode{"normal"};

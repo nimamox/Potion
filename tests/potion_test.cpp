@@ -630,6 +630,9 @@ int main() {
       require((info.st_mode & 0777) == 0600, "token permissions");
       require(!state.settings().bionic_reading,
               "Bionic Reading defaults off for existing settings files");
+      require(state.settings().word_spacing == "normal" &&
+                  state.settings().line_spacing == "normal",
+              "reader spacing defaults normal for existing settings files");
       require(state.set_setting("cardFont", "Palatino", error), "save setting");
       require(state.set_setting("bionicReading", "1", error),
               "save Bionic Reading setting");
@@ -640,6 +643,26 @@ int main() {
       error.clear();
       require(!state.set_setting("bionicReading", "experimental", error),
               "reject invalid Bionic Reading setting");
+      error.clear();
+      require(state.set_setting("wordSpacing", "plus", error),
+              "save word spacing");
+      require(state.set_setting("lineSpacing", "plusplus", error),
+              "save line spacing");
+      require(state.settings_json().find("\"wordSpacing\":\"plus\"") !=
+                  std::string::npos &&
+                  state.settings_json().find("\"lineSpacing\":\"plusplus\"") !=
+                  std::string::npos,
+              "spacing settings JSON");
+      error.clear();
+      require(!state.set_setting("wordSpacing", "wide", error),
+              "reject invalid word spacing");
+      error.clear();
+      require(!state.set_setting("lineSpacing", "double", error),
+              "reject invalid line spacing");
+      error.clear();
+      require(state.set_setting("wordSpacing", "plusplusplus", error) &&
+                  state.set_setting("lineSpacing", "plusplusplus", error),
+              "save maximum reader spacing");
       require(state.set_setting("nightPageMode", "palette-images", error), "save night page mode");
       require(state.settings_json().find("\"nightPageMode\":\"palette-images\"") != std::string::npos, "night page mode JSON");
       require(state.set_setting("pageButtonMode", "reversed", error), "save page button mode");
@@ -675,6 +698,9 @@ int main() {
       require(reloaded.settings().rotation_mode == "locked", "reload rotation mode");
       require(reloaded.settings().bionic_reading,
               "reload Bionic Reading setting");
+      require(reloaded.settings().word_spacing == "plusplusplus" &&
+                  reloaded.settings().line_spacing == "plusplusplus",
+              "reload reader spacing settings");
       require(reloaded.page_pinned("5908cc54-8ef3-42b6-b84e-254fa1785a21"),
               "reload normalized page pin");
     }
