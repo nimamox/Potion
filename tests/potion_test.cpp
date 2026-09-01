@@ -26,14 +26,23 @@ size_t receive(char *data, size_t size, size_t count, void *opaque) {
   return size * count;
 }
 std::string request(unsigned port, const std::string &path,
-                    const std::string *body = nullptr) {
+                    const std::string *body = nullptr);
+struct HttpResponse {
+  long status{};
+  std::string headers;
+  std::string body;
+};
+HttpResponse raw_request(unsigned port, const std::string &path,
+                         const std::string *body = nullptr) {
   CURL *curl = curl_easy_init();
   if (!curl) throw std::runtime_error("curl init failed");
-  std::string response;
+  HttpResponse response;
   const std::string url = "http://127.0.0.1:" + std::to_string(port) + path;
   curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
   curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, receive);
-  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response.body);
+  curl_easy_setopt(curl, CURLOPT_HEADERFUNCTION, receive);
+  curl_easy_setopt(curl, CURLOPT_HEADERDATA, &response.headers);
   curl_easy_setopt(curl, CURLOPT_TIMEOUT_MS, 3000L);
   if (body) {
     curl_easy_setopt(curl, CURLOPT_POST, 1L);
@@ -41,12 +50,18 @@ std::string request(unsigned port, const std::string &path,
     curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, static_cast<long>(body->size()));
   }
   const CURLcode result = curl_easy_perform(curl);
-  long status = 0;
-  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &status);
+  curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response.status);
   curl_easy_cleanup(curl);
-  if (result != CURLE_OK || status < 200 || status >= 300)
+  if (result != CURLE_OK)
     throw std::runtime_error("HTTP request failed");
   return response;
+}
+std::string request(unsigned port, const std::string &path,
+                    const std::string *body) {
+  const auto response = raw_request(port, path, body);
+  if (response.status < 200 || response.status >= 300)
+    throw std::runtime_error("HTTP request failed");
+  return response.body;
 }
 struct RunningServer {
   potion::HttpServer server;
@@ -54,6 +69,7 @@ struct RunningServer {
   explicit RunningServer(const std::string &state, const std::string &start_page = {})
       : server([&] { potion::ServerOptions options; options.data_dir = state;
           options.port = 0; options.simulator = true; options.worker_count = 4;
+          options.asset_dir = POTION_TEST_ASSET_DIR;
           options.start_page_id = start_page; return options; }()),
         thread([this] { server.run(); }) {
     for (int i = 0; i < 100 && server.bound_port() == 0; ++i)
@@ -276,6 +292,26 @@ int main() {
             "a non-selected equation is preserved while adjacent text is formatted");
 
     potion::ImageRegistry images;
+    const std::string signed_image_url =
+        "https://example.com/image.png?token=abc&x=1";
+    const std::string signed_image_url_2 =
+        "https://example.com/image.png?token=def&x=1";
+    const std::string image_key = images.register_url(signed_image_url);
+    require(image_key ==
+                "9aa8938dd745f77c80202aa766c758616ce5d09c3b994adca04a4c98e02d4205",
+            "image key uses stable SHA-256 of the complete URL");
+    require(images.register_url(signed_image_url) == image_key,
+            "identical image URLs produce identical keys");
+    require(images.register_url(signed_image_url_2) != image_key,
+            "different signed image URLs produce different keys");
+    potion::ImageRegistry independent_images;
+    require(independent_images.register_url(signed_image_url) == image_key,
+            "image keys are deterministic across registry instances");
+    std::string resolved_image_url;
+    require(images.resolve(image_key, resolved_image_url) &&
+                resolved_image_url == signed_image_url,
+            "deterministic image key resolves to the complete original URL");
+
     potion::MarkdownRenderer renderer(images);
     const std::string html = renderer.render(
       "# Heading\n- parent\n\t- child\n- sibling\n"
@@ -390,7 +426,10 @@ int main() {
     require(parenthesized.find("href=\"https://example.com/path_(v1)/item?q=(x)\"") != std::string::npos,
             "balanced parentheses in link URL");
     std::string image_url;
-    require(edge_images.resolve("1", image_url) && image_url == "https://example.com/plot(a).png",
+    const std::string parenthesized_image_key =
+        edge_images.register_url("https://example.com/plot(a).png");
+    require(edge_images.resolve(parenthesized_image_key, image_url) &&
+                image_url == "https://example.com/plot(a).png",
             "balanced parentheses in image URL");
 
     potion::ImageRegistry http_images;
@@ -400,7 +439,8 @@ int main() {
     require(http_image.find("data-src=") == std::string::npos &&
             http_image.find("<p class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">HTTP-only image</span></p>") != std::string::npos,
             "HTTP image does not register a guaranteed-broken image");
-    require(!http_images.resolve("1", image_url), "HTTP image registry remains empty");
+    require(!http_images.resolve("not-registered", image_url),
+            "HTTP image registry remains empty");
 
     const std::string query_page = renderer.render(
       "<page url=\"https://www.notion.so/Books-5908cc548ef342b6b84e254fa1785a21?pvs=4\">Query page</page>\n"
@@ -657,6 +697,43 @@ int main() {
     {
       RunningServer running(directory, "3c5d2870a15280b48d7fe83c9f24b96e");
       const unsigned port = running.server.bound_port();
+      const std::string no_store = "Cache-Control: no-store\r\n";
+      const std::string immutable =
+          "Cache-Control: public, max-age=31536000, immutable\r\n";
+      require(std::string(potion::cache_control_value(
+                  potion::CachePolicy::proxied_image)) ==
+                  "private, max-age=604800",
+              "successful proxied images use the seven-day private policy");
+      require(std::string(potion::cache_control_value(
+                  potion::CachePolicy::immutable_asset)) ==
+                  "public, max-age=31536000, immutable",
+              "immutable asset cache policy");
+
+      require(raw_request(port, "/").headers.find(no_store) != std::string::npos,
+              "index.html is no-store");
+      require(raw_request(port, "/app.js").headers.find(no_store) != std::string::npos,
+              "app.js is no-store");
+      require(raw_request(port, "/app.css").headers.find(no_store) != std::string::npos,
+              "app.css is no-store");
+      require(raw_request(port, "/potion_logo.png").headers.find(no_store) !=
+                  std::string::npos,
+              "ordinary UI images are no-store");
+      require(raw_request(port, "/vendor/katex/katex.min.css").headers.find(immutable) !=
+                  std::string::npos,
+              "KaTeX vendor assets use the immutable policy");
+      require(raw_request(port,
+                  "/vendor/katex/fonts/KaTeX_Main-Regular.woff").headers.find(immutable) !=
+                  std::string::npos,
+              "bundled WOFF fonts use the immutable policy");
+      require(raw_request(port, "/api/status").headers.find(no_store) !=
+                  std::string::npos,
+              "dynamic API responses are no-store");
+      const auto unknown_image = raw_request(
+          port, "/api/images/ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff");
+      require(unknown_image.status == 404 &&
+                  unknown_image.headers.find(no_store) != std::string::npos,
+              "unknown image keys return a non-cacheable 404");
+
       require(potion::Json::parse(request(port, "/api/status")).get("startPageId").string() ==
                   "3c5d2870a15280b48d7fe83c9f24b96e",
               "startup page status");

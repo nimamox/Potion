@@ -12,7 +12,6 @@ public:
 private:
   mutable std::mutex mutex_;
   std::map<std::string, std::string> urls_;
-  unsigned long next_{1};
 };
 class MarkdownRenderer {
 public:

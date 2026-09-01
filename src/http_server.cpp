@@ -71,11 +71,13 @@ bool send_all(int fd, const std::string &data) {
   return true;
 }
 void respond(int fd, int status, const char *reason, const std::string &type,
-             const std::string &body) {
+             const std::string &body,
+             CachePolicy cache_policy = CachePolicy::no_store) {
   std::ostringstream out;
   out << "HTTP/1.1 " << status << ' ' << reason
       << "\r\nContent-Type: " << type << "\r\nContent-Length: " << body.size()
-      << "\r\nCache-Control: no-store\r\nAccess-Control-Allow-Origin: *"
+      << "\r\nCache-Control: " << cache_control_value(cache_policy)
+      << "\r\nAccess-Control-Allow-Origin: *"
          "\r\nAccess-Control-Allow-Methods: GET, POST, OPTIONS"
          "\r\nAccess-Control-Allow-Headers: Content-Type"
          "\r\nConnection: close\r\n\r\n";
@@ -134,6 +136,24 @@ bool valid_page_id(const std::string &id) {
   PageUuid uuid;
   return parse_page_uuid(id, uuid);
 }
+}
+
+const char *cache_control_value(CachePolicy policy) noexcept {
+  switch (policy) {
+    case CachePolicy::proxied_image:
+      return "private, max-age=604800";
+    case CachePolicy::immutable_asset:
+      return "public, max-age=31536000, immutable";
+    case CachePolicy::no_store:
+    default:
+      return "no-store";
+  }
+}
+
+bool is_immutable_asset_path(const std::string &relative_path) noexcept {
+  if (relative_path.compare(0, 13, "vendor/katex/") == 0) return true;
+  return relative_path.size() >= 5 &&
+         relative_path.compare(relative_path.size() - 5, 5, ".woff") == 0;
 }
 
 HttpServer::HttpServer(ServerOptions options)
@@ -377,7 +397,8 @@ void HttpServer::handle_client(int client) noexcept {
       if (!images_.resolve(request.target.substr(12), url))
         respond(client, 404, "Not Found", "text/plain", "Not found\n");
       else if (!notion_.retrieve_image(url, image, error)) throw std::runtime_error(error);
-      else respond(client, 200, "OK", image.content_type, image.body);
+      else respond(client, 200, "OK", image.content_type, image.body,
+                   CachePolicy::proxied_image);
     } else if (request.method == "POST" && request.target == "/api/refresh") {
       if (!options_.simulator) {
         const int result = std::system(
@@ -405,7 +426,9 @@ void HttpServer::handle_client(int client) noexcept {
       const std::string relative = request.target == "/" ? "index.html" : request.target.substr(1);
       const std::string body = read_file(options_.asset_dir + "/" + relative);
       if (body.empty()) respond(client, 404, "Not Found", "text/plain", "Not found\n");
-      else respond(client, 200, "OK", mime_type(relative), body);
+      else respond(client, 200, "OK", mime_type(relative), body,
+                   is_immutable_asset_path(relative) ?
+                       CachePolicy::immutable_asset : CachePolicy::no_store);
     } else respond(client, 404, "Not Found", "application/json",
                    R"({"type":"error","message":"Not found"})");
   } catch (const std::exception &error) {

@@ -41,6 +41,10 @@ assert.match(whisperTouch, /win_mgr_utils_add_is_wisper_touch_supported\(name, 1
 assert.doesNotMatch(frontend, /\/api\/input|\/api\/simulator\/input|pollInput|waitForInput/);
 assert.doesNotMatch(httpServer, /\/api\/input|\/api\/simulator\/input|gpiokey|\/dev\/input|input_event/);
 assert.match(httpServer, /select\(highest \+ 1, &set, nullptr, nullptr, nullptr\)/);
+assert.match(httpServer,
+  /retrieve_image\(url, image, error\)[\s\S]*?CachePolicy::proxied_image/);
+assert.match(httpServer,
+  /is_immutable_asset_path\(relative\)[\s\S]*?CachePolicy::immutable_asset/);
 assert.match(simulatorJs, /potionSimulatorPageButton/);
 {
   const match = frontend.match(
@@ -99,6 +103,61 @@ assert.match(frontend, /key=pageSortMode&value=/);
 assert.match(frontend, /\/api\/pages\/" \+ encodeURIComponent\(pageId\) \+ "\/pin"/);
 assert.match(frontend, /page\.pinned === true/);
 assert.doesNotMatch(frontend, /localStorage/);
+
+// Mesquite retains !important declarations in the live CSSStyleDeclaration
+// after removeAttribute("style"). Verify that night-palette restoration clears
+// the live properties/cssText as well as restoring the original attribute.
+const nightPaletteMatch = frontend.match(
+  /\/\* NIGHT_PALETTE_LOGIC_BEGIN \*\/([\s\S]*?)\/\* NIGHT_PALETTE_LOGIC_END \*\//);
+assert.ok(nightPaletteMatch, "missing night-palette test boundary");
+function nightPaletteElement(originalStyle) {
+  let cssText = originalStyle === null ? "" : originalStyle;
+  const attributes = {};
+  if (originalStyle !== null) attributes.style = originalStyle;
+  const style = {
+    removeProperty: function(property) {
+      const pattern = new RegExp("(?:^|;)\\s*" + property + "\\s*:[^;]*;?", "ig");
+      cssText = cssText.replace(pattern, "");
+    },
+    setProperty: function(property, value, priority) {
+      cssText += (cssText ? ";" : "") + property + ":" + value +
+        (priority ? " !" + priority : "");
+    }
+  };
+  Object.defineProperty(style, "cssText", {
+    get: function() { return cssText; },
+    set: function(value) { cssText = String(value); }
+  });
+  return {
+    style,
+    getAttribute: function(name) {
+      return Object.prototype.hasOwnProperty.call(attributes, name) ?
+        attributes[name] : null;
+    },
+    setAttribute: function(name, value) { attributes[name] = value; },
+    // Deliberately leave style.cssText untouched, matching the Mesquite defect.
+    removeAttribute: function(name) { delete attributes[name]; }
+  };
+}
+{
+  const context = {nightStyledElements: [], window: {}};
+  vm.createContext(context);
+  vm.runInContext(nightPaletteMatch[1], context);
+
+  const classStyledHighlight = nightPaletteElement(null);
+  context.setNightStyle(classStyledHighlight, "background-color", "rgb(55,55,55)");
+  assert.match(classStyledHighlight.style.cssText, /background-color/);
+  context.restoreNightPalette({});
+  assert.equal(classStyledHighlight.style.cssText, "",
+    "day mode clears Mesquite's retained temporary highlight color");
+  assert.equal(classStyledHighlight.getAttribute("style"), null);
+
+  const inlineStyled = nightPaletteElement("font-weight:bold");
+  context.setNightStyle(inlineStyled, "color", "rgb(190,190,190)");
+  context.restoreNightPalette({});
+  assert.equal(inlineStyled.style.cssText, "font-weight:bold",
+    "day mode restores unrelated original inline styles exactly");
+}
 
 // Rotation uses the WAF device API when present, persists through potiond,
 // locks the exact current direction where window.orientation exposes it, and

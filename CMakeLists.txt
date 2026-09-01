@@ -74,6 +74,8 @@ endif()
 if(POTION_BUILD_TESTS)
   add_executable(potion_tests tests/potion_test.cpp)
   target_link_libraries(potion_tests PRIVATE potion_core)
+  target_compile_definitions(potion_tests PRIVATE
+    POTION_TEST_ASSET_DIR="${CMAKE_SOURCE_DIR}/assets")
   add_test(NAME potion_tests COMMAND potion_tests)
   find_program(POTION_NODE_EXECUTABLE node)
   if(POTION_NODE_EXECUTABLE)

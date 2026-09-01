@@ -2,7 +2,9 @@
 #include <algorithm>
 #include <cctype>
 #include <cstring>
+#include <openssl/sha.h>
 #include <sstream>
+#include <stdexcept>
 #include <vector>
 
 namespace potion {
@@ -184,7 +186,24 @@ bool table_separator(const std::string &line) {
 }
 }
 
-std::string ImageRegistry::register_url(const std::string &url) { std::lock_guard<std::mutex> lock(mutex_); const std::string key = std::to_string(next_++); urls_[key] = url; return key; }
+std::string ImageRegistry::register_url(const std::string &url) {
+  unsigned char digest[SHA256_DIGEST_LENGTH];
+  SHA256(reinterpret_cast<const unsigned char *>(url.data()), url.size(), digest);
+  static const char hex[] = "0123456789abcdef";
+  std::string key;
+  key.reserve(SHA256_DIGEST_LENGTH * 2);
+  for (const unsigned char byte : digest) {
+    key.push_back(hex[byte >> 4]);
+    key.push_back(hex[byte & 0x0f]);
+  }
+
+  std::lock_guard<std::mutex> lock(mutex_);
+  const auto existing = urls_.find(key);
+  if (existing != urls_.end() && existing->second != url)
+    throw std::runtime_error("Image URL SHA-256 collision");
+  urls_[key] = url;
+  return key;
+}
 bool ImageRegistry::resolve(const std::string &key, std::string &url) const { std::lock_guard<std::mutex> lock(mutex_); auto it = urls_.find(key); if (it == urls_.end()) return false; url = it->second; return true; }
 void ImageRegistry::clear() { std::lock_guard<std::mutex> lock(mutex_); urls_.clear(); }
 

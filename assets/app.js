@@ -1129,6 +1129,7 @@
         scheduleImageLoad();
     }
 
+    /* NIGHT_PALETTE_LOGIC_BEGIN */
     function parsedColor(value) {
         var match, hex, alpha;
         value = String(value || "").replace(/^\s+|\s+$/g, "").toLowerCase();
@@ -1203,6 +1204,19 @@
         nightStyledElements.push(element);
     }
 
+    function clearNightStyleProperties(element) {
+        var style = element.style;
+        if (!style) return;
+
+        if (style.removeProperty) {
+            style.removeProperty("color");
+            style.removeProperty("background-color");
+        } else {
+            style.color = "";
+            style.backgroundColor = "";
+        }
+    }
+
     function restoreNightPalette(root) {
         var elements = nightStyledElements,
             i, element;
@@ -1212,10 +1226,25 @@
             element = elements[i];
             if (!element._potionNightStyleSaved) continue;
 
-            if (element._potionNightOriginalStyle === null)
+            /*
+             * Mesquite can keep !important declarations in its old
+             * CSSStyleDeclaration after removeAttribute("style"). Clear the
+             * properties and cssText first so day-mode class colors win again.
+             */
+            clearNightStyleProperties(element);
+
+            if (element.style &&
+                typeof element.style.cssText !== "undefined")
+                element.style.cssText =
+                    element._potionNightOriginalStyle === null ?
+                        "" : element._potionNightOriginalStyle;
+
+            if (element._potionNightOriginalStyle === null) {
                 element.removeAttribute("style");
-            else
+            } else if (!element.style ||
+                       typeof element.style.cssText === "undefined") {
                 element.setAttribute("style", element._potionNightOriginalStyle);
+            }
 
             try {
                 delete element._potionNightStyleSaved;
@@ -1274,6 +1303,7 @@
             setNightStyle(element, "background-color", background);
         }
     }
+    /* NIGHT_PALETTE_LOGIC_END */
 
     function restoreNightImage(image) {
         var original;

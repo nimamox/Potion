@@ -13,6 +13,14 @@
 #include <thread>
 #include <vector>
 namespace potion {
+enum class CachePolicy {
+  no_store,
+  proxied_image,
+  immutable_asset
+};
+const char *cache_control_value(CachePolicy policy) noexcept;
+bool is_immutable_asset_path(const std::string &relative_path) noexcept;
+
 struct ServerOptions {
   std::string data_dir{"/var/local/potion"};
   std::string asset_dir{"assets"};
