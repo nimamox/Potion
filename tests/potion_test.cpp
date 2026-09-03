@@ -116,9 +116,17 @@ int main() {
       "type":"paragraph","paragraph":{"rich_text":[
         {"type":"text","plain_text":"after empty","text":{"content":"after empty"}}
       ]}})");
+    const auto text_callout = potion::Json::parse(R"({
+      "type":"callout","callout":{"rich_text":[
+        {"type":"text","plain_text":"Callout text","text":{"content":"Callout text"}}
+      ]}})");
+    const auto empty_callout = potion::Json::parse(R"({
+      "type":"callout","callout":{"rich_text":[]}})");
     require(!potion::NotionClient::block_counts_as_editable(empty_paragraph) &&
-            potion::NotionClient::block_counts_as_editable(text_paragraph),
-            "empty Notion paragraphs do not consume an editable index");
+            !potion::NotionClient::block_counts_as_editable(empty_callout) &&
+            potion::NotionClient::block_counts_as_editable(text_paragraph) &&
+            potion::NotionClient::block_counts_as_editable(text_callout),
+            "backend editable indices include visible callout text but skip empty paragraphs");
 
     const auto repeated_rich_text = potion::Json::parse(R"([
       {"type":"text","text":{"content":"very important / very important","link":null},
@@ -538,6 +546,13 @@ int main() {
             "combined bold italic underline and color formatting is nested correctly");
     require(inline_only.find("<p class=\"potion-block potion-editable notion-color") == std::string::npos, "inline color did not leak to block");
 
+    const std::string emoji = renderer.render("Emoji 😀 📚 🚀 ⚠️ ❤️ ✅\n");
+    require(emoji.find("😀 📚 🚀 ⚠<span class=\"emoji-variation-selector\">️</span> ") !=
+                std::string::npos &&
+            emoji.find("❤<span class=\"emoji-variation-selector\">️</span> ✅") !=
+                std::string::npos,
+            "emoji variation selectors stay logical but are hidden from old Mesquite");
+
     char directory[] = "/tmp/potion-test.XXXXXX";
     require(::mkdtemp(directory) != nullptr, "mkdtemp");
 
@@ -771,6 +786,13 @@ int main() {
                       std::string::npos &&
                   bionic_font.headers.find(immutable) != std::string::npos,
               "bundled Bionic Reading OTF uses the immutable font policy");
+      const auto emoji_font = raw_request(
+          port, "/vendor/noto-emoji/fonts/NotoEmoji-Regular.ttf");
+      require(emoji_font.status == 200 &&
+                  emoji_font.headers.find("Content-Type: font/ttf") !=
+                      std::string::npos &&
+                  emoji_font.headers.find(immutable) != std::string::npos,
+              "bundled static Noto Emoji TTF uses the immutable font policy");
       require(raw_request(port, "/api/status").headers.find(no_store) !=
                   std::string::npos,
               "dynamic API responses are no-store");

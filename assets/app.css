@@ -12,7 +12,7 @@ body {
 }
 body {
   padding: 0 4%;
-  font: 24px/1.45 Bookerly, Georgia, serif;
+  font: 24px/1.45 Bookerly, Georgia, "Noto Emoji", serif;
 }
 button,
 input,
@@ -423,7 +423,7 @@ h2 {
 .page-content h3,
 .page-content h4 {
   margin: 34px 0 18px;
-  font-family: "Amazon Ember", Arial, sans-serif;
+  font-family: "Amazon Ember", Arial, "Noto Emoji", sans-serif;
 }
 .page-content pre {
   padding: 20px;
@@ -460,6 +460,9 @@ h2 {
 }
 .callout-icon {
   margin-right: 12px;
+}
+.emoji-variation-selector {
+  display: none;
 }
 .unsupported {
   padding: 16px;
@@ -514,7 +517,7 @@ h2 {
  * to body, .page-content, or another application-wide ancestor. */
 #page-content.bionic-reading .potion-editable-content,
 #page-content.bionic-reading blockquote {
-  font-family: "Potion Fast Sans", sans-serif;
+  font-family: "Potion Fast Sans", "Noto Emoji", sans-serif;
   text-rendering: optimizeLegibility;
 }
 #page-content.bionic-reading .potion-editable-content code,
@@ -539,31 +542,31 @@ h2 {
 }
 #page-content.page-font-amazon-ember.bionic-reading .potion-editable-content .mention,
 #page-content.page-font-amazon-ember.bionic-reading .potion-editable-content .notion-reference,
-#page-content.page-font-amazon-ember.bionic-reading .potion-editable-content [data-potion-atomic] { font-family: "Amazon Ember", Arial, sans-serif; }
+#page-content.page-font-amazon-ember.bionic-reading .potion-editable-content [data-potion-atomic] { font-family: "Amazon Ember", Arial, "Noto Emoji", sans-serif; }
 #page-content.page-font-baskerville.bionic-reading .potion-editable-content .mention,
 #page-content.page-font-baskerville.bionic-reading .potion-editable-content .notion-reference,
-#page-content.page-font-baskerville.bionic-reading .potion-editable-content [data-potion-atomic] { font-family: Baskerville, Georgia, serif; }
+#page-content.page-font-baskerville.bionic-reading .potion-editable-content [data-potion-atomic] { font-family: Baskerville, Georgia, "Noto Emoji", serif; }
 #page-content.page-font-bookerly.bionic-reading .potion-editable-content .mention,
 #page-content.page-font-bookerly.bionic-reading .potion-editable-content .notion-reference,
-#page-content.page-font-bookerly.bionic-reading .potion-editable-content [data-potion-atomic] { font-family: Bookerly, Georgia, serif; }
+#page-content.page-font-bookerly.bionic-reading .potion-editable-content [data-potion-atomic] { font-family: Bookerly, Georgia, "Noto Emoji", serif; }
 #page-content.page-font-caecilia.bionic-reading .potion-editable-content .mention,
 #page-content.page-font-caecilia.bionic-reading .potion-editable-content .notion-reference,
-#page-content.page-font-caecilia.bionic-reading .potion-editable-content [data-potion-atomic] { font-family: "Caecilia Regular", Georgia, serif; }
+#page-content.page-font-caecilia.bionic-reading .potion-editable-content [data-potion-atomic] { font-family: "Caecilia Regular", Georgia, "Noto Emoji", serif; }
 #page-content.page-font-caecilia-condensed.bionic-reading .potion-editable-content .mention,
 #page-content.page-font-caecilia-condensed.bionic-reading .potion-editable-content .notion-reference,
-#page-content.page-font-caecilia-condensed.bionic-reading .potion-editable-content [data-potion-atomic] { font-family: condensed, "Caecilia Regular", Georgia, serif; }
+#page-content.page-font-caecilia-condensed.bionic-reading .potion-editable-content [data-potion-atomic] { font-family: condensed, "Caecilia Regular", Georgia, "Noto Emoji", serif; }
 #page-content.page-font-futura.bionic-reading .potion-editable-content .mention,
 #page-content.page-font-futura.bionic-reading .potion-editable-content .notion-reference,
-#page-content.page-font-futura.bionic-reading .potion-editable-content [data-potion-atomic] { font-family: Futura, Arial, sans-serif; }
+#page-content.page-font-futura.bionic-reading .potion-editable-content [data-potion-atomic] { font-family: Futura, Arial, "Noto Emoji", sans-serif; }
 #page-content.page-font-helvetica.bionic-reading .potion-editable-content .mention,
 #page-content.page-font-helvetica.bionic-reading .potion-editable-content .notion-reference,
-#page-content.page-font-helvetica.bionic-reading .potion-editable-content [data-potion-atomic] { font-family: "Helvetica Neue LT", Helvetica, Arial, sans-serif; }
+#page-content.page-font-helvetica.bionic-reading .potion-editable-content [data-potion-atomic] { font-family: "Helvetica Neue LT", Helvetica, Arial, "Noto Emoji", sans-serif; }
 #page-content.page-font-open-dyslexic.bionic-reading .potion-editable-content .mention,
 #page-content.page-font-open-dyslexic.bionic-reading .potion-editable-content .notion-reference,
-#page-content.page-font-open-dyslexic.bionic-reading .potion-editable-content [data-potion-atomic] { font-family: OpenDyslexic, Arial, sans-serif; }
+#page-content.page-font-open-dyslexic.bionic-reading .potion-editable-content [data-potion-atomic] { font-family: OpenDyslexic, Arial, "Noto Emoji", sans-serif; }
 #page-content.page-font-palatino.bionic-reading .potion-editable-content .mention,
 #page-content.page-font-palatino.bionic-reading .potion-editable-content .notion-reference,
-#page-content.page-font-palatino.bionic-reading .potion-editable-content [data-potion-atomic] { font-family: Palatino, Georgia, serif; }
+#page-content.page-font-palatino.bionic-reading .potion-editable-content [data-potion-atomic] { font-family: Palatino, Georgia, "Noto Emoji", serif; }
 
 /* Reader spacing follows the same conservative prose scope as Bionic
  * Reading. Specialized reader content and application UI are untouched. */
@@ -939,7 +942,7 @@ h2 {
 }
 .toggle-heading {
   vertical-align: middle;
-  font-family: "Amazon Ember", Arial, sans-serif;
+  font-family: "Amazon Ember", Arial, "Noto Emoji", sans-serif;
   font-weight: bold;
 }
 .toggle-heading-1 {

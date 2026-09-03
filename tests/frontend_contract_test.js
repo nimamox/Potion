@@ -1,7 +1,9 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
+const path = require("node:path");
 const vm = require("node:vm");
 
 const frontend = fs.readFileSync(process.argv[2], "utf8");
@@ -20,6 +22,10 @@ const httpServer = fs.readFileSync(process.argv[14], "utf8");
 const whisperTouch = fs.readFileSync(process.argv[15], "utf8");
 const bionicFontDirectory = process.argv[16];
 const potionFontconfig = fs.readFileSync(process.argv[17], "utf8");
+const vendorDirectory = path.dirname(path.dirname(bionicFontDirectory));
+const emojiFontDirectory = path.join(vendorDirectory, "noto-emoji", "fonts");
+const emojiFontPath = path.join(emojiFontDirectory, "NotoEmoji-Regular.ttf");
+const emojiFont = fs.readFileSync(emojiFontPath);
 
 assert.doesNotMatch(frontend, /window\.katex|katex\.render|loadKatex|katexState|data-expr/);
 assert.match(index, /vendor\/katex\/katex\.min\.css\?v=0\.16\.25-native/);
@@ -69,6 +75,8 @@ assert.match(runKindle,
 assert.match(potionFontconfig, /<include ignore_missing="no">\/etc\/fonts\/fonts\.conf<\/include>/);
 assert.match(potionFontconfig,
   /<dir>\/mnt\/us\/potion\/share\/potion\/vendor\/fast-font\/fonts<\/dir>/);
+assert.match(potionFontconfig,
+  /<dir>\/mnt\/us\/potion\/share\/potion\/vendor\/noto-emoji\/fonts<\/dir>/);
 assert.doesNotMatch(potionFontconfig, /\/usr\/share\/fonts|\/etc\/fonts\/conf\.d/);
 assert.deepEqual(fs.readdirSync(bionicFontDirectory).sort(), [
   "PotionFastSans-Bold.otf",
@@ -76,6 +84,18 @@ assert.deepEqual(fs.readdirSync(bionicFontDirectory).sort(), [
   "PotionFastSans-Italic.otf",
   "PotionFastSans-Regular.otf"
 ]);
+assert.deepEqual(fs.readdirSync(emojiFontDirectory).sort(), ["NotoEmoji-Regular.ttf"]);
+assert.equal(
+  crypto.createHash("sha256").update(emojiFont).digest("hex"),
+  "415dc6290378574135b64c808dc640c1df7531973290c4970c51fdeb849cb0c5"
+);
+const emojiTables = new Set();
+for (let i = 0, count = emojiFont.readUInt16BE(4); i < count; ++i)
+  emojiTables.add(emojiFont.toString("ascii", 12 + i * 16, 16 + i * 16));
+assert.ok(emojiTables.has("glyf"), "Noto Emoji must use monochrome TrueType outlines");
+for (const table of ["CBDT", "CBLC", "COLR", "CPAL", "SVG ", "fvar"])
+  assert.equal(emojiTables.has(table), false,
+    `Noto Emoji must not contain ${table}`);
 assert.match(whisperTouch, /win_mgr_utils_new_application_name/);
 assert.match(whisperTouch, /win_mgr_utils_add_is_wisper_touch_supported/);
 assert.match(whisperTouch, /win_mgr_utils_new_name\(0, "application"\)/);
@@ -96,8 +116,25 @@ assert.equal((simulatorHostFonts.match(/font-family:\s*"Potion Fast Sans"/g) || 
 for (const face of ["Regular", "Italic", "Bold", "BoldItalic"])
   assert.match(simulatorHostFonts,
     new RegExp(`url\\("/vendor/fast-font/fonts/PotionFastSans-${face}\\.otf"\\)`));
+assert.match(simulatorHostFonts,
+  /font-family:\s*"Noto Emoji";[\s\S]*url\("\/vendor\/noto-emoji\/fonts\/NotoEmoji-Regular\.ttf"\) format\("truetype"\)/);
 assert.doesNotMatch(appCss, /@font-face[\s\S]*Potion Fast Sans/,
   "Kindle application CSS must keep using process-local Fontconfig, not web-font loading");
+assert.doesNotMatch(appCss, /@font-face[\s\S]*Noto Emoji/,
+  "Kindle application CSS must use process-local Fontconfig for emoji");
+for (const fontName of [
+  "Amazon Ember", "Baskerville", "Bookerly", "Caecilia", "Caecilia Condensed",
+  "Futura", "Helvetica", "OpenDyslexic", "Palatino"
+]) {
+  const escapedName = fontName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  assert.match(frontend,
+    new RegExp(`"${escapedName}"\\s*:\\s*[^\\n]+"Noto Emoji"[^\\n]+(?:serif|sans-serif)`),
+    `${fontName} must retain its existing faces ahead of Noto Emoji fallback`);
+}
+assert.match(appCss,
+  /#page-content\.bionic-reading \.potion-editable-content,[\s\S]*font-family:\s*"Potion Fast Sans",\s*"Noto Emoji",\s*sans-serif/);
+assert.match(appCss, /\.emoji-variation-selector\s*\{[\s\S]*display:\s*none/);
+assert.match(httpServer, /\.ttf[\s\S]*font\/ttf/);
 assert.doesNotMatch(runKindle, /host-fonts\.css/,
   "the Kindle launch path must not acquire simulator font declarations");
 

@@ -281,8 +281,8 @@ bool NotionClient::build_formatted_rich_text(
 bool NotionClient::block_counts_as_editable(const Json &block) {
   const std::string type = block.get("type").string();
   if (type != "paragraph" && type != "bulleted_list_item" &&
-      type != "numbered_list_item") return false;
-  if (type != "paragraph") return true;
+      type != "numbered_list_item" && type != "callout") return false;
+  if (type != "paragraph" && type != "callout") return true;
   for (const auto &part : block.get(type).get("rich_text").items())
     if (!part.get("plain_text").string().empty()) return true;
   return false;

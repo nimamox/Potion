@@ -54,6 +54,20 @@ Copyright (c) 2023 Born2Root. Inter copyright (c) 2016 The Inter Project
 Authors. The generated derivative font family remains under the SIL Open Font
 License 1.1; Potion's application code remains AGPL-3.0-or-later.
 
+## Noto Emoji (monochrome)
+
+- Upstream: <https://github.com/googlefonts/noto-emoji>, commit
+  `2f1ffdd6fbbd05d6f382138a3d3adcd89c5ce800`
+- Bundled file: static monochrome `NotoEmoji-Regular.ttf` version 1.05;
+  SHA-256 `415dc6290378574135b64c808dc640c1df7531973290c4970c51fdeb849cb0c5`
+- License: SIL Open Font License 1.1, reproduced in
+  `LICENSES/NotoEmoji-OFL-1.1.txt`
+- Use: process-local Fontconfig and reader font stacks use Noto Emoji only as
+  a fallback for glyphs absent from the selected Kindle or Potion font. Potion
+  does not install a system font or ship Noto Color Emoji.
+
+Copyright 2013 Google Inc. All Rights Reserved.
+
 ## GNU runtime libraries
 
 The Kindle bundle includes unmodified runtime files from Debian cross packages:

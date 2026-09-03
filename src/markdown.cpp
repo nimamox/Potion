@@ -216,6 +216,13 @@ std::string MarkdownRenderer::sanitize_url(const std::string &url) {
 std::string MarkdownRenderer::inline_html(const std::string &text) const {
   std::string out;
   for (std::size_t i = 0; i < text.size();) {
+    if (text.compare(i, 3, "\xef\xb8\x8e") == 0 ||
+        text.compare(i, 3, "\xef\xb8\x8f") == 0) {
+      out += "<span class=\"emoji-variation-selector\">" +
+             text.substr(i, 3) + "</span>";
+      i += 3;
+      continue;
+    }
     if (text[i] == '\\' && i + 1 < text.size() && markdown_escapable(text[i + 1])) { out += html_escape(text.substr(i + 1, 1)); i += 2; continue; }
     if (text.compare(i, 2, "![") == 0) {
       auto mid = text.find("](", i + 2), end = mid == std::string::npos ? mid : markdown_url_end(text, mid + 2);
@@ -290,7 +297,7 @@ std::string MarkdownRenderer::render(const std::string &markdown) const {
     std::size_t hashes = 0; while (hashes < body.size() && body[hashes] == '#') ++hashes;
     if (hashes && hashes <= 6 && hashes < body.size() && body[hashes] == ' ') { unsigned level = std::min<unsigned>(4, hashes); const std::string heading_source = body.substr(hashes + 1); const bool toggle = trailing_notion_attributes(heading_source).toggle; const std::string heading = colored_inline(heading_source, inline_html(strip_attrs(heading_source))); if (toggle) { out += "<div class=\"toggle heading-toggle\"><button type=\"button\" class=\"potion-block toggle-summary\" aria-expanded=\"true\"><span class=\"toggle-arrow\">&#9662;</span><span class=\"toggle-heading toggle-heading-" + std::to_string(level) + "\">" + heading + "</span></button><div class=\"toggle-content\">"; heading_toggles.push_back(depth); } else out += "<h" + std::to_string(level) + " class=\"potion-block\">" + heading + "</h" + std::to_string(level) + ">"; continue; }
     if (starts(body, "> ")) { out += "<blockquote" + block_class_attribute(body) + ">" + inline_html(strip_attrs(body.substr(2))) + "</blockquote>"; continue; }
-    if (starts(body, "<callout")) { const std::string color = notion_color_class(body); out += "<aside class=\"callout" + (color.empty() ? std::string{} : " " + color) + "\"><span class=\"callout-icon\">" + html_escape(attribute(body, "icon")) + "</span>"; continue; }
+    if (starts(body, "<callout")) { const std::string color = notion_color_class(body); out += "<aside class=\"callout" + (color.empty() ? std::string{} : " " + color) + "\"><span class=\"callout-icon\">" + inline_html(attribute(body, "icon")) + "</span>"; continue; }
     if (body == "</callout>") { out += "</aside>"; continue; }
     if (starts(body, "<details")) { const std::string color = notion_color_class(body); out += "<div class=\"toggle" + (color.empty() ? std::string{} : " " + color) + "\">"; continue; }
     if (starts(body, "<summary>") && body.find("</summary>") != std::string::npos) { out += "<button type=\"button\" class=\"potion-block toggle-summary\" aria-expanded=\"false\"><span class=\"toggle-arrow\">&#9656;</span><span>" + inline_html(body.substr(9, body.size() - 19)) + "</span></button><div class=\"toggle-content hidden\">"; continue; }

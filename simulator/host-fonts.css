@@ -44,6 +44,15 @@
   font-weight: 700;
 }
 
+/* Kindle Mesquite discovers this static monochrome fallback through Potion's
+   private Fontconfig file. Host browsers need a matching explicit face. */
+@font-face {
+  font-family: "Noto Emoji";
+  src: url("/vendor/noto-emoji/fonts/NotoEmoji-Regular.ttf") format("truetype");
+  font-style: normal;
+  font-weight: 400;
+}
+
 @font-face {
   font-family: "Potion Fast Sans";
   src: url("/vendor/fast-font/fonts/PotionFastSans-BoldItalic.otf") format("opentype");

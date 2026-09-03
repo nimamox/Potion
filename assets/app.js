@@ -64,15 +64,15 @@
         "Caecilia Condensed", "Futura", "Helvetica", "OpenDyslexic",
         "Palatino"
     ], fonts = {
-        "Amazon Ember": '"Amazon Ember",Arial,sans-serif',
-        "Baskerville": "Baskerville,Georgia,serif",
-        "Bookerly": "Bookerly,Georgia,serif",
-        "Caecilia": '"Caecilia Regular",Georgia,serif',
-        "Caecilia Condensed": 'condensed,"Caecilia Regular",Georgia,serif',
-        "Futura": "Futura,Arial,sans-serif",
-        "Helvetica": '"Helvetica Neue LT",Helvetica,Arial,sans-serif',
-        "OpenDyslexic": "OpenDyslexic,Arial,sans-serif",
-        "Palatino": "Palatino,Georgia,serif"
+        "Amazon Ember": '"Amazon Ember",Arial,"Noto Emoji",sans-serif',
+        "Baskerville": 'Baskerville,Georgia,"Noto Emoji",serif',
+        "Bookerly": 'Bookerly,Georgia,"Noto Emoji",serif',
+        "Caecilia": '"Caecilia Regular",Georgia,"Noto Emoji",serif',
+        "Caecilia Condensed": 'condensed,"Caecilia Regular",Georgia,"Noto Emoji",serif',
+        "Futura": 'Futura,Arial,"Noto Emoji",sans-serif',
+        "Helvetica": '"Helvetica Neue LT",Helvetica,Arial,"Noto Emoji",sans-serif',
+        "OpenDyslexic": 'OpenDyslexic,Arial,"Noto Emoji",sans-serif',
+        "Palatino": 'Palatino,Georgia,"Noto Emoji",serif'
     }, pageFontClasses = {
         "Amazon Ember": "page-font-amazon-ember",
         "Baskerville": "page-font-baskerville",
