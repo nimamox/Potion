@@ -31,6 +31,7 @@ public:
       const std::string &selected_text, const std::string &format,
       Json &formatted, std::string &error, bool *enabled = nullptr);
   static bool block_counts_as_editable(const Json &block);
+  static void add_svg_intrinsic_dimensions(std::string &body);
   bool retrieve_image(const std::string &url, BinaryResponse &image,
                       std::string &error) const;
 private:

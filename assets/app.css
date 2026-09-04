@@ -470,6 +470,8 @@ h2 {
   color: #666;
 }
 .page-content img {
+  width: auto;
+  height: auto;
   max-width: 100%;
   max-height: 430px;
 }
@@ -753,7 +755,7 @@ h2 {
   z-index: 500;
   display: table;
   width: 430px;
-  height: 62px;
+  height: 93px;
   overflow: hidden;
   border: 3px solid #111;
   background: #fff;
@@ -761,7 +763,7 @@ h2 {
 }
 .selection-menu button {
   display: table-cell;
-  height: 56px;
+  height: 84px;
   margin: 0;
   padding: 0 12px;
   border: 0;

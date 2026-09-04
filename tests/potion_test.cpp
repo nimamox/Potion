@@ -312,6 +312,22 @@ int main() {
             "identical image URLs produce identical keys");
     require(images.register_url(signed_image_url_2) != image_key,
             "different signed image URLs produce different keys");
+    std::string viewbox_svg =
+        "<?xml version=\"1.0\"?><svg xmlns=\"http://www.w3.org/2000/svg\" "
+        "viewBox=\"0 0 1200 675\"><rect width=\"1200\" height=\"675\"/></svg>";
+    potion::NotionClient::add_svg_intrinsic_dimensions(viewbox_svg);
+    require(viewbox_svg.find(" width=\"1200\" height=\"675\">") !=
+                std::string::npos,
+            "viewBox-only SVG gains intrinsic dimensions for Mesquite");
+    std::string sized_svg =
+        "<svg width=\"640\" height=\"360\" viewBox=\"0 0 1200 675\"></svg>";
+    potion::NotionClient::add_svg_intrinsic_dimensions(sized_svg);
+    require(sized_svg.find("width=\"1200\"") == std::string::npos,
+            "explicit SVG dimensions remain unchanged");
+    std::string malformed_svg = "<svg viewBox=\"0 0 nope 675\"></svg>";
+    potion::NotionClient::add_svg_intrinsic_dimensions(malformed_svg);
+    require(malformed_svg.find(" width=") == std::string::npos,
+            "malformed SVG viewBox is not rewritten");
     potion::ImageRegistry independent_images;
     require(independent_images.register_url(signed_image_url) == image_key,
             "image keys are deterministic across registry instances");
@@ -406,6 +422,24 @@ int main() {
     require(notion_blocks.find("heading-toggle\"><button type=\"button\" class=\"potion-block toggle-summary\" aria-expanded=\"true\"") != std::string::npos, "toggle heading expanded");
     require(notion_blocks.find("toggle-heading-1\">Toggle heading</span></button><div class=\"toggle-content\">") != std::string::npos, "toggle heading content visible");
     require(notion_blocks.find("Regular toggle") != std::string::npos && notion_blocks.find("toggle-content hidden") != std::string::npos, "regular toggle");
+
+    const std::string unsupported_blocks = renderer.render(
+      "<synced_block_reference url=\"https://www.notion.so/example\">\n"
+      "\t![Supported child](https://example.com/child.png)\n"
+      "</synced_block_reference>\n"
+      "<bookmark url=\"https://example.com/private-query?token=secret\"/>\n");
+    const std::string synced_notice =
+      "<div class=\"potion-block unsupported\"><code>synced_block_reference</code> content is not yet supported.</div>";
+    require(unsupported_blocks.find(synced_notice) != std::string::npos &&
+            unsupported_blocks.find(synced_notice,
+                unsupported_blocks.find(synced_notice) + 1) == std::string::npos,
+            "unsupported container names its Notion type once");
+    require(unsupported_blocks.find("<code>bookmark</code> content is not yet supported.") !=
+                std::string::npos &&
+            unsupported_blocks.find("token=secret") == std::string::npos,
+            "unsupported self-closing block exposes its type without attributes");
+    require(unsupported_blocks.find("alt=\"Supported child\"") != std::string::npos,
+            "supported children inside an unsupported wrapper still render");
 
     const std::string nested_blocks = renderer.render(
       "# First section {toggle=\"true\"}\n"
@@ -523,11 +557,24 @@ int main() {
 
     const std::string rtl = renderer.render(
       "سلام عرض میکنم خدمت شما!\n"
-      "Left-to-right paragraph.\n");
+      "Left-to-right paragraph.\n"
+      "Potion supports متن فارسی inside English.\n"
+      "این یک متن فارسی درباره Potion و HTTP است.\n"
+      "2026: این متن نیز راست به چپ است.\n"
+      "⚠️ <span underline=\"true\">این متن نیز راست به چپ است.</span>\n");
     require(rtl.find("<p class=\"potion-block potion-editable\" dir=\"rtl\"><span class=\"potion-editable-content\">سلام عرض میکنم خدمت شما!</span></p>") != std::string::npos,
             "right-to-left paragraph direction");
     require(rtl.find("dir=\"rtl\">Left-to-right") == std::string::npos,
             "left-to-right paragraph direction unchanged");
+    require(rtl.find("dir=\"rtl\"><span class=\"potion-editable-content\">Potion supports") == std::string::npos,
+            "English-leading mixed paragraph remains left-to-right");
+    require(rtl.find("dir=\"rtl\"><span class=\"potion-editable-content\">این یک متن فارسی درباره Potion و HTTP است.</span>") != std::string::npos,
+            "Persian-leading mixed paragraph is right-to-left");
+    require(rtl.find("dir=\"rtl\"><span class=\"potion-editable-content\">2026: این متن نیز راست به چپ است.</span>") != std::string::npos,
+            "leading weak digits do not override the first strong Persian character");
+    require(rtl.find("dir=\"rtl\"><span class=\"potion-editable-content\">⚠") != std::string::npos &&
+            rtl.find("<u>این متن نیز راست به چپ است.</u>") != std::string::npos,
+            "leading emoji and inline markup do not override the first strong Persian character");
 
     const std::string highlighted = renderer.render(
       "<span color=\"yellow_bg\">Highlighted text</span>\n"

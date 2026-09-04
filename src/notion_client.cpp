@@ -1,9 +1,12 @@
 #include "potion/notion_client.hpp"
 #include <curl/curl.h>
 #include <algorithm>
+#include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <functional>
 #include <mutex>
+#include <sstream>
 #include <stdexcept>
 
 namespace potion {
@@ -128,6 +131,59 @@ std::string logical_rich_text(const Json &source) {
         part.get("plain_text").string() : atomic_rich_text_marker();
   return text;
 }
+bool xml_attribute(const std::string &tag, const std::string &name,
+                   std::string &value) {
+  std::size_t at = 0;
+  while ((at = tag.find(name, at)) != std::string::npos) {
+    const std::size_t after = at + name.size();
+    const bool left_boundary = at == 0 || tag[at - 1] == '<' ||
+        std::isspace(static_cast<unsigned char>(tag[at - 1]));
+    const bool right_boundary = after == tag.size() || tag[after] == '=' ||
+        std::isspace(static_cast<unsigned char>(tag[after]));
+    if (!left_boundary || !right_boundary) { at = after; continue; }
+    std::size_t equals = after;
+    while (equals < tag.size() &&
+           std::isspace(static_cast<unsigned char>(tag[equals]))) ++equals;
+    if (equals >= tag.size() || tag[equals] != '=') { at = after; continue; }
+    std::size_t start = equals + 1;
+    while (start < tag.size() &&
+           std::isspace(static_cast<unsigned char>(tag[start]))) ++start;
+    if (start >= tag.size() || (tag[start] != '"' && tag[start] != '\''))
+      return true;
+    const char quote = tag[start++];
+    const std::size_t end = tag.find(quote, start);
+    if (end == std::string::npos) return true;
+    value = tag.substr(start, end - start);
+    return true;
+  }
+  return false;
+}
+void add_svg_viewbox_dimensions(std::string &body) {
+  const std::size_t svg = body.find("<svg");
+  if (svg == std::string::npos) return;
+  const std::size_t end = body.find('>', svg + 4);
+  if (end == std::string::npos) return;
+  const std::string tag = body.substr(svg, end - svg + 1);
+  std::string ignored, viewbox;
+  if (xml_attribute(tag, "width", ignored) ||
+      xml_attribute(tag, "height", ignored) ||
+      !xml_attribute(tag, "viewBox", viewbox)) return;
+  std::istringstream values(viewbox);
+  double x = 0, y = 0, width = 0, height = 0, extra = 0;
+  if (!(values >> x >> y >> width >> height) || values >> extra ||
+      !std::isfinite(width) || !std::isfinite(height) ||
+      width <= 0 || height <= 0 || width > 10000000 || height > 10000000)
+    return;
+  std::ostringstream dimensions;
+  dimensions.precision(12);
+  dimensions << " width=\"" << width << "\" height=\"" << height << "\"";
+  const std::size_t insertion = end > svg && body[end - 1] == '/' ? end - 1 : end;
+  body.insert(insertion, dimensions.str());
+}
+}
+
+void NotionClient::add_svg_intrinsic_dimensions(std::string &body) {
+  add_svg_viewbox_dimensions(body);
 }
 
 NotionClient::NotionClient(std::string api_version, std::string ca_bundle)
@@ -343,6 +399,6 @@ bool NotionClient::format_block_text(const std::string &token,
 }
 bool NotionClient::retrieve_image(const std::string &url, BinaryResponse &image, std::string &error) const {
   if (url.compare(0, 8, "https://") != 0) { error = "Only HTTPS Notion images are allowed"; return false; }
-  try { auto response = perform_request(url, {"Accept: image/*"}, ca_bundle_, nullptr, 16 * 1024 * 1024); if (response.status != 200 || response.content_type.compare(0, 6, "image/") != 0) { error = "Image server returned HTTP " + std::to_string(response.status); return false; } image = {response.content_type, std::move(response.body)}; return true; } catch (const std::exception &e) { error = e.what(); return false; }
+  try { auto response = perform_request(url, {"Accept: image/*"}, ca_bundle_, nullptr, 16 * 1024 * 1024); if (response.status != 200 || response.content_type.compare(0, 6, "image/") != 0) { error = "Image server returned HTTP " + std::to_string(response.status); return false; } if (response.content_type.compare(0, 13, "image/svg+xml") == 0) add_svg_intrinsic_dimensions(response.body); image = {response.content_type, std::move(response.body)}; return true; } catch (const std::exception &e) { error = e.what(); return false; }
 }
 }

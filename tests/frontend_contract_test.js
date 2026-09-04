@@ -138,6 +138,51 @@ assert.match(httpServer, /\.ttf[\s\S]*font\/ttf/);
 assert.doesNotMatch(runKindle, /host-fonts\.css/,
   "the Kindle launch path must not acquire simulator font declarations");
 
+const imageFitLogic = frontend.match(
+  /\/\* IMAGE_FIT_LOGIC_BEGIN \*\/([\s\S]*?)\/\* IMAGE_FIT_LOGIC_END \*\//);
+assert.ok(imageFitLogic, "missing Kindle image aspect-ratio fitting boundary");
+const imageFitContext = {
+  IMAGE_COMPACT_MAX_HEIGHT: 430,
+  imageNodes: [],
+  id: function() { return {clientWidth: 1000}; },
+  isFinite,
+  Math
+};
+vm.createContext(imageFitContext);
+vm.runInContext(imageFitLogic[1], imageFitContext);
+const tallImage = {
+  className: "",
+  naturalWidth: 1200,
+  naturalHeight: 675,
+  parentNode: {clientWidth: 1000},
+  style: {}
+};
+imageFitContext.fitCompactImage(tallImage);
+assert.equal(tallImage.style.width, "764px");
+assert.equal(tallImage.style.height, "430px");
+const wideImage = {
+  className: "",
+  naturalWidth: 1200,
+  naturalHeight: 470,
+  parentNode: {clientWidth: 1000},
+  style: {}
+};
+imageFitContext.fitCompactImage(wideImage);
+assert.equal(wideImage.style.width, "1000px");
+assert.equal(wideImage.style.height, "392px");
+wideImage.className = "expanded";
+wideImage.style.width = "";
+wideImage.style.height = "";
+imageFitContext.fitCompactImage(wideImage);
+assert.equal(wideImage.style.width, "",
+  "expanded images remain controlled by their full-width CSS");
+assert.match(frontend,
+  /function imageFinished\(image, loaded\)[\s\S]*if \(loaded\) \{\s*fitCompactImage\(image\)/);
+assert.match(frontend,
+  /this\.className = "";\s*fitCompactImage\(this\)/);
+assert.match(appCss,
+  /\.page-content img\s*\{[^}]*width:\s*auto;[^}]*height:\s*auto;[^}]*max-width:\s*100%;[^}]*max-height:\s*430px;/);
+
 const bionicLogic = frontend.match(
   /\/\* BIONIC_READING_LOGIC_BEGIN \*\/([\s\S]*?)\/\* BIONIC_READING_LOGIC_END \*\//);
 assert.ok(bionicLogic, "missing Bionic Reading logic test boundary");
@@ -547,9 +592,116 @@ assert.doesNotMatch(frontend,
   /function formatSelection\(format\)[\s\S]*?setBusy\(true\)[\s\S]*?\/\* OPTIMISTIC_FORMATTING_END \*\//,
   "formatting must not put the entire application into the busy state");
 
-// Formatting mutates the selected block and closes its popup before the XHR
-// completes. One write is serialized at a time; a failure restores the exact
-// sanitized block markup, including nested formatting and links.
+// Removing formatting from the middle of a larger formatted run must split
+// the ancestor around the selection. Otherwise the extracted text is inserted
+// back inside the same <strong>/<u>/highlight and looks unchanged until reload.
+const localFormattingMatch = frontend.match(
+  /\/\* LOCAL_FORMATTING_DOM_BEGIN \*\/([\s\S]*?)\/\* LOCAL_FORMATTING_DOM_END \*\//);
+assert.ok(localFormattingMatch, "missing local-formatting DOM test boundary");
+function testElement(tag, className) {
+  const node = {
+    nodeType: 1,
+    tagName: tag.toUpperCase(),
+    className: className || "",
+    parentNode: null,
+    childNodes: [],
+    appendChild: function(child) {
+      if (child.parentNode) child.parentNode.removeChild(child);
+      this.childNodes.push(child);
+      child.parentNode = this;
+      return child;
+    },
+    insertBefore: function(child, reference) {
+      let index = this.childNodes.indexOf(reference);
+      assert.notEqual(index, -1);
+      if (child.parentNode) {
+        const oldParent = child.parentNode;
+        const oldIndex = oldParent.childNodes.indexOf(child);
+        oldParent.childNodes.splice(oldIndex, 1);
+        if (oldParent === this && oldIndex < index) --index;
+      }
+      this.childNodes.splice(index, 0, child);
+      child.parentNode = this;
+      return child;
+    },
+    removeChild: function(child) {
+      const index = this.childNodes.indexOf(child);
+      assert.notEqual(index, -1);
+      this.childNodes.splice(index, 1);
+      child.parentNode = null;
+      return child;
+    },
+    cloneNode: function() { return testElement(tag, this.className); }
+  };
+  Object.defineProperty(node, "firstChild", {
+    get: function() { return this.childNodes[0] || null; }
+  });
+  Object.defineProperty(node, "nextSibling", {
+    get: function() {
+      if (!this.parentNode) return null;
+      const index = this.parentNode.childNodes.indexOf(this);
+      return this.parentNode.childNodes[index + 1] || null;
+    }
+  });
+  return node;
+}
+function testText(value) {
+  const node = {nodeType: 3, nodeValue: value, parentNode: null};
+  Object.defineProperty(node, "nextSibling", {
+    get: function() {
+      if (!this.parentNode) return null;
+      const index = this.parentNode.childNodes.indexOf(this);
+      return this.parentNode.childNodes[index + 1] || null;
+    }
+  });
+  return node;
+}
+function localFormattingContext() {
+  const context = {
+    unwrapElement: function(element) {
+      const parent = element.parentNode;
+      while (element.firstChild)
+        parent.insertBefore(element.firstChild, element);
+      parent.removeChild(element);
+    }
+  };
+  vm.createContext(context);
+  vm.runInContext(localFormattingMatch[1], context);
+  return context;
+}
+
+const splitContext = localFormattingContext();
+const splitContent = testElement("div");
+const splitStrong = splitContent.appendChild(testElement("strong"));
+splitStrong.appendChild(testText("résumé "));
+const splitMarker = splitStrong.appendChild(testElement("span"));
+splitMarker.appendChild(testText("naïve"));
+splitStrong.appendChild(testText(" façade"));
+splitContext.liftSelectionFromFormatting(splitMarker, splitContent, "clear");
+assert.deepEqual(splitContent.childNodes.map(function(node) {
+  return node.nodeType === 3 ? node.nodeValue :
+    node.tagName + ":" + node.firstChild.nodeValue;
+}), ["STRONG:résumé ", "naïve", "STRONG: façade"],
+"clearing the middle word immediately splits its surrounding bold run");
+
+const linkContext = localFormattingContext();
+const linkContent = testElement("div");
+const linkStrong = linkContent.appendChild(testElement("strong"));
+const link = linkStrong.appendChild(testElement("a"));
+link.appendChild(testText("before "));
+const linkMarker = link.appendChild(testElement("span"));
+linkMarker.appendChild(testText("selected"));
+link.appendChild(testText(" after"));
+linkContext.liftSelectionFromFormatting(linkMarker, linkContent, "clear");
+assert.deepEqual(linkContent.childNodes.map(function(node) {
+  return node.tagName;
+}), ["STRONG", "A", "STRONG"],
+"non-formatting link ancestry is preserved around and within the selection");
+assert.equal(linkContent.childNodes[1].firstChild.nodeValue, "selected");
+
+// Formatting closes its popup and changes the DOM immediately. Backend writes
+// remain serialized. A failure discards and reverses every still-pending
+// optimistic action so the visible page cannot remain ahead of Notion.
 const optimisticMatch = frontend.match(
   /\/\* OPTIMISTIC_FORMATTING_BEGIN \*\/([\s\S]*?)\/\* OPTIMISTIC_FORMATTING_END \*\//);
 assert.ok(optimisticMatch, "missing optimistic-formatting test boundary");
@@ -576,13 +728,18 @@ function optimisticContext() {
     currentPageId: "page-id",
     busy: false,
     formatSaveBusy: false,
+    formatSaveActive: null,
+    formatSaveQueue: [],
     id: function(name) { assert.equal(name, "page-content"); return root; },
     applySelectionLocally: function(localState, format, enabled) {
       calls.push("apply:" + format + ":" + enabled);
       localState.content.innerHTML = "optimistic";
       return true;
     },
-    clearSelectionMenu: function(clearNative) { calls.push("clear:" + clearNative); },
+    clearSelectionMenu: function(clearNative) {
+      calls.push("clear:" + clearNative);
+      context.selectionState = null;
+    },
     collectReadingBlocks: function() { calls.push("blocks"); },
     applyNightPageAppearance: function() { calls.push("night"); },
     updateScroll: function() { calls.push("scroll"); },
@@ -607,16 +764,52 @@ assert.equal(optimisticFailure.content.innerHTML, "optimistic",
 assert.ok(optimisticFailure.calls.indexOf("clear:true") < optimisticFailure.calls.indexOf("request"),
   "the selection popup closes before the background request starts");
 assert.equal(optimisticFailure.requests.length, 1);
-optimisticFailure.context.formatSelection("underline");
-assert.equal(optimisticFailure.requests.length, 1,
-  "rapid formatting actions cannot create overlapping writes");
 optimisticFailure.requests[0].callback("Notion rejected the edit", null);
 assert.equal(optimisticFailure.content.innerHTML,
   '<a href="https://example.com"><strong class="notion-color">linked</strong></a>',
   "a failed write restores the exact prior nested markup and link");
 assert.ok(optimisticFailure.calls.indexOf(
-  "warning:Formatting could not be saved and was reverted. Notion rejected the edit") >= 0);
+  "warning:Formatting could not be saved. Pending formatting was reverted. Notion rejected the edit") >= 0);
 assert.equal(optimisticFailure.context.formatSaveBusy, false);
+assert.equal(optimisticFailure.context.formatSaveQueue.length, 0);
+
+const optimisticQueue = optimisticContext();
+optimisticQueue.context.formatSelection("bold");
+optimisticQueue.context.selectionState = optimisticQueue.state;
+optimisticQueue.context.formatSelection("underline");
+assert.equal(optimisticQueue.requests.length, 1,
+  "a second popup action is accepted without overlapping the active write");
+assert.equal(optimisticQueue.context.formatSaveQueue.length, 1);
+assert.equal(optimisticQueue.calls.filter(function(call) {
+  return call.indexOf("apply:") === 0;
+}).length, 2, "every queued action is visible immediately");
+assert.equal(optimisticQueue.calls.filter(function(call) {
+  return call === "clear:true";
+}).length, 2, "both popup clicks close immediately");
+optimisticQueue.requests[0].callback(null, {enabled: true});
+assert.equal(optimisticQueue.requests.length, 2,
+  "the queued action starts when the prior request completes");
+assert.equal(optimisticQueue.calls.filter(function(call) {
+  return call.indexOf("apply:") === 0;
+}).length, 2, "starting a queued request does not apply its formatting twice");
+optimisticQueue.requests[1].callback(null, {enabled: true});
+assert.equal(optimisticQueue.context.formatSaveBusy, false);
+assert.equal(optimisticQueue.context.formatSaveQueue.length, 0);
+
+const optimisticQueuedFailure = optimisticContext();
+const queuedFailureOriginal = optimisticQueuedFailure.content.innerHTML;
+optimisticQueuedFailure.context.formatSelection("bold");
+optimisticQueuedFailure.context.selectionState = optimisticQueuedFailure.state;
+optimisticQueuedFailure.context.formatSelection("underline");
+assert.equal(optimisticQueuedFailure.content.innerHTML, "optimistic");
+optimisticQueuedFailure.requests[0].callback("Notion rejected the edit", null);
+assert.equal(optimisticQueuedFailure.requests.length, 1,
+  "no later queued request is sent after the active request fails");
+assert.equal(optimisticQueuedFailure.content.innerHTML, queuedFailureOriginal,
+  "the failed action and every later optimistic action are reverted in reverse order");
+assert.equal(optimisticQueuedFailure.context.formatSaveQueue.length, 0);
+assert.equal(optimisticQueuedFailure.context.formatSaveActive, null);
+assert.equal(optimisticQueuedFailure.context.formatSaveBusy, false);
 
 const optimisticSuccess = optimisticContext();
 optimisticSuccess.context.formatSelection("underline");
@@ -629,6 +822,11 @@ assert.equal(optimisticSuccess.calls.filter(function(call) {
 assert.doesNotMatch(frontend, /localStorage|sessionStorage/);
 assert.doesNotMatch(frontend, /location\.reload/);
 assert.match(appCss, /\.selection-menu\s*{[\s\S]*position:\s*fixed;[\s\S]*z-index:\s*500;/);
+assert.match(appCss,
+  /\.selection-menu\s*\{[^}]*width:\s*430px;[^}]*height:\s*93px;/);
+assert.match(appCss, /\.selection-menu button\s*\{[^}]*height:\s*84px;/);
+assert.match(frontend,
+  /function positionSelectionMenu\(rect\)[\s\S]*width = 430,\s*height = 93,/);
 assert.match(appCss, /\.selection-menu button\.selection-active/);
 assert.match(appCss, /\.page-content a,[\s\S]*?\.page-content u[\s\S]*?padding-bottom:\s*5px;[\s\S]*?background-image:\s*url\("data:image\/png;base64,/);
 assert.match(appCss, /background-position:\s*left bottom;[\s\S]*?background-repeat:\s*repeat-x;/);
@@ -647,47 +845,40 @@ assert.match(frontend, /selectionHoldTimer = window\.setTimeout\(beginCustomSele
 assert.match(frontend, /elapsed >= 700/);
 assert.match(frontend, /function moveCustomSelection\(event\)/);
 assert.match(frontend,
-  /function finishSelectionHold\(event\)[\s\S]*if \(held\) beginCustomSelection\(\);[\s\S]*if \(selectionHoldActive\) \{[\s\S]*moveCustomSelection\(event\);/);
+  /function finishSelectionHold\(event\)[\s\S]*if \(held\) beginCustomSelection\(\);[\s\S]*if \(selectionHoldActive\) \{[\s\S]*if \(selectionDragActive\) updateCustomSelection\(point\);/);
 const finishMatch = frontend.match(
   /(function finishSelectionHold\(event\) \{[\s\S]*?\n    \})\n\n    function setSelectionButtonsDisabled/);
 assert.ok(finishMatch, "missing finishSelectionHold");
 const finishCalls = [];
 const finishContext = {
-  selectionHoldStartedAt: Date.now() - 800,
-  selectionHoldTimer: 1,
-  selectionHoldActive: false,
-  selectionDragActive: false,
-  selectionDragInspectTimer: 17,
+  selectionHoldStartedAt: Date.now() - 1000,
+  selectionHoldTimer: null,
+  selectionHoldActive: true,
+  selectionDragActive: true,
   selectionSuppressClick: true,
   clearSelectionHoldTimer: function() { finishContext.selectionHoldTimer = null; },
-  clearDragSelectionInspection: function() {
-    finishCalls.push("clear-drag");
-    finishContext.selectionDragInspectTimer = null;
+  clearDragSelectionUpdate: function() { finishCalls.push("clear-drag"); },
+  eventPoint: function(event) { return {x: event.x, y: event.y}; },
+  updateCustomSelection: function(point) {
+    finishCalls.push("update:" + point.x + "," + point.y);
   },
-  beginCustomSelection: function() {
-    finishCalls.push("begin");
-    finishContext.selectionHoldActive = true;
-  },
-  moveCustomSelection: function(event) {
-    finishCalls.push("move:" + event.marker);
-    finishContext.selectionDragInspectTimer = 18;
-  },
+  beginCustomSelection: function() { finishCalls.push("begin"); },
   inspectSelection: function(source) { finishCalls.push("inspect:" + source); },
   window: { setTimeout: function() {} },
   Date: Date
 };
 vm.createContext(finishContext);
 vm.runInContext(finishMatch[1], finishContext);
-finishContext.finishSelectionHold({ marker: "release" });
+assert.equal(finishContext.finishSelectionHold({x: 91, y: 72}), true);
 assert.deepEqual(finishCalls,
-  ["clear-drag", "begin", "move:release", "clear-drag", "inspect:SELECT"],
-  "a delayed hold timer must extend to the release point instead of collapsing to one word");
-assert.equal(finishContext.selectionDragInspectTimer, null,
-  "release cancels both the old timer and any inspection scheduled by the final move");
+  ["clear-drag", "update:91,72", "inspect:SELECT"],
+  "release applies the exact final drag point before inspecting once");
+assert.equal(finishContext.selectionHoldActive, false);
+assert.equal(finishContext.selectionDragActive, false);
 assert.match(frontend, /document\.onmousemove = moveCustomSelection;/);
 assert.match(frontend, /document\.ontouchmove = moveCustomSelection;/);
 assert.match(frontend,
-  /document\.onmouseup = function\(event\)[\s\S]*finishSelectionHold\(event \|\| window\.event\);[\s\S]*scheduleSelectionInspection\(\);/);
+  /document\.onmouseup = function\(event\) \{\s*if \(!finishSelectionHold\(event \|\| window\.event\)\)\s*scheduleSelectionInspection\(\);/);
 assert.doesNotMatch(frontend, /id\("page-content"\)\.onmousemove/);
 assert.doesNotMatch(frontend, /id\("page-content"\)\.onmouseup/);
 assert.match(frontend,
@@ -695,24 +886,49 @@ assert.match(frontend,
 assert.match(frontend,
   /function applyAppearance\(persist\) \{\s*clearSelectionMenu\(true\);/);
 assert.match(frontend, /source === "NATIVE" && selectionHoldTimer !== null/);
-assert.match(frontend, /selectionDragActive/);
+assert.match(frontend,
+  /function scheduleSelectionInspection\(\) \{\s*if \(selectionMenuActive \|\| selectionHoldActive \|\| selectionDragActive\)/);
 assert.match(frontend, /point\.x < rect\.left/);
 assert.doesNotMatch(frontend, /selectionDebug|\/api\/debug\/selection/);
 assert.doesNotMatch(index, /selection-debug/);
 
-// Updating the native Range stays synchronous for every drag event, while
-// expensive logical-offset/format/menu inspection is limited to one timer.
+// Drag moves coalesce into one native selection update. The preferred WebKit
+// API mutates the Selection without replacing its Range or inspecting menus.
 const dragThrottleMatch = frontend.match(
-  /\/\* DRAG_SELECTION_THROTTLE_BEGIN \*\/([\s\S]*?)\/\* DRAG_SELECTION_THROTTLE_END \*\//);
-assert.ok(dragThrottleMatch, "missing drag-selection throttle test boundary");
+  /\/\* DRAG_SELECTION_UPDATE_BEGIN \*\/([\s\S]*?)\/\* DRAG_SELECTION_UPDATE_END \*\//);
+assert.ok(dragThrottleMatch, "missing drag-selection update test boundary");
 const dragThrottleCalls = [];
 const dragThrottleTimers = [];
+const anchorNode = {
+  compareDocumentPosition: function() { return 0; }
+};
+const endpointNode = {};
+const nativeSelection = {
+  setBaseAndExtent: function(base, baseOffset, focus, focusOffset) {
+    dragThrottleCalls.push(
+      "extent:" + baseOffset + ":" + focusOffset + ":" + (focus === endpointNode));
+  },
+  removeAllRanges: function() { dragThrottleCalls.push("remove"); },
+  addRange: function() { dragThrottleCalls.push("add"); }
+};
 const dragThrottleContext = {
-  selectionDragInspectTimer: null,
+  selectionDragUpdateTimer: null,
+  selectionDragPoint: null,
   selectionHoldActive: true,
-  SELECTION_DRAG_INSPECT_MS: 80,
-  inspectSelection: function(source) { dragThrottleCalls.push("inspect:" + source); },
+  selectionDragActive: true,
+  selectionAnchor: {node: anchorNode, start: 1, end: 4},
+  SELECTION_DRAG_UPDATE_MS: 50,
+  caretAtPoint: function(pointX) {
+    dragThrottleCalls.push("caret:" + pointX);
+    return {startContainer: endpointNode, startOffset: 8};
+  },
+  selectionAncestor: function() { return "same-content"; },
+  wordCharacter: function(character) {
+    return !!character && !/[\s.,;:!?()[\]{}"'\/\\|<>]/.test(character);
+  },
+  document: {createRange: function() { throw new Error("unexpected fallback"); }},
   window: {
+    getSelection: function() { return nativeSelection; },
     setTimeout: function(callback, delay) {
       dragThrottleCalls.push("timer:" + delay);
       dragThrottleTimers.push({callback: callback, cancelled: false});
@@ -722,67 +938,101 @@ const dragThrottleContext = {
       dragThrottleCalls.push("clear:" + timer);
       dragThrottleTimers[timer - 1].cancelled = true;
     }
-  }
+  },
+  Math
 };
 vm.createContext(dragThrottleContext);
 vm.runInContext(dragThrottleMatch[1], dragThrottleContext);
-dragThrottleContext.scheduleDragSelectionInspection();
-dragThrottleContext.scheduleDragSelectionInspection();
-assert.deepEqual(dragThrottleCalls, ["timer:80"],
-  "rapid moves create at most one inspection timer");
+dragThrottleContext.scheduleDragSelectionUpdate({x: 10, y: 20});
+dragThrottleContext.scheduleDragSelectionUpdate({x: 30, y: 40});
+assert.deepEqual(dragThrottleCalls, ["timer:50"],
+  "rapid moves create at most one selection-update timer");
 dragThrottleTimers[0].callback();
-assert.deepEqual(dragThrottleCalls, ["timer:80", "inspect:DRAG"],
-  "the timer inspects an active drag");
-dragThrottleContext.scheduleDragSelectionInspection();
-dragThrottleContext.clearDragSelectionInspection();
-assert.equal(dragThrottleContext.selectionDragInspectTimer, null,
-  "clearing selection cancels the pending drag inspection");
-assert.equal(dragThrottleTimers[1].cancelled, true);
-dragThrottleContext.selectionHoldActive = false;
-dragThrottleContext.scheduleDragSelectionInspection();
-dragThrottleTimers[2].callback();
-assert.equal(dragThrottleCalls.filter(function(call) { return call === "inspect:DRAG"; }).length, 1,
-  "an inactive delayed callback cannot overwrite final release state");
+assert.deepEqual(dragThrottleCalls,
+  ["timer:50", "caret:30", "extent:1:8:true"],
+  "the timer applies only the newest point through setBaseAndExtent");
+assert.equal(dragThrottleCalls.includes("remove"), false,
+  "the preferred drag path does not replace the native Range");
+const wordNode = {
+  nodeType: 3,
+  nodeValue: "virtualization",
+  compareDocumentPosition: function() { return 0; }
+};
+dragThrottleContext.selectionAnchor = {node: anchorNode, start: 1, end: 4};
+dragThrottleContext.caretAtPoint = function() {
+  return {startContainer: wordNode, startOffset: 4};
+};
+dragThrottleContext.updateCustomSelection({x: 1, y: 1});
+assert.equal(dragThrottleCalls[dragThrottleCalls.length - 1],
+  "extent:1:14:false",
+  "forward dragging snaps the focus to the end of its word");
+dragThrottleContext.selectionAnchor = {node: wordNode, start: 6, end: 10};
+dragThrottleContext.caretAtPoint = function() {
+  return {startContainer: wordNode, startOffset: 3};
+};
+dragThrottleContext.updateCustomSelection({x: 2, y: 2});
+assert.equal(dragThrottleCalls[dragThrottleCalls.length - 1],
+  "extent:10:0:false",
+  "backward dragging snaps the focus to the start of its word");
+const extendCalls = [];
+dragThrottleContext.selectionAnchor = {node: anchorNode, start: 1, end: 4};
+dragThrottleContext.caretAtPoint = function() {
+  return {startContainer: anchorNode, startOffset: 0};
+};
+dragThrottleContext.window.getSelection = function() {
+  return {
+    collapse: function(node, offset) {
+      extendCalls.push("collapse:" + offset);
+    },
+    extend: function(node, offset) {
+      extendCalls.push("extend:" + offset);
+    }
+  };
+};
+assert.equal(dragThrottleContext.updateCustomSelection({x: 0, y: 0}), true);
+assert.deepEqual(extendCalls, ["collapse:4", "extend:0"],
+  "Selection.extend fallback keeps the far edge of the original word anchored");
+dragThrottleContext.scheduleDragSelectionUpdate({x: 50, y: 60});
+dragThrottleContext.clearDragSelectionUpdate();
+assert.equal(dragThrottleContext.selectionDragUpdateTimer, null);
+assert.equal(dragThrottleContext.selectionDragPoint, null);
+assert.equal(dragThrottleTimers[1].cancelled, true,
+  "release cancels a pending coalesced update before applying its final point");
 assert.match(frontend,
-  /function clearSelectionMenu\(clearNative\)[\s\S]*clearDragSelectionInspection\(\)/,
-  "clearing selection cancels pending drag inspection");
+  /function clearSelectionMenu\(clearNative\)[\s\S]*clearDragSelectionUpdate\(\)/,
+  "clearing selection cancels a pending drag update");
+assert.doesNotMatch(dragThrottleMatch[1], /inspectSelection/);
 
 const moveMatch = frontend.match(
   /(function moveCustomSelection\(event\) \{[\s\S]*?\n    \})\n\n    function finishSelectionHold/);
 assert.ok(moveMatch, "missing moveCustomSelection");
 const moveCalls = [];
-const anchorNode = {
-  compareDocumentPosition: function() { return 0; }
-};
-const endpointNode = {};
 const moveContext = {
   selectionHoldActive: true,
-  selectionDragActive: true,
+  selectionDragActive: false,
   selectionHoldTimer: null,
+  selectionTimer: 9,
   selectionHoldX: 10,
   selectionHoldY: 10,
-  selectionAnchor: {node: anchorNode, start: 1, end: 4},
   eventPoint: function() { return {x: 50, y: 50}; },
-  caretAtPoint: function() { return {startContainer: endpointNode, startOffset: 8}; },
-  selectionAncestor: function() { return "same-content"; },
-  scheduleDragSelectionInspection: function() { moveCalls.push("schedule"); },
-  inspectSelection: function(source) { moveCalls.push("inspect:" + source); },
-  document: { createRange: function() { return {
-    setStart: function() {}, setEnd: function() {}
-  }; } },
-  window: { getSelection: function() { return {
-    removeAllRanges: function() { moveCalls.push("remove"); },
-    addRange: function() { moveCalls.push("add"); }
-  }; } },
+  id: function() { return {name: "menu"}; },
+  hide: function() { moveCalls.push("hide"); },
+  scheduleDragSelectionUpdate: function(point) {
+    moveCalls.push("schedule:" + point.x + "," + point.y);
+  },
+  window: {clearTimeout: function(timer) { moveCalls.push("clear:" + timer); }},
   Math: Math,
   Date: Date
 };
 vm.createContext(moveContext);
 vm.runInContext(moveMatch[1], moveContext);
 moveContext.moveCustomSelection({preventDefault: function() { moveCalls.push("prevent"); }});
-assert.deepEqual(moveCalls, ["prevent", "remove", "add", "schedule"],
-  "every move updates the native Range immediately without synchronous inspection");
-assert.doesNotMatch(moveMatch[1], /inspectSelection\("DRAG"\)/);
+assert.deepEqual(moveCalls,
+  ["prevent", "clear:9", "hide", "schedule:50,50"],
+  "starting a drag hides the menu and schedules only a coalesced selection update");
+assert.equal(moveContext.selectionDragActive, true);
+assert.equal(moveContext.selectionTimer, null);
+assert.doesNotMatch(moveMatch[1], /removeAllRanges|addRange|inspectSelection/);
 
 // Native triple-click ranges may include the paragraph boundary; Potion
 // normalizes that one-block selection. Double-click uses logical offsets so a
@@ -1006,8 +1256,8 @@ assert.match(frontend,
 assert.match(frontend,
   /function saveCurrentReadingPosition\(done\)[\s\S]*if \(positionRestoring \|\|/);
 assert.match(frontend,
-  /window\.onorientationchange = function\(\) \{\s*scheduleViewportReadingRestore\(\)/);
+  /window\.onorientationchange = function\(\) \{\s*fitCompactImages\(\);\s*scheduleViewportReadingRestore\(\)/);
 assert.match(frontend,
-  /window\.onresize = function\(\) \{[\s\S]*scheduleViewportReadingRestore\(\)/);
+  /window\.onresize = function\(\) \{\s*fitCompactImages\(\);[\s\S]*scheduleViewportReadingRestore\(\)/);
 
 console.log("Potion frontend native-math contract tests passed");

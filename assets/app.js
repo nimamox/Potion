@@ -32,21 +32,25 @@
         viewportRestoreTimer = null,
         readingViewportWidth = 0;
     var POSITION_RESTORE_QUIET_MS = 400,
-        TRANSIENT_POSITION_UPDATE_MS = 100;
+        TRANSIENT_POSITION_UPDATE_MS = 100,
+        IMAGE_COMPACT_MAX_HEIGHT = 430;
     var selectionTimer = null,
         selectionState = null,
         selectionMenuActive = false,
         formatSaveBusy = false,
+        formatSaveActive = null,
+        formatSaveQueue = [],
         selectionHoldTimer = null,
         selectionHoldActive = false,
         selectionHoldX = 0,
         selectionHoldY = 0,
         selectionHoldStartedAt = 0,
         selectionDragActive = false,
-        selectionDragInspectTimer = null,
         selectionAnchor = null,
         selectionSuppressClick = false;
-    var SELECTION_DRAG_INSPECT_MS = 80;
+    var selectionDragUpdateTimer = null,
+        selectionDragPoint = null;
+    var SELECTION_DRAG_UPDATE_MS = 50;
     var fontScales = [0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6],
         fontScale = 1,
         pageFont = "Bookerly",
@@ -411,7 +415,7 @@
         selectionState = null;
         selectionMenuActive = false;
         clearSelectionHoldTimer();
-        clearDragSelectionInspection();
+        clearDragSelectionUpdate();
         selectionHoldActive = false;
         selectionHoldStartedAt = 0;
         selectionDragActive = false;
@@ -434,7 +438,7 @@
     function positionSelectionMenu(rect) {
         var menu = id("selection-menu"),
             width = 430,
-            height = 62,
+            height = 93,
             viewportWidth = document.documentElement.clientWidth || document.body.clientWidth,
             viewportHeight = document.documentElement.clientHeight || document.body.clientHeight,
             left = Math.max(8, Math.floor((viewportWidth - width) / 2)),
@@ -705,33 +709,104 @@
         selectionState.formats = selectionFormatState(
             startContent, selectionState.start, selectionState.end);
         updateSelectionButtonStates(selectionState.formats);
-        setSelectionButtonsDisabled(formatSaveBusy);
+        setSelectionButtonsDisabled(false);
         positionSelectionMenu(rect);
         show(id("selection-menu"));
     }
 
     function scheduleSelectionInspection() {
-        if (selectionMenuActive) return;
+        if (selectionMenuActive || selectionHoldActive || selectionDragActive)
+            return;
         if (selectionTimer !== null) window.clearTimeout(selectionTimer);
         selectionTimer = window.setTimeout(function() { inspectSelection("NATIVE"); }, 140);
     }
 
-    /* DRAG_SELECTION_THROTTLE_BEGIN */
-    function clearDragSelectionInspection() {
-        if (selectionDragInspectTimer !== null) {
-            window.clearTimeout(selectionDragInspectTimer);
-            selectionDragInspectTimer = null;
+    /* DRAG_SELECTION_UPDATE_BEGIN */
+    function clearDragSelectionUpdate() {
+        if (selectionDragUpdateTimer !== null) {
+            window.clearTimeout(selectionDragUpdateTimer);
+            selectionDragUpdateTimer = null;
         }
+        selectionDragPoint = null;
     }
 
-    function scheduleDragSelectionInspection() {
-        if (selectionDragInspectTimer !== null) return;
-        selectionDragInspectTimer = window.setTimeout(function() {
-            selectionDragInspectTimer = null;
-            if (selectionHoldActive) inspectSelection("DRAG");
-        }, SELECTION_DRAG_INSPECT_MS);
+    function snapCaretToWord(caret, before) {
+        var node = caret.startContainer,
+            offset = caret.startOffset,
+            text;
+        if (!node || node.nodeType !== 3) return caret;
+        text = node.nodeValue || "";
+        offset = Math.max(0, Math.min(offset, text.length));
+        if (before) {
+            while (offset > 0 && wordCharacter(text.charAt(offset - 1)))
+                --offset;
+        } else {
+            while (offset < text.length && wordCharacter(text.charAt(offset)))
+                ++offset;
+        }
+        return {startContainer: node, startOffset: offset};
     }
-    /* DRAG_SELECTION_THROTTLE_END */
+
+    function updateCustomSelection(point) {
+        var caret, content, before, selection, range,
+            anchorNode, anchorOffset;
+        if (!point || !selectionAnchor || !window.getSelection) return false;
+        caret = caretAtPoint(point.x, point.y);
+        content = caret && selectionAncestor(
+            caret.startContainer, "potion-editable-content");
+        if (!caret || !content ||
+            content !== selectionAncestor(
+                selectionAnchor.node, "potion-editable-content")) return false;
+        if (caret.startContainer === selectionAnchor.node)
+            before = caret.startOffset < selectionAnchor.start;
+        else
+            before = !!(selectionAnchor.node.compareDocumentPosition(
+                caret.startContainer) & 2);
+        caret = snapCaretToWord(caret, before);
+        anchorNode = selectionAnchor.node;
+        anchorOffset = before ? selectionAnchor.end : selectionAnchor.start;
+        selection = window.getSelection();
+        if (!selection) return false;
+        if (selection.setBaseAndExtent) {
+            try {
+                selection.setBaseAndExtent(
+                    anchorNode, anchorOffset,
+                    caret.startContainer, caret.startOffset);
+                return true;
+            } catch (ignored) {}
+        }
+        if (selection.collapse && selection.extend) {
+            try {
+                selection.collapse(anchorNode, anchorOffset);
+                selection.extend(caret.startContainer, caret.startOffset);
+                return true;
+            } catch (ignored) {}
+        }
+        range = document.createRange();
+        if (before) {
+            range.setStart(caret.startContainer, caret.startOffset);
+            range.setEnd(selectionAnchor.node, selectionAnchor.end);
+        } else {
+            range.setStart(selectionAnchor.node, selectionAnchor.start);
+            range.setEnd(caret.startContainer, caret.startOffset);
+        }
+        selection.removeAllRanges();
+        selection.addRange(range);
+        return true;
+    }
+
+    function scheduleDragSelectionUpdate(point) {
+        selectionDragPoint = point;
+        if (selectionDragUpdateTimer !== null) return;
+        selectionDragUpdateTimer = window.setTimeout(function() {
+            var latest = selectionDragPoint;
+            selectionDragUpdateTimer = null;
+            selectionDragPoint = null;
+            if (selectionHoldActive && selectionDragActive)
+                updateCustomSelection(latest);
+        }, SELECTION_DRAG_UPDATE_MS);
+    }
+    /* DRAG_SELECTION_UPDATE_END */
 
     function eventPoint(event) {
         var touch = event && event.touches && event.touches.length ?
@@ -816,7 +891,7 @@
     }
 
     function moveCustomSelection(event) {
-        var point = eventPoint(event), elapsed, caret, content, before, range, selection;
+        var point = eventPoint(event), elapsed;
         if (!point) return;
         if (!selectionHoldActive) {
             if (selectionHoldTimer === null) return;
@@ -836,44 +911,34 @@
             if (Math.abs(point.x - selectionHoldX) <= 28 &&
                 Math.abs(point.y - selectionHoldY) <= 28) return;
             selectionDragActive = true;
+            if (selectionTimer !== null) {
+                window.clearTimeout(selectionTimer);
+                selectionTimer = null;
+            }
+            hide(id("selection-menu"));
         }
-        caret = caretAtPoint(point.x, point.y);
-        content = caret && selectionAncestor(caret.startContainer, "potion-editable-content");
-        if (!caret || !content || content !== selectionAncestor(selectionAnchor.node, "potion-editable-content")) return;
-        if (caret.startContainer === selectionAnchor.node)
-            before = caret.startOffset < selectionAnchor.start;
-        else
-            before = !!(selectionAnchor.node.compareDocumentPosition(caret.startContainer) & 2);
-        range = document.createRange();
-        if (before) {
-            range.setStart(caret.startContainer, caret.startOffset);
-            range.setEnd(selectionAnchor.node, selectionAnchor.end);
-        } else {
-            range.setStart(selectionAnchor.node, selectionAnchor.start);
-            range.setEnd(caret.startContainer, caret.startOffset);
-        }
-        selection = window.getSelection();
-        selection.removeAllRanges();
-        selection.addRange(range);
-        scheduleDragSelectionInspection();
+        scheduleDragSelectionUpdate(point);
     }
 
     function finishSelectionHold(event) {
         var elapsed = selectionHoldStartedAt ?
                 new Date().getTime() - selectionHoldStartedAt : 0,
-            held = selectionHoldTimer !== null && elapsed >= 700;
+            held = selectionHoldTimer !== null && elapsed >= 700,
+            handled = false, point;
         clearSelectionHoldTimer();
-        clearDragSelectionInspection();
         if (held) beginCustomSelection();
         if (selectionHoldActive) {
-            moveCustomSelection(event);
-            clearDragSelectionInspection();
+            handled = true;
+            point = eventPoint(event);
+            clearDragSelectionUpdate();
+            if (selectionDragActive) updateCustomSelection(point);
             selectionHoldActive = false;
             selectionDragActive = false;
             inspectSelection("SELECT");
             window.setTimeout(function() { selectionSuppressClick = false; }, 800);
         }
         selectionHoldStartedAt = 0;
+        return handled;
     }
 
     function setSelectionButtonsDisabled(value) {
@@ -886,6 +951,51 @@
         while (element.firstChild) parent.insertBefore(element.firstChild, element);
         parent.removeChild(element);
     }
+
+    /* LOCAL_FORMATTING_DOM_BEGIN */
+    function elementHasSelectionFormat(node, format) {
+        var tag, classes;
+        if (!node || node.nodeType !== 1) return false;
+        tag = node.tagName.toLowerCase();
+        classes = " " + node.className + " ";
+        if (format === "bold") return tag === "strong" || tag === "b";
+        if (format === "underline") return tag === "u";
+        if (format === "highlight")
+            return classes.indexOf(" notion-color ") >= 0;
+        return format === "clear" &&
+            (tag === "strong" || tag === "b" || tag === "em" ||
+             tag === "i" || tag === "u" || tag === "s" ||
+             tag === "strike" || tag === "del" ||
+             classes.indexOf(" notion-color ") >= 0);
+    }
+
+    function liftSelectionFromFormatting(marker, content, format) {
+        var carrier = marker, parent, grand, left, right, selected;
+        while (carrier.parentNode && carrier.parentNode !== content) {
+            parent = carrier.parentNode;
+            grand = parent.parentNode;
+            if (!grand) break;
+            left = parent.cloneNode(false);
+            right = parent.cloneNode(false);
+            while (parent.firstChild && parent.firstChild !== carrier)
+                left.appendChild(parent.firstChild);
+            while (carrier.nextSibling)
+                right.appendChild(carrier.nextSibling);
+            parent.removeChild(carrier);
+            selected = carrier;
+            if (!elementHasSelectionFormat(parent, format)) {
+                selected = parent.cloneNode(false);
+                selected.appendChild(carrier);
+            }
+            if (left.firstChild) grand.insertBefore(left, parent);
+            grand.insertBefore(selected, parent);
+            if (right.firstChild) grand.insertBefore(right, parent);
+            grand.removeChild(parent);
+            carrier = selected;
+        }
+        unwrapElement(marker);
+    }
+    /* LOCAL_FORMATTING_DOM_END */
 
     function cleanSelectionFragment(root, format) {
         var elements = [], node;
@@ -903,15 +1013,7 @@
         while (elements.length) {
             node = elements.shift();
             if (!node.parentNode) continue;
-            var tag = node.tagName.toLowerCase(), classes = " " + node.className + " ", remove = false;
-            if (format === "bold") remove = tag === "strong" || tag === "b";
-            else if (format === "underline") remove = tag === "u";
-            else if (format === "highlight") remove = classes.indexOf(" notion-color ") >= 0;
-            else if (format === "clear")
-                remove = tag === "strong" || tag === "b" || tag === "em" || tag === "i" ||
-                    tag === "u" || tag === "s" || tag === "strike" || tag === "del" ||
-                    classes.indexOf(" notion-color ") >= 0;
-            if (remove) unwrapElement(node);
+            if (elementHasSelectionFormat(node, format)) unwrapElement(node);
         }
     }
 
@@ -926,7 +1028,12 @@
                 if (format === "highlight") wrapper.className = "notion-color notion-color-yellow-bg";
                 wrapper.appendChild(fragment);
                 state.range.insertNode(wrapper);
-            } else state.range.insertNode(fragment);
+            } else {
+                wrapper = document.createElement("span");
+                wrapper.appendChild(fragment);
+                state.range.insertNode(wrapper);
+                liftSelectionFromFormatting(wrapper, state.content, format);
+            }
             if (state.content.normalize) state.content.normalize();
             return true;
         } catch (ignored) {}
@@ -950,54 +1057,96 @@
         updateScroll();
     }
 
-    function formatSelection(format) {
-        var state = selectionState, pageId, previousHtml, enabled, body;
-        if (!state || busy || formatSaveBusy) return;
-        pageId = currentPageId;
-        previousHtml = state.content.innerHTML;
-        enabled = format !== "clear" && !state.formats[format];
-        body = "editableIndex=" + state.editableIndex +
-            "&start=" + state.start +
-            "&end=" + state.end +
-            "&format=" + encodeURIComponent(format) +
-            "&blockText=" + encodeURIComponent(state.blockText) +
-            "&selectedText=" + encodeURIComponent(state.selectedText);
-        formatSaveBusy = true;
-        warning("");
-        if (!applySelectionLocally(state, format, enabled)) {
-            state.content.innerHTML = previousHtml;
-            formatSaveBusy = false;
-            warning("Formatting could not be applied.");
-            return;
+    function discardPendingFormatSaves(activeJob) {
+        var jobs = [], refresh = false, i, job;
+        if (activeJob) jobs.push(activeJob);
+        for (i = 0; i < formatSaveQueue.length; ++i)
+            jobs.push(formatSaveQueue[i]);
+        for (i = jobs.length - 1; i >= 0; --i) {
+            job = jobs[i];
+            if (selectionContentIsCurrent(job.pageId, job.state.content))
+                refresh = true;
+            job.state.content.innerHTML = job.previousHtml;
         }
-        clearSelectionMenu(true);
-        refreshAfterLocalFormatting();
+        formatSaveQueue = [];
+        formatSaveActive = null;
+        formatSaveBusy = false;
+        if (refresh) refreshAfterLocalFormatting();
+    }
+
+    function runNextFormatSave() {
+        var job, state, pageId, format, enabled;
+        if (formatSaveBusy || !formatSaveQueue.length) return;
+        job = formatSaveQueue.shift();
+        formatSaveActive = job;
+        state = job.state;
+        pageId = job.pageId;
+        format = job.format;
+        enabled = job.enabled;
+        formatSaveBusy = true;
         request(
             "POST",
             "/api/pages/" + encodeURIComponent(pageId) + "/format",
-            body,
+            job.body,
             function(error, result) {
                 var authoritativeEnabled;
-                formatSaveBusy = false;
-                setSelectionButtonsDisabled(false);
                 if (error) {
-                    if (selectionContentIsCurrent(pageId, state.content)) {
-                        state.content.innerHTML = previousHtml;
-                        refreshAfterLocalFormatting();
-                    }
-                    warning("Formatting could not be saved and was reverted. " + error);
+                    discardPendingFormatSaves(job);
+                    warning("Formatting could not be saved. Pending formatting was reverted. " + error);
                     return;
                 }
                 authoritativeEnabled = !!(result && result.enabled);
-                if (authoritativeEnabled !== enabled &&
-                    selectionContentIsCurrent(pageId, state.content)) {
-                    state.content.innerHTML = previousHtml;
+                if (authoritativeEnabled !== enabled) {
+                    discardPendingFormatSaves(job);
                     state.range = logicalRange(state.content, state.start, state.end);
                     applySelectionLocally(state, format, authoritativeEnabled);
-                    refreshAfterLocalFormatting();
+                    if (selectionContentIsCurrent(pageId, state.content))
+                        refreshAfterLocalFormatting();
+                    warning("Formatting changed in Notion. Later pending formatting was discarded.");
+                    return;
                 }
+                formatSaveActive = null;
+                formatSaveBusy = false;
+                runNextFormatSave();
             }
         );
+    }
+
+    function formatSelection(format) {
+        var state = selectionState, job;
+        if (!state || busy) return;
+        warning("");
+        job = {
+            state: {
+                content: state.content,
+                range: state.range,
+                editableIndex: state.editableIndex,
+                blockText: state.blockText,
+                selectedText: state.selectedText,
+                start: state.start,
+                end: state.end
+            },
+            pageId: currentPageId,
+            format: format,
+            enabled: format !== "clear" && !state.formats[format],
+            previousHtml: state.content.innerHTML
+        };
+        job.body = "editableIndex=" + job.state.editableIndex +
+            "&start=" + job.state.start +
+            "&end=" + job.state.end +
+            "&format=" + encodeURIComponent(format) +
+            "&blockText=" + encodeURIComponent(job.state.blockText) +
+            "&selectedText=" + encodeURIComponent(job.state.selectedText);
+        if (!applySelectionLocally(job.state, format, job.enabled)) {
+            state.content.innerHTML = job.previousHtml;
+            warning("Formatting could not be applied.");
+            return;
+        }
+        if (selectionContentIsCurrent(job.pageId, job.state.content))
+            refreshAfterLocalFormatting();
+        formatSaveQueue.push(job);
+        clearSelectionMenu(true);
+        runNextFormatSave();
     }
     /* OPTIMISTIC_FORMATTING_END */
 
@@ -2327,6 +2476,47 @@
         );
     }
 
+    /* IMAGE_FIT_LOGIC_BEGIN */
+    function fitCompactImage(image) {
+        var parent, availableWidth, width, height, scale;
+
+        if (!image ||
+            (" " + image.className + " ").indexOf(" expanded ") >= 0)
+            return;
+
+        width = image._potionNaturalWidth || image.naturalWidth || image.width;
+        height = image._potionNaturalHeight || image.naturalHeight || image.height;
+
+        if (!width || !height || !isFinite(width) || !isFinite(height))
+            return;
+
+        if (!image._potionNaturalWidth) {
+            image._potionNaturalWidth = width;
+            image._potionNaturalHeight = height;
+        }
+
+        parent = image.parentNode;
+        availableWidth = parent && parent.clientWidth ?
+            parent.clientWidth : id("page-content").clientWidth;
+
+        if (!availableWidth) return;
+
+        scale = Math.min(
+            1,
+            availableWidth / width,
+            IMAGE_COMPACT_MAX_HEIGHT / height
+        );
+        image.style.width = Math.max(1, Math.round(width * scale)) + "px";
+        image.style.height = Math.max(1, Math.round(height * scale)) + "px";
+    }
+
+    function fitCompactImages() {
+        var i;
+        for (i = 0; i < imageNodes.length; ++i)
+            fitCompactImage(imageNodes[i]);
+    }
+    /* IMAGE_FIT_LOGIC_END */
+
     function imageFinished(image, loaded) {
         if (image._potionImageGeneration !== imageGeneration)
             return;
@@ -2337,6 +2527,7 @@
         }
 
         if (loaded) {
+            fitCompactImage(image);
             invertNightImage(image);
             updateScroll();
             scheduleMathRepair();
@@ -2421,8 +2612,14 @@
             };
 
             images[i].onclick = function() {
-                this.className =
-                    this.className === "expanded" ? "" : "expanded";
+                if (this.className === "expanded") {
+                    this.className = "";
+                    fitCompactImage(this);
+                } else {
+                    this.className = "expanded";
+                    this.style.width = "";
+                    this.style.height = "";
+                }
                 updateScroll();
                 maintainReadingRestore(this, false);
                 scheduleMathRepair();
@@ -2430,9 +2627,10 @@
             };
 
             if (source && images[i].complete) {
-                if (images[i].naturalWidth)
+                if (images[i].naturalWidth) {
+                    fitCompactImage(images[i]);
                     invertNightImage(images[i]);
-                else
+                } else
                     images[i]._potionImageRequested = false;
             }
         }
@@ -3239,12 +3437,12 @@
     document.onmousemove = moveCustomSelection;
     document.ontouchmove = moveCustomSelection;
     document.onmouseup = function(event) {
-        finishSelectionHold(event || window.event);
-        scheduleSelectionInspection();
+        if (!finishSelectionHold(event || window.event))
+            scheduleSelectionInspection();
     };
     document.ontouchend = function(event) {
-        finishSelectionHold(event || window.event);
-        scheduleSelectionInspection();
+        if (!finishSelectionHold(event || window.event))
+            scheduleSelectionInspection();
     };
     document.onselectionchange = scheduleSelectionInspection;
     (function() {
@@ -3296,9 +3494,11 @@
         return false;
     };
     window.onorientationchange = function() {
+        fitCompactImages();
         scheduleViewportReadingRestore();
     };
     window.onresize = function() {
+        fitCompactImages();
         updateScroll();
         scheduleViewportReadingRestore();
     };

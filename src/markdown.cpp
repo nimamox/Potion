@@ -37,8 +37,42 @@ NotionAttributes trailing_notion_attributes(const std::string &source) {
 std::string strip_attrs(std::string s) { const auto attributes = trailing_notion_attributes(s); if (attributes.start != std::string::npos) s.resize(attributes.start); return s; }
 std::string attribute(const std::string &line, const std::string &name) { std::string needle = name + "=\""; auto a = line.find(needle); if (a == std::string::npos) return {}; a += needle.size(); auto b = line.find('"', a); return b == std::string::npos ? std::string{} : line.substr(a, b - a); }
 bool starts(const std::string &s, const std::string &prefix) { return s.compare(0, prefix.size(), prefix) == 0; }
-bool contains_rtl_text(const std::string &text) {
+bool rtl_codepoint(unsigned codepoint) {
+  return (codepoint >= 0x0590 && codepoint <= 0x08ff) ||
+         (codepoint >= 0xfb1d && codepoint <= 0xfdff) ||
+         (codepoint >= 0xfe70 && codepoint <= 0xfeff) ||
+         (codepoint >= 0x10800 && codepoint <= 0x10fff) ||
+         (codepoint >= 0x1e800 && codepoint <= 0x1edff);
+}
+bool ltr_codepoint(unsigned codepoint) {
+  return (codepoint >= 'A' && codepoint <= 'Z') ||
+         (codepoint >= 'a' && codepoint <= 'z') ||
+         (codepoint >= 0x00c0 && codepoint <= 0x02af) ||
+         (codepoint >= 0x0370 && codepoint <= 0x058f) ||
+         (codepoint >= 0x0900 && codepoint <= 0x1fff) ||
+         (codepoint >= 0x2c00 && codepoint <= 0xd7ff) ||
+         (codepoint >= 0xff21 && codepoint <= 0xff5a);
+}
+bool rtl_neutral_codepoint(unsigned codepoint) {
+  return (codepoint >= 0x0600 && codepoint <= 0x0605) ||
+         codepoint == 0x0609 || codepoint == 0x060a ||
+         codepoint == 0x060c || codepoint == 0x061b ||
+         codepoint == 0x061f ||
+         (codepoint >= 0x064b && codepoint <= 0x065f) ||
+         codepoint == 0x0670 ||
+         (codepoint >= 0x0660 && codepoint <= 0x0669) ||
+         (codepoint >= 0x06d6 && codepoint <= 0x06ed) ||
+         (codepoint >= 0x06f0 && codepoint <= 0x06f9);
+}
+bool starts_with_rtl_text(const std::string &text) {
   for (std::size_t i = 0; i < text.size();) {
+    if (text[i] == '<') {
+      const auto tag_end = text.find('>', i + 1);
+      if (tag_end != std::string::npos) {
+        i = tag_end + 1;
+        continue;
+      }
+    }
     const unsigned char first = static_cast<unsigned char>(text[i]);
     unsigned codepoint = first;
     std::size_t length = 1;
@@ -58,21 +92,28 @@ bool contains_rtl_text(const std::string &text) {
                   (static_cast<unsigned char>(text[i + 3]) & 0x3f);
       length = 4;
     }
-    if ((codepoint >= 0x0590 && codepoint <= 0x08ff) ||
-        (codepoint >= 0xfb1d && codepoint <= 0xfdff) ||
-        (codepoint >= 0xfe70 && codepoint <= 0xfeff) ||
-        (codepoint >= 0x10800 && codepoint <= 0x10fff) ||
-        (codepoint >= 0x1e800 && codepoint <= 0x1edff))
-      return true;
+    if (!rtl_neutral_codepoint(codepoint) && rtl_codepoint(codepoint)) return true;
+    if (ltr_codepoint(codepoint)) return false;
     i += length;
   }
   return false;
 }
 std::string direction_attribute(const std::string &text) {
-  return contains_rtl_text(text) ? " dir=\"rtl\"" : std::string{};
+  return starts_with_rtl_text(text) ? " dir=\"rtl\"" : std::string{};
 }
 bool markdown_escapable(char c) { return c == '\\' || std::ispunct(static_cast<unsigned char>(c)); }
 bool escaped_at(const std::string &text, std::size_t at) { std::size_t slashes = 0; while (at > slashes && text[at - slashes - 1] == '\\') ++slashes; return (slashes & 1) != 0; }
+std::string unsupported_content_type(const std::string &line) {
+  if (line.size() < 2 || line.front() != '<') return "unknown";
+  std::size_t at = 1;
+  if (line[at] == '/') return {};
+  const std::size_t start = at;
+  while (at < line.size() &&
+         (std::isalnum(static_cast<unsigned char>(line[at])) ||
+          line[at] == '_' || line[at] == '-'))
+    ++at;
+  return at == start ? "unknown" : line.substr(start, at - start);
+}
 std::size_t markdown_delimiter_end(const std::string &text, const std::string &delimiter, std::size_t start) { std::size_t at = text.find(delimiter, start); while (at != std::string::npos && escaped_at(text, at)) at = text.find(delimiter, at + 1); return at; }
 std::size_t markdown_url_end(const std::string &text, std::size_t start) {
   std::size_t nested = 0;
@@ -307,7 +348,7 @@ std::string MarkdownRenderer::render(const std::string &markdown) const {
     if (starts(body, "<td")) { auto gt = body.find('>'), end = body.rfind("</td>"); out += "<td" + color_attribute(body) + ">" + (gt != std::string::npos && end != std::string::npos ? inline_html(body.substr(gt + 1, end - gt - 1)) : std::string("Unsupported cell")) + "</td>"; continue; }
     if (body == "<columns>" || body == "</columns>" || body == "<column>" || body == "</column>" || starts(body, "<col") || body == "</colgroup>") continue;
     if ((starts(body, "<page ") || starts(body, "<database ") || starts(body, "<mention-")) && body.find('>') != std::string::npos) { out += "<div class=\"potion-block notion-reference-row\">" + inline_html(body) + "</div>"; continue; }
-    if (starts(body, "<span ") && body.find("</span>") != std::string::npos) { out += "<p class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">" + inline_html(body) + "</span></p>"; continue; }
+    if (starts(body, "<span ") && body.find("</span>") != std::string::npos) { const std::string span_source = strip_attrs(body); out += "<p class=\"potion-block potion-editable\"" + direction_attribute(span_source) + "><span class=\"potion-editable-content\">" + inline_html(span_source) + "</span></p>"; continue; }
     if (starts(body, "![")) {
       const auto mid = body.find("](", 2), end = mid == std::string::npos ? mid : markdown_url_end(body, mid + 2);
       const std::string trailing = end == std::string::npos ? std::string{} : trim(body.substr(end + 1));
@@ -320,7 +361,13 @@ std::string MarkdownRenderer::render(const std::string &markdown) const {
         }
       }
     }
-    if (body[0] == '<' && body.find('>') != std::string::npos) { out += "<div class=\"potion-block unsupported\">Unsupported Notion content</div>"; continue; }
+    if (body[0] == '<' && body.find('>') != std::string::npos) {
+      const std::string type = unsupported_content_type(body);
+      if (!type.empty())
+        out += "<div class=\"potion-block unsupported\"><code>" +
+               html_escape(type) + "</code> content is not yet supported.</div>";
+      continue;
+    }
     last_plain_source = strip_attrs(body); if (preceding_image && depth == last_image_depth && last_plain_source == last_image_caption) continue; last_plain_output = out.size(); last_plain_depth = depth; last_plain_paragraph = true; out += "<p" + editable_block_class_attribute(body) + direction_attribute(last_plain_source) + "><span class=\"potion-editable-content\">" + inline_html(last_plain_source) + "</span></p>";
   }
   close_lists(); close_pipe_table(); while (!heading_toggles.empty()) { out += "</div></div>"; heading_toggles.pop_back(); } if (!table_header.empty()) out += "<p class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">" + inline_html(strip_attrs(table_header)) + "</span></p>"; if (code) out += "<pre class=\"potion-block\"><code>" + html_escape(code_text) + "</code></pre>"; if (equation) out += "<div class=\"potion-block unsupported\">Incomplete equation</div>"; return out;
