@@ -97,6 +97,20 @@ library and links it into the C++ `potiond` executable.
     ./build_on_docker.sh
     ./push_over_ssh.sh root@KINDLE_IP
 
+The build uses local Docker when no argument is supplied. It can optionally use
+Docker on a remote machine instead; the Mac needs `ssh` and `rsync`, while the
+remote machine needs `rsync`, Docker, and access to a working Docker daemon:
+
+    ./build_on_docker.sh user@build-host
+
+Remote mode synchronizes the working tree to the reusable
+`/tmp/kindle-build-$USER/Potion` directory, excluding Git data, credentials,
+`dist/`, simulator state, and local build artifacts. It invokes the same
+`bash build_on_docker.sh` local-build path on the remote machine and copies the
+completed remote `dist/` back only after a successful build. The remote
+directory, fingerprinted Docker image layers, and shared named cache volume are
+retained for subsequent builds; the Docker caches are not stored under `/tmp`.
+
 The build produces a USB-root layout:
 
 ```text
