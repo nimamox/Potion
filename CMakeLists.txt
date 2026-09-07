@@ -55,8 +55,11 @@ set_target_properties(potiond PROPERTIES INSTALL_RPATH "$ORIGIN/../lib")
 
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   add_library(potion_mesquite_whisper_touch SHARED src/mesquite_whisper_touch.c)
+  # This preload runs inside system Mesquite, not under our bundled loader.
+  # Leave GLib/GDK/dlsym references unversioned for the Kindle's native ABI.
   set_target_properties(potion_mesquite_whisper_touch PROPERTIES
-    OUTPUT_NAME mesquite-whisper-touch)
+    OUTPUT_NAME mesquite-whisper-touch
+    LINK_FLAGS "-nostdlib")
   add_dependencies(potiond potion_mesquite_whisper_touch)
 endif()
 
@@ -72,6 +75,8 @@ if(POTION_BUILD_SIMULATOR)
 endif()
 
 if(POTION_BUILD_TESTS)
+  add_executable(potion_motion_hint_tests tests/motion_hint_test.c)
+  add_test(NAME potion_motion_hint_tests COMMAND potion_motion_hint_tests)
   add_executable(potion_tests tests/potion_test.cpp)
   target_link_libraries(potion_tests PRIVATE potion_core)
   target_compile_definitions(potion_tests PRIVATE
