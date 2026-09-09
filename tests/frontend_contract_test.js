@@ -134,6 +134,12 @@ for (const fontName of [
 assert.match(appCss,
   /#page-content\.bionic-reading \.potion-editable-content,[\s\S]*font-family:\s*"Potion Fast Sans",\s*"Noto Emoji",\s*sans-serif/);
 assert.match(appCss, /\.emoji-variation-selector\s*\{[\s\S]*display:\s*none/);
+assert.match(appCss,
+  /\.page-content table\s*\{[^}]*font-size:\s*0\.733333em;/,
+  "table text must scale with the selected reader font size");
+assert.doesNotMatch(appCss,
+  /\.page-content table\s*\{[^}]*font-size:\s*[0-9.]+px;/,
+  "reader tables must not override font scaling with a fixed pixel size");
 assert.match(httpServer, /\.ttf[\s\S]*font\/ttf/);
 assert.doesNotMatch(runKindle, /host-fonts\.css/,
   "the Kindle launch path must not acquire simulator font declarations");
