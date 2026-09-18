@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <functional>
 #include <mutex>
 #include <sstream>
@@ -120,6 +121,27 @@ Json writable_non_text(const Json &source) {
   item["annotations"] = source.get("annotations");
   return item;
 }
+Json writable_formatted_equation(const Json &source,
+                                 const std::string &format, bool apply) {
+  Json item = Json::object();
+  Json annotations = source.get("annotations");
+  item["type"] = Json(std::string("equation"));
+  item["equation"] = source.get("equation");
+  if (format == "clear") {
+    annotations["bold"] = Json(false);
+    annotations["italic"] = Json(false);
+    annotations["strikethrough"] = Json(false);
+    annotations["underline"] = Json(false);
+    annotations["color"] = Json(std::string("default"));
+  } else if (format == "underline") {
+    annotations["underline"] = Json(apply);
+  } else if (format == "highlight") {
+    annotations["color"] =
+        Json(std::string(apply ? "yellow_background" : "default"));
+  }
+  item["annotations"] = annotations;
+  return item;
+}
 const std::string &atomic_rich_text_marker() {
   static const std::string marker("\xef\xbf\xbc");
   return marker;
@@ -179,6 +201,30 @@ void add_svg_viewbox_dimensions(std::string &body) {
   dimensions << " width=\"" << width << "\" height=\"" << height << "\"";
   const std::size_t insertion = end > svg && body[end - 1] == '/' ? end - 1 : end;
   body.insert(insertion, dimensions.str());
+}
+
+std::int64_t days_from_civil(int year, unsigned month, unsigned day) {
+  year -= month <= 2;
+  const int era = (year >= 0 ? year : year - 399) / 400;
+  const unsigned year_of_era = static_cast<unsigned>(year - era * 400);
+  const int adjusted_month = static_cast<int>(month) + (month > 2 ? -3 : 9);
+  const unsigned day_of_year =
+      (153 * static_cast<unsigned>(adjusted_month) + 2) / 5 + day - 1;
+  const unsigned day_of_era =
+      year_of_era * 365 + year_of_era / 4 - year_of_era / 100 + day_of_year;
+  return static_cast<std::int64_t>(era) * 146097 + day_of_era - 719468;
+}
+
+std::int64_t iso8601_timestamp(const std::string &value) {
+  int year = 0, month = 0, day = 0, hour = 0, minute = 0, second = 0;
+  if (std::sscanf(value.c_str(), "%d-%d-%dT%d:%d:%dZ", &year, &month, &day,
+                  &hour, &minute, &second) != 6 ||
+      month < 1 || month > 12 || day < 1 || day > 31 || hour < 0 ||
+      hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 60)
+    return 0;
+  return days_from_civil(year, static_cast<unsigned>(month),
+                         static_cast<unsigned>(day)) * 86400 +
+         hour * 3600 + minute * 60 + second;
 }
 }
 
@@ -251,10 +297,138 @@ bool NotionClient::retrieve_page(const std::string &token, const std::string &pa
     if (markdown.status != 200) { error = error_message(markdown); return false; }
     Json meta = Json::parse(metadata.body), content = Json::parse(markdown.body);
     std::string source = content.get("markdown").string();
+    if (source.find('$') != std::string::npos) {
+      std::vector<Json> equations;
+      std::size_t visited = 0;
+      bool equation_lookup_ok = true;
+      const auto append_equations = [&](const Json &rich_text) {
+        for (const auto &part : rich_text.items())
+          if (part.get("type").string() == "equation")
+            equations.push_back(part);
+      };
+      std::function<void(const std::string &, unsigned)> collect;
+      collect = [&](const std::string &parent, unsigned depth) {
+        if (!equation_lookup_ok || depth > 32 || visited > 4096) {
+          equation_lookup_ok = false;
+          return;
+        }
+        std::string cursor;
+        do {
+          std::string path = "/v1/blocks/" + parent + "/children?page_size=100";
+          if (!cursor.empty()) path += "&start_cursor=" + cursor;
+          const auto response = api_get(token, path);
+          if (response.status != 200) {
+            equation_lookup_ok = false;
+            return;
+          }
+          const Json root = Json::parse(response.body);
+          for (const auto &block : root.get("results").items()) {
+            if (++visited > 4096) {
+              equation_lookup_ok = false;
+              return;
+            }
+            const std::string type = block.get("type").string();
+            const Json &type_body = block.get(type);
+            append_equations(type_body.get("rich_text"));
+            for (const auto &cell : type_body.get("cells").items())
+              append_equations(cell);
+            append_equations(type_body.get("caption"));
+            if (block.get("has_children").boolean() &&
+                type != "child_page" && type != "child_database")
+              collect(block.get("id").string(), depth + 1);
+            if (!equation_lookup_ok) return;
+          }
+          cursor = root.get("has_more").boolean() ?
+              root.get("next_cursor").string() : std::string{};
+        } while (!cursor.empty());
+      };
+      collect(page_id, 0);
+      if (equation_lookup_ok && !equations.empty())
+        source = apply_inline_equation_annotations(source, equations);
+    }
     page = {page_id, title_of(meta), {}, std::move(source),
             content.get("truncated").boolean()};
     return true;
   } catch (const std::exception &e) { error = e.what(); return false; }
+}
+
+std::string NotionClient::apply_inline_equation_annotations(
+    const std::string &markdown, const std::vector<Json> &equations) {
+  std::string result;
+  result.reserve(markdown.size());
+  std::size_t equation_index = 0;
+  bool fenced_code = false;
+  for (std::size_t i = 0; i < markdown.size();) {
+    const bool line_start = i == 0 || markdown[i - 1] == '\n';
+    if (line_start && markdown.compare(i, 3, "```") == 0) {
+      fenced_code = !fenced_code;
+      result += "```";
+      i += 3;
+      continue;
+    }
+    if (!fenced_code && markdown[i] == '`') {
+      const std::size_t end = markdown.find('`', i + 1);
+      if (end != std::string::npos) {
+        result.append(markdown, i, end - i + 1);
+        i = end + 1;
+        continue;
+      }
+    }
+    if (!fenced_code && markdown[i] == '$' &&
+        (i == 0 || markdown[i - 1] != '$') &&
+        (i + 1 >= markdown.size() || markdown[i + 1] != '$')) {
+      std::size_t end = i + 1;
+      while ((end = markdown.find('$', end)) != std::string::npos) {
+        std::size_t slashes = 0;
+        while (end > i + slashes && markdown[end - slashes - 1] == '\\')
+          ++slashes;
+        if ((slashes & 1) == 0) break;
+        ++end;
+      }
+      if (end != std::string::npos) {
+        const std::string token = markdown.substr(i, end - i + 1);
+        std::string expression = markdown.substr(i + 1, end - i - 1);
+        if (expression.size() >= 2 && expression.front() == '`' &&
+            expression.back() == '`')
+          expression = expression.substr(1, expression.size() - 2);
+        if (equation_index < equations.size() &&
+            equations[equation_index].get("equation").get("expression").string() ==
+                expression) {
+          const std::string color = equations[equation_index]
+              .get("annotations").get("color").string();
+          const Json &annotations =
+              equations[equation_index].get("annotations");
+          std::string decorated = token;
+          if (annotations.get("bold").boolean() &&
+              annotations.get("italic").boolean())
+            decorated = "***" + decorated + "***";
+          else if (annotations.get("bold").boolean())
+            decorated = "**" + decorated + "**";
+          else if (annotations.get("italic").boolean())
+            decorated = "*" + decorated + "*";
+          if (annotations.get("strikethrough").boolean())
+            decorated = "~~" + decorated + "~~";
+          if (annotations.get("underline").boolean() ||
+              (!color.empty() && color != "default")) {
+            std::string attributes;
+            if (annotations.get("underline").boolean())
+              attributes += " underline=\"true\"";
+            if (!color.empty() && color != "default")
+              attributes += " color=\"" + color + "\"";
+            decorated = "<span" + attributes + ">" + decorated + "</span>";
+          }
+          result += decorated;
+          ++equation_index;
+        } else {
+          result += token;
+        }
+        i = end + 1;
+        continue;
+      }
+    }
+    result.push_back(markdown[i++]);
+  }
+  return result;
 }
 bool NotionClient::build_formatted_rich_text(
     const Json &source, const std::string &expected_text,
@@ -282,7 +456,11 @@ bool NotionClient::build_formatted_rich_text(
              utf16_length(part.get("plain_text").string()) : 1);
     if (std::max<std::size_t>(state_at, start_utf16) <
         std::min<std::size_t>(part_end, end_utf16)) {
-      if (part.get("type").string() != "text") {
+      const std::string type = part.get("type").string();
+      const bool equation_format = type == "equation" &&
+          (format == "highlight" || format == "underline" ||
+           format == "clear");
+      if (type != "text" && !equation_format) {
         error = "Selections containing mentions or equations cannot be formatted"; return false;
       }
       has_overlap = true;
@@ -313,21 +491,27 @@ bool NotionClient::build_formatted_rich_text(
         formatted.items().push_back(writable_non_text(part));
     }
     else {
-      if (type != "text") {
+      if (type == "equation" &&
+          (format == "highlight" || format == "underline" ||
+           format == "clear")) {
+        formatted.items().push_back(
+            writable_formatted_equation(part, format, apply));
+      } else if (type != "text") {
         error = "Selections containing mentions or equations cannot be formatted"; return false;
+      } else {
+        const std::string content = part.get("text").get("content").string();
+        if (content != plain) {
+          error = "This text cannot be mapped safely; reopen the page and try again"; return false;
+        }
+        std::size_t before_byte = 0, after_byte = 0;
+        if (!utf16_byte(content, overlap_start - at, before_byte) ||
+            !utf16_byte(content, overlap_end - at, after_byte)) {
+          error = "Invalid text selection"; return false;
+        }
+        if (before_byte) formatted.items().push_back(writable_text(part, content.substr(0, before_byte), format, false, false));
+        formatted.items().push_back(writable_text(part, content.substr(before_byte, after_byte - before_byte), format, true, apply));
+        if (after_byte < content.size()) formatted.items().push_back(writable_text(part, content.substr(after_byte), format, false, false));
       }
-      const std::string content = part.get("text").get("content").string();
-      if (content != plain) {
-        error = "This text cannot be mapped safely; reopen the page and try again"; return false;
-      }
-      std::size_t before_byte = 0, after_byte = 0;
-      if (!utf16_byte(content, overlap_start - at, before_byte) ||
-          !utf16_byte(content, overlap_end - at, after_byte)) {
-        error = "Invalid text selection"; return false;
-      }
-      if (before_byte) formatted.items().push_back(writable_text(part, content.substr(0, before_byte), format, false, false));
-      formatted.items().push_back(writable_text(part, content.substr(before_byte, after_byte - before_byte), format, true, apply));
-      if (after_byte < content.size()) formatted.items().push_back(writable_text(part, content.substr(after_byte), format, false, false));
     }
     at = part_end;
   }
@@ -397,8 +581,80 @@ bool NotionClient::format_block_text(const std::string &token,
     return true;
   } catch (const std::exception &e) { error = e.what(); return false; }
 }
-bool NotionClient::retrieve_image(const std::string &url, BinaryResponse &image, std::string &error) const {
+bool NotionClient::retrieve_image(const std::string &url, BinaryResponse &image,
+                                  std::string &error,
+                                  long *http_status) const {
   if (url.compare(0, 8, "https://") != 0) { error = "Only HTTPS Notion images are allowed"; return false; }
-  try { auto response = perform_request(url, {"Accept: image/*"}, ca_bundle_, nullptr, 16 * 1024 * 1024); if (response.status != 200 || response.content_type.compare(0, 6, "image/") != 0) { error = "Image server returned HTTP " + std::to_string(response.status); return false; } if (response.content_type.compare(0, 13, "image/svg+xml") == 0) add_svg_intrinsic_dimensions(response.body); image = {response.content_type, std::move(response.body)}; return true; } catch (const std::exception &e) { error = e.what(); return false; }
+  if (http_status) *http_status = 0;
+  try { auto response = perform_request(url, {"Accept: image/*"}, ca_bundle_, nullptr, 16 * 1024 * 1024); if (http_status) *http_status = response.status; if (response.status != 200 || response.content_type.compare(0, 6, "image/") != 0) { error = "Image server returned HTTP " + std::to_string(response.status); return false; } if (response.content_type.compare(0, 13, "image/svg+xml") == 0) add_svg_intrinsic_dimensions(response.body); image = {response.content_type, std::move(response.body)}; return true; } catch (const std::exception &e) { error = e.what(); return false; }
+}
+
+bool NotionClient::refresh_image_url(const std::string &token,
+                                     const std::string &block_id,
+                                     std::string &url,
+                                     std::int64_t &expires_at,
+                                     std::string &error) const {
+  try {
+    const auto response = api_get(token, "/v1/blocks/" + block_id);
+    if (response.status != 200) { error = error_message(response); return false; }
+    const Json block = Json::parse(response.body);
+    if (block.get("type").string() != "image" ||
+        block.get("image").get("type").string() != "file") {
+      error = "The Notion image block no longer contains a hosted file";
+      return false;
+    }
+    url = block.get("image").get("file").get("url").string();
+    expires_at = iso8601_timestamp(
+        block.get("image").get("file").get("expiry_time").string());
+    if (url.compare(0, 8, "https://") != 0) {
+      error = "Notion returned an invalid image URL";
+      return false;
+    }
+    return true;
+  } catch (const std::exception &exception) {
+    error = exception.what();
+    return false;
+  }
+}
+
+bool retrieve_registered_image(ImageRegistry &registry, const std::string &key,
+                               std::int64_t now,
+                               const ImageDownloadFunction &download,
+                               const ImageRefreshFunction &refresh,
+                               BinaryResponse &image, std::string &error) {
+  const auto request_mutex = registry.request_lock(key);
+  std::lock_guard<std::mutex> request_guard(*request_mutex);
+  ImageSource source;
+  if (!registry.resolve_source(key, source)) {
+    error = "Not found";
+    return false;
+  }
+  bool refresh_attempted = false;
+  const auto refresh_source = [&]() {
+    refresh_attempted = true;
+    std::string fresh_url, refresh_error;
+    std::int64_t fresh_expiry = 0;
+    if (!refresh(source.notion_block_id, fresh_url, fresh_expiry,
+                 refresh_error)) {
+      error = refresh_error;
+      return false;
+    }
+    registry.update_notion_url(key, fresh_url, fresh_expiry);
+    source.url = std::move(fresh_url);
+    source.expires_at = fresh_expiry;
+    return true;
+  };
+  if (source.notion_hosted() && source.expires_at > 0 &&
+      source.expires_at <= now + 300)
+    refresh_source();
+
+  long status = 0;
+  if (download(source.url, image, error, &status)) return true;
+  if (source.notion_hosted() && !refresh_attempted &&
+      (status == 401 || status == 403) && refresh_source()) {
+    status = 0;
+    return download(source.url, image, error, &status);
+  }
+  return false;
 }
 }

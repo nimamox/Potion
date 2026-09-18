@@ -418,6 +418,9 @@ h2 {
 .page-content details {
   margin: 0 0 24px;
 }
+.page-content ol {
+  padding-left: 1.7em;
+}
 .page-content h1,
 .page-content h2,
 .page-content h3,
@@ -471,6 +474,7 @@ h2 {
   color: #666;
 }
 .page-content img {
+  display: block;
   width: auto;
   height: auto;
   max-width: 100%;

@@ -1,5 +1,6 @@
 #include "potion/markdown.hpp"
 #include <algorithm>
+#include <ctime>
 #include <cctype>
 #include <cstring>
 #include <openssl/sha.h>
@@ -227,7 +228,45 @@ bool table_separator(const std::string &line) {
 }
 }
 
-std::string ImageRegistry::register_url(const std::string &url) {
+namespace {
+bool notion_image_host(const std::string &url) {
+  const std::size_t scheme = url.find("://");
+  if (scheme == std::string::npos) return false;
+  const std::size_t host_end = url.find('/', scheme + 3);
+  std::string host = url.substr(scheme + 3, host_end - scheme - 3);
+  std::transform(host.begin(), host.end(), host.begin(),
+                 [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+  return host == "file.notion.so" || host == "secure.notion-static.com" ||
+         host == "prod-files-secure.s3.us-west-2.amazonaws.com" ||
+         (host == "s3.us-west-2.amazonaws.com" && host_end != std::string::npos &&
+          url.compare(host_end, 26, "/secure.notion-static.com/") == 0);
+}
+
+bool hex_uuid_character(char c) {
+  return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
+         (c >= 'A' && c <= 'F') || c == '-';
+}
+
+std::string notion_block_id_from_url(const std::string &url) {
+  if (!notion_image_host(url)) return {};
+  std::string result;
+  for (std::size_t start = 0; start < url.size();) {
+    while (start < url.size() && !hex_uuid_character(url[start])) ++start;
+    std::size_t end = start;
+    while (end < url.size() && hex_uuid_character(url[end])) ++end;
+    std::string candidate = url.substr(start, end - start), compact;
+    for (const char c : candidate) if (c != '-') compact += c;
+    if (compact.size() == 32 &&
+        std::all_of(compact.begin(), compact.end(), [](char c) {
+          return std::isxdigit(static_cast<unsigned char>(c));
+        })) result = compact;
+    start = end + 1;
+  }
+  return result;
+}
+}
+
+std::string ImageRegistry::key_for_url(const std::string &url) {
   unsigned char digest[SHA256_DIGEST_LENGTH];
   SHA256(reinterpret_cast<const unsigned char *>(url.data()), url.size(), digest);
   static const char hex[] = "0123456789abcdef";
@@ -238,15 +277,64 @@ std::string ImageRegistry::register_url(const std::string &url) {
     key.push_back(hex[byte & 0x0f]);
   }
 
-  std::lock_guard<std::mutex> lock(mutex_);
-  const auto existing = urls_.find(key);
-  if (existing != urls_.end() && existing->second != url)
-    throw std::runtime_error("Image URL SHA-256 collision");
-  urls_[key] = url;
   return key;
 }
-bool ImageRegistry::resolve(const std::string &key, std::string &url) const { std::lock_guard<std::mutex> lock(mutex_); auto it = urls_.find(key); if (it == urls_.end()) return false; url = it->second; return true; }
-void ImageRegistry::clear() { std::lock_guard<std::mutex> lock(mutex_); urls_.clear(); }
+
+std::string ImageRegistry::register_url(const std::string &url) {
+  const std::string block_id = notion_block_id_from_url(url);
+  return block_id.empty() ? register_notion_url(url, {}, 0) :
+      register_notion_url(url, block_id,
+                          static_cast<std::int64_t>(std::time(nullptr)) + 3600);
+}
+
+std::string ImageRegistry::register_notion_url(const std::string &url,
+                                               const std::string &block_id,
+                                               std::int64_t expires_at) {
+  const std::string key = key_for_url(url);
+  std::lock_guard<std::mutex> lock(mutex_);
+  const auto existing = urls_.find(key);
+  if (existing != urls_.end() && existing->second.original_url != url)
+    throw std::runtime_error("Image URL SHA-256 collision");
+  if (existing == urls_.end())
+    urls_[key] = {url, url, block_id, expires_at};
+  return key;
+}
+bool ImageRegistry::resolve(const std::string &key, std::string &url) const {
+  ImageSource source;
+  if (!resolve_source(key, source)) return false;
+  url = source.url;
+  return true;
+}
+bool ImageRegistry::resolve_source(const std::string &key,
+                                   ImageSource &source) const {
+  std::lock_guard<std::mutex> lock(mutex_);
+  const auto it = urls_.find(key);
+  if (it == urls_.end()) return false;
+  source = it->second;
+  return true;
+}
+bool ImageRegistry::update_notion_url(const std::string &key,
+                                      const std::string &url,
+                                      std::int64_t expires_at) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  const auto it = urls_.find(key);
+  if (it == urls_.end() || !it->second.notion_hosted()) return false;
+  it->second.url = url;
+  it->second.expires_at = expires_at;
+  return true;
+}
+std::shared_ptr<std::mutex> ImageRegistry::request_lock(
+    const std::string &key) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto &request_mutex = request_locks_[key];
+  if (!request_mutex) request_mutex = std::make_shared<std::mutex>();
+  return request_mutex;
+}
+void ImageRegistry::clear() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  urls_.clear();
+  request_locks_.clear();
+}
 
 std::string MarkdownRenderer::sanitize_url(const std::string &url) {
   std::string lower = url; std::transform(lower.begin(), lower.end(), lower.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });

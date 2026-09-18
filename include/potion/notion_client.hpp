@@ -1,6 +1,8 @@
 #pragma once
 #include "potion/json.hpp"
+#include "potion/markdown.hpp"
 #include <cstdint>
+#include <functional>
 #include <string>
 #include <vector>
 namespace potion {
@@ -30,10 +32,15 @@ public:
       std::uint32_t start_utf16, std::uint32_t end_utf16,
       const std::string &selected_text, const std::string &format,
       Json &formatted, std::string &error, bool *enabled = nullptr);
+  static std::string apply_inline_equation_annotations(
+      const std::string &markdown, const std::vector<Json> &equations);
   static bool block_counts_as_editable(const Json &block);
   static void add_svg_intrinsic_dimensions(std::string &body);
   bool retrieve_image(const std::string &url, BinaryResponse &image,
-                      std::string &error) const;
+                      std::string &error, long *http_status = nullptr) const;
+  bool refresh_image_url(const std::string &token, const std::string &block_id,
+                         std::string &url, std::int64_t &expires_at,
+                         std::string &error) const;
 private:
   Response api_get(const std::string &token, const std::string &path) const;
   Response api_patch(const std::string &token, const std::string &path,
@@ -44,4 +51,14 @@ private:
   std::string api_version_;
   std::string ca_bundle_;
 };
+
+using ImageDownloadFunction = std::function<bool(
+    const std::string &, BinaryResponse &, std::string &, long *)>;
+using ImageRefreshFunction = std::function<bool(
+    const std::string &, std::string &, std::int64_t &, std::string &)>;
+bool retrieve_registered_image(ImageRegistry &registry, const std::string &key,
+                               std::int64_t now,
+                               const ImageDownloadFunction &download,
+                               const ImageRefreshFunction &refresh,
+                               BinaryResponse &image, std::string &error);
 }

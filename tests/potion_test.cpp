@@ -6,6 +6,7 @@
 #include "potion/orientation.hpp"
 #include "potion/reading_positions.hpp"
 #include <curl/curl.h>
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <fstream>
@@ -281,6 +282,11 @@ int main() {
                 mention_rich_text, "Hello " + atom + ", important", 6, 7, atom, "bold",
                 formatted, format_error),
             "a selection overlapping a mention is rejected safely");
+    format_error.clear();
+    require(!potion::NotionClient::build_formatted_rich_text(
+                mention_rich_text, "Hello " + atom + ", important", 6, 7, atom,
+                "highlight", formatted, format_error),
+            "highlighting a mention is still rejected safely");
 
     const auto equation_rich_text = potion::Json::parse(R"([
       {"type":"text","text":{"content":"Before ","link":null},"plain_text":"Before ",
@@ -298,6 +304,145 @@ int main() {
             formatted.items()[1].get("equation").get("expression").string() == "x^2" &&
             formatted.items()[3].get("annotations").get("underline").boolean(),
             "a non-selected equation is preserved while adjacent text is formatted");
+
+    const auto equation_highlight = potion::Json::parse(R"([
+      {"type":"text","text":{"content":"Before ","link":null},"plain_text":"Before ",
+       "annotations":{"bold":false,"italic":false,"strikethrough":false,"underline":false,"code":false,"color":"default"}},
+      {"type":"equation","equation":{"expression":"x^2"},"plain_text":"x^2",
+       "annotations":{"bold":true,"italic":true,"strikethrough":false,"underline":true,"code":false,"color":"default"}},
+      {"type":"text","text":{"content":" after","link":null},"plain_text":" after",
+       "annotations":{"bold":false,"italic":false,"strikethrough":false,"underline":false,"code":false,"color":"default"}}
+    ])");
+    format_error.clear();
+    require(potion::NotionClient::build_formatted_rich_text(
+                equation_highlight, "Before " + atom + " after", 0, 14,
+                "Before " + atom + " after", "highlight", formatted,
+                format_error, &format_enabled) && format_enabled &&
+            formatted.items().size() == 3 &&
+            formatted.items()[0].get("text").get("content").string() == "Before " &&
+            formatted.items()[0].get("annotations").get("color").string() ==
+                "yellow_background" &&
+            formatted.items()[1].get("type").string() == "equation" &&
+            formatted.items()[1].get("equation").get("expression").string() ==
+                "x^2" &&
+            formatted.items()[1].get("annotations").get("color").string() ==
+                "yellow_background" &&
+            formatted.items()[1].get("annotations").get("bold").boolean() &&
+            formatted.items()[1].get("annotations").get("italic").boolean() &&
+            formatted.items()[1].get("annotations").get("underline").boolean() &&
+            formatted.items()[2].get("text").get("content").string() == " after" &&
+            formatted.items()[2].get("annotations").get("color").string() ==
+                "yellow_background",
+            "text and an atomic inline equation are highlighted together");
+
+    const auto highlighted_equation = potion::Json::parse(R"([
+      {"type":"text","text":{"content":"Before ","link":null},"plain_text":"Before ",
+       "annotations":{"bold":false,"italic":false,"strikethrough":false,"underline":false,"code":false,"color":"yellow_background"}},
+      {"type":"equation","equation":{"expression":"x^2"},"plain_text":"x^2",
+       "annotations":{"bold":true,"italic":true,"strikethrough":false,"underline":true,"code":false,"color":"yellow_background"}},
+      {"type":"text","text":{"content":" after","link":null},"plain_text":" after",
+       "annotations":{"bold":false,"italic":false,"strikethrough":false,"underline":false,"code":false,"color":"yellow_background"}}
+    ])");
+    format_error.clear();
+    require(potion::NotionClient::build_formatted_rich_text(
+                highlighted_equation, "Before " + atom + " after", 0, 14,
+                "Before " + atom + " after", "highlight", formatted,
+                format_error, &format_enabled) && !format_enabled &&
+            formatted.items().size() == 3 &&
+            formatted.items()[0].get("text").get("content").string() == "Before " &&
+            formatted.items()[0].get("annotations").get("color").string() ==
+                "default" &&
+            formatted.items()[1].get("equation").get("expression").string() ==
+                "x^2" &&
+            formatted.items()[1].get("annotations").get("color").string() ==
+                "default" &&
+            formatted.items()[1].get("annotations").get("bold").boolean() &&
+            formatted.items()[1].get("annotations").get("italic").boolean() &&
+            formatted.items()[1].get("annotations").get("underline").boolean() &&
+            formatted.items()[2].get("text").get("content").string() == " after" &&
+            formatted.items()[2].get("annotations").get("color").string() ==
+                "default",
+            "highlight toggles off across text and an equation without changing other annotations");
+    format_error.clear();
+    require(potion::NotionClient::build_formatted_rich_text(
+                equation_rich_text, "Before " + atom + " after", 0, 14,
+                "Before " + atom + " after", "underline", formatted,
+                format_error, &format_enabled) && format_enabled &&
+            formatted.items().size() == 3 &&
+            formatted.items()[0].get("annotations").get("underline").boolean() &&
+            formatted.items()[1].get("annotations").get("underline").boolean() &&
+            formatted.items()[1].get("equation").get("expression").string() ==
+                "x^2" &&
+            formatted.items()[2].get("annotations").get("underline").boolean(),
+            "text and an atomic inline equation are underlined together");
+    const auto underlined_equation = potion::Json::parse(R"([
+      {"type":"text","text":{"content":"Before ","link":null},"plain_text":"Before ",
+       "annotations":{"bold":false,"italic":false,"strikethrough":false,"underline":true,"code":false,"color":"default"}},
+      {"type":"equation","equation":{"expression":"x^2"},"plain_text":"x^2",
+       "annotations":{"bold":false,"italic":true,"strikethrough":false,"underline":true,"code":false,"color":"default"}},
+      {"type":"text","text":{"content":" after","link":null},"plain_text":" after",
+       "annotations":{"bold":false,"italic":false,"strikethrough":false,"underline":true,"code":false,"color":"default"}}
+    ])");
+    format_error.clear();
+    require(potion::NotionClient::build_formatted_rich_text(
+                underlined_equation, "Before " + atom + " after", 0, 14,
+                "Before " + atom + " after", "underline", formatted,
+                format_error, &format_enabled) && !format_enabled &&
+            !formatted.items()[0].get("annotations").get("underline").boolean() &&
+            !formatted.items()[1].get("annotations").get("underline").boolean() &&
+            formatted.items()[1].get("annotations").get("italic").boolean() &&
+            !formatted.items()[2].get("annotations").get("underline").boolean(),
+            "underline toggles off across text and an equation while preserving other annotations");
+    format_error.clear();
+    require(potion::NotionClient::build_formatted_rich_text(
+                equation_highlight, "Before " + atom + " after", 0, 14,
+                "Before " + atom + " after", "clear", formatted,
+                format_error, &format_enabled) && !format_enabled &&
+            formatted.items().size() == 3 &&
+            formatted.items()[1].get("equation").get("expression").string() ==
+                "x^2" &&
+            !formatted.items()[1].get("annotations").get("bold").boolean() &&
+            !formatted.items()[1].get("annotations").get("italic").boolean() &&
+            !formatted.items()[1].get("annotations").get("strikethrough").boolean() &&
+            !formatted.items()[1].get("annotations").get("underline").boolean() &&
+            formatted.items()[1].get("annotations").get("color").string() ==
+                "default",
+            "clear removes visual formatting from an equation without changing it");
+    format_error.clear();
+    require(!potion::NotionClient::build_formatted_rich_text(
+                equation_highlight, "Before " + atom + " after", 7, 8, atom,
+                "bold", formatted, format_error),
+            "unsupported bold formatting of an equation remains rejected");
+    format_error.clear();
+    require(!potion::NotionClient::build_formatted_rich_text(
+                mention_rich_text, "Hello " + atom + ", important", 6, 7, atom,
+                "clear", formatted, format_error),
+            "clearing formatting from a mention remains rejected safely");
+
+    std::vector<potion::Json> rendered_equations;
+    rendered_equations.push_back(potion::Json::parse(R"({
+      "type":"equation","equation":{"expression":"\\Sigma"},
+      "annotations":{"color":"blue"}
+    })"));
+    rendered_equations.push_back(potion::Json::parse(R"({
+      "type":"equation","equation":{"expression":"x^2"},
+      "annotations":{"underline":true,"color":"yellow_background"}
+    })"));
+    const std::string colored_equation_markdown =
+        potion::NotionClient::apply_inline_equation_annotations(
+            "Because $`\\Sigma`$ and `$ignored$`, then $`x^2`$.\n"
+            "$$\ndisplay = math\n$$\n",
+            rendered_equations);
+    require(colored_equation_markdown.find(
+                "<span color=\"blue\">$`\\Sigma`$</span>") !=
+                std::string::npos &&
+            colored_equation_markdown.find(
+                "<span underline=\"true\" color=\"yellow_background\">$`x^2`$</span>") !=
+                std::string::npos &&
+            colored_equation_markdown.find("`$ignored$`") != std::string::npos &&
+            colored_equation_markdown.find("$$\ndisplay = math\n$$") !=
+                std::string::npos,
+            "inline equation annotations omitted by Notion Markdown are restored safely");
 
     potion::ImageRegistry images;
     const std::string signed_image_url =
@@ -335,6 +480,139 @@ int main() {
     require(images.resolve(image_key, resolved_image_url) &&
                 resolved_image_url == signed_image_url,
             "deterministic image key resolves to the complete original URL");
+
+    const std::string notion_block_id =
+        "1234567890abcdef1234567890abcdef";
+    const std::string notion_image_url =
+        "https://prod-files-secure.s3.us-west-2.amazonaws.com/"
+        "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/" + notion_block_id +
+        "/diagram.png?X-Amz-Signature=old";
+    const std::string notion_image_key = images.register_url(notion_image_url);
+    potion::ImageSource notion_source;
+    require(images.resolve_source(notion_image_key, notion_source) &&
+                notion_source.notion_hosted() &&
+                notion_source.notion_block_id == notion_block_id,
+            "Notion-hosted image retains block provenance");
+
+    potion::ImageRegistry expired_registry;
+    const std::string expired_key = expired_registry.register_notion_url(
+        notion_image_url, notion_block_id, 900);
+    int expired_downloads = 0, expired_refreshes = 0;
+    potion::BinaryResponse refreshed_image;
+    std::string image_error;
+    require(potion::retrieve_registered_image(
+                expired_registry, expired_key, 1000,
+                [&](const std::string &url, potion::BinaryResponse &result,
+                    std::string &, long *status) {
+                  ++expired_downloads;
+                  if (status) *status = 200;
+                  if (url.find("Signature=fresh") == std::string::npos)
+                    return false;
+                  result = {"image/png", "fresh image"};
+                  return true;
+                },
+                [&](const std::string &block_id, std::string &url,
+                    std::int64_t &expires_at, std::string &) {
+                  ++expired_refreshes;
+                  require(block_id == notion_block_id,
+                          "refresh uses the image block id");
+                  url = notion_image_url.substr(
+                      0, notion_image_url.find("Signature=old")) +
+                      "Signature=fresh";
+                  expires_at = 4600;
+                  return true;
+                },
+                refreshed_image, image_error) &&
+                expired_refreshes == 1 && expired_downloads == 1 &&
+                refreshed_image.body == "fresh image",
+            "expired Notion image refreshes its block before downloading");
+
+    potion::ImageRegistry rejected_registry;
+    const std::string rejected_key = rejected_registry.register_notion_url(
+        notion_image_url, notion_block_id, 4600);
+    int rejected_downloads = 0, rejected_refreshes = 0;
+    require(potion::retrieve_registered_image(
+                rejected_registry, rejected_key, 1000,
+                [&](const std::string &url, potion::BinaryResponse &result,
+                    std::string &error, long *status) {
+                  ++rejected_downloads;
+                  if (url.find("Signature=old") != std::string::npos) {
+                    if (status) *status = 403;
+                    error = "Image server returned HTTP 403";
+                    return false;
+                  }
+                  if (status) *status = 200;
+                  result = {"image/png", "retried image"};
+                  return true;
+                },
+                [&](const std::string &, std::string &url,
+                    std::int64_t &expires_at, std::string &) {
+                  ++rejected_refreshes;
+                  url = notion_image_url.substr(
+                      0, notion_image_url.find("Signature=old")) +
+                      "Signature=fresh";
+                  expires_at = 4600;
+                  return true;
+                },
+                refreshed_image, image_error) &&
+                rejected_downloads == 2 && rejected_refreshes == 1,
+            "authorization failure refreshes and retries exactly once");
+
+    potion::ImageRegistry external_registry;
+    const std::string external_key = external_registry.register_url(
+        "https://example.com/stable.png");
+    int external_downloads = 0, external_refreshes = 0;
+    require(!potion::retrieve_registered_image(
+                external_registry, external_key, 1000,
+                [&](const std::string &, potion::BinaryResponse &,
+                    std::string &error, long *status) {
+                  ++external_downloads;
+                  if (status) *status = 403;
+                  error = "external failure";
+                  return false;
+                },
+                [&](const std::string &, std::string &, std::int64_t &,
+                    std::string &) {
+                  ++external_refreshes;
+                  return true;
+                },
+                refreshed_image, image_error) &&
+                external_downloads == 1 && external_refreshes == 0,
+            "external images never trigger a Notion block refresh");
+
+    std::atomic<int> active_downloads{0}, peak_downloads{0};
+    const auto serialized_download =
+        [&](const std::string &, potion::BinaryResponse &result,
+            std::string &, long *status) {
+          const int active = active_downloads.fetch_add(1) + 1;
+          int peak = peak_downloads.load();
+          while (peak < active &&
+                 !peak_downloads.compare_exchange_weak(peak, active)) {}
+          std::this_thread::sleep_for(std::chrono::milliseconds(40));
+          active_downloads.fetch_sub(1);
+          if (status) *status = 200;
+          result = {"image/png", "serialized"};
+          return true;
+        };
+    const auto unused_refresh =
+        [](const std::string &, std::string &, std::int64_t &,
+           std::string &) { return false; };
+    auto first_fetch = std::async(std::launch::async, [&] {
+      potion::BinaryResponse result;
+      std::string error;
+      return potion::retrieve_registered_image(
+          external_registry, external_key, 1000, serialized_download,
+          unused_refresh, result, error);
+    });
+    auto second_fetch = std::async(std::launch::async, [&] {
+      potion::BinaryResponse result;
+      std::string error;
+      return potion::retrieve_registered_image(
+          external_registry, external_key, 1000, serialized_download,
+          unused_refresh, result, error);
+    });
+    require(first_fetch.get() && second_fetch.get() && peak_downloads == 1,
+            "duplicate proxy requests for one image are serialized");
 
     potion::MarkdownRenderer renderer(images);
     const std::string html = renderer.render(
@@ -582,6 +860,15 @@ int main() {
     require(highlighted.find("notion-color-yellow-bg") != std::string::npos, "inline highlight");
     require(highlighted.find("notion-color-blue-bg") != std::string::npos, "block highlight");
     require(highlighted.find("Unsupported Notion content") == std::string::npos, "highlight supported");
+    const std::string highlighted_equation_html =
+        renderer.render(colored_equation_markdown);
+    require(highlighted_equation_html.find(
+                "<span class=\"notion-color notion-color-blue\"><span class=\"math\"") !=
+                std::string::npos &&
+            highlighted_equation_html.find(
+                "<span class=\"notion-color notion-color-yellow-bg\"><u><span class=\"math\"") !=
+                std::string::npos,
+            "restored inline equation annotations are rendered around native math");
     const std::string inline_only = renderer.render(
       "Plain <span color=\"orange\">orange words</span> remain plain\n");
     require(inline_only.find("<p class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">Plain <span class=\"notion-color notion-color-orange\">") != std::string::npos, "inline color scope");

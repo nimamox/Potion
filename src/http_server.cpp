@@ -400,10 +400,27 @@ void HttpServer::handle_client(int client) noexcept {
       respond(client, 200, "OK", "application/json", body);
     } else if (request.method == "GET" &&
                request.target.compare(0, 12, "/api/images/") == 0) {
-      std::string url, error; BinaryResponse image;
-      if (!images_.resolve(request.target.substr(12), url))
+      const std::string key = request.target.substr(12);
+      ImageSource source;
+      std::string error;
+      BinaryResponse image;
+      if (!images_.resolve_source(key, source))
         respond(client, 404, "Not Found", "text/plain", "Not found\n");
-      else if (!notion_.retrieve_image(url, image, error)) throw std::runtime_error(error);
+      else if (!retrieve_registered_image(
+                   images_, key, static_cast<std::int64_t>(unix_timestamp()),
+                   [this](const std::string &url, BinaryResponse &result,
+                          std::string &download_error, long *status) {
+                     return notion_.retrieve_image(url, result, download_error,
+                                                   status);
+                   },
+                   [this](const std::string &block_id, std::string &url,
+                          std::int64_t &expires_at, std::string &refresh_error) {
+                     return notion_.refresh_image_url(
+                         state_.token(), block_id, url, expires_at,
+                         refresh_error);
+                   },
+                   image, error))
+        throw std::runtime_error(error);
       else respond(client, 200, "OK", image.content_type, image.body,
                    CachePolicy::proxied_image);
     } else if (request.method == "POST" && request.target == "/api/refresh") {

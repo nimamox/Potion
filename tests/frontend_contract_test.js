@@ -104,7 +104,7 @@ assert.doesNotMatch(frontend, /\/api\/input|\/api\/simulator\/input|pollInput|wa
 assert.doesNotMatch(httpServer, /\/api\/input|\/api\/simulator\/input|gpiokey|\/dev\/input|input_event/);
 assert.match(httpServer, /select\(highest \+ 1, &set, nullptr, nullptr, nullptr\)/);
 assert.match(httpServer,
-  /retrieve_image\(url, image, error\)[\s\S]*?CachePolicy::proxied_image/);
+  /retrieve_registered_image\([\s\S]*?retrieve_image\(url, result, download_error,[\s\S]*?CachePolicy::proxied_image/);
 assert.match(httpServer,
   /is_immutable_asset_path\(relative\)[\s\S]*?CachePolicy::immutable_asset/);
 assert.match(httpServer, /vendor\/fast-font\/[\s\S]*?\.otf/);
@@ -175,7 +175,20 @@ const wideImage = {
 };
 imageFitContext.fitCompactImage(wideImage);
 assert.equal(wideImage.style.width, "1000px");
-assert.equal(wideImage.style.height, "392px");
+assert.equal(wideImage.style.height, "auto",
+  "width-limited images let Mesquite preserve their intrinsic ratio");
+const nativeImage = {
+  className: "",
+  naturalWidth: 552,
+  naturalHeight: 413,
+  parentNode: {clientWidth: 1000},
+  style: {}
+};
+imageFitContext.fitCompactImage(nativeImage);
+assert.equal(nativeImage.style.width, "553px",
+  "intrinsic-size images get an imperceptible scale to trigger Mesquite rasterization");
+assert.equal(nativeImage.style.height, "auto",
+  "images already within both limits avoid Mesquite's two-axis RGBA path");
 wideImage.className = "expanded";
 wideImage.style.width = "";
 wideImage.style.height = "";
@@ -183,11 +196,19 @@ imageFitContext.fitCompactImage(wideImage);
 assert.equal(wideImage.style.width, "",
   "expanded images remain controlled by their full-width CSS");
 assert.match(frontend,
-  /function imageFinished\(image, loaded\)[\s\S]*if \(loaded\) \{\s*fitCompactImage\(image\)/);
+  /function imageFinished\(image, loaded\)[\s\S]*if \(loaded\) \{[\s\S]*?fitCompactImage\(image\)/);
+assert.match(frontend,
+  /function commitLoadedImagePaint\(image\)[\s\S]*visibility = "hidden"[\s\S]*offsetHeight[\s\S]*setTimeout[\s\S]*visibility = ""/,
+  "loaded images need a delayed, layout-stable Mesquite paint commit");
+assert.match(frontend,
+  /function imageFinished\(image, loaded\)[\s\S]*if \(loaded\) \{[\s\S]*?commitLoadedImagePaint\(image\)/);
 assert.match(frontend,
   /this\.className = "";\s*fitCompactImage\(this\)/);
 assert.match(appCss,
-  /\.page-content img\s*\{[^}]*width:\s*auto;[^}]*height:\s*auto;[^}]*max-width:\s*100%;[^}]*max-height:\s*430px;/);
+  /\.page-content img\s*\{[^}]*display:\s*block;[^}]*width:\s*auto;[^}]*height:\s*auto;[^}]*max-width:\s*100%;[^}]*max-height:\s*430px;/);
+assert.match(appCss,
+  /\.page-content ol\s*\{[^}]*padding-left:\s*1\.7em;/,
+  "numbered-list markers need a Kindle-safe inset without moving page text");
 
 const bionicLogic = frontend.match(
   /\/\* BIONIC_READING_LOGIC_BEGIN \*\/([\s\S]*?)\/\* BIONIC_READING_LOGIC_END \*\//);
@@ -1257,6 +1278,95 @@ assert.equal(rotatedRestore.context.positionRestoring, true,
 
 assert.match(frontend,
   /function imageFinished\(image, loaded\)[\s\S]*maintainReadingRestore\(image, false\)/);
+const imageRetryLogic = frontend.match(
+  /\/\* IMAGE_RETRY_LOGIC_BEGIN \*\/([\s\S]*?)\/\* IMAGE_RETRY_LOGIC_END \*\//);
+assert.ok(imageRetryLogic, "missing recoverable image retry lifecycle");
+{
+  let now = 0;
+  const timers = [];
+  const root = {scrollTop: 0, clientHeight: 400};
+  const assignedSources = [];
+  const attributes = {"data-src": "http://127.0.0.1:8766/api/images/key"};
+  const image = {
+    offsetParent: root,
+    offsetTop: 100,
+    offsetHeight: 100,
+    complete: false,
+    className: "",
+    style: {},
+    _potionImageAttempts: 0,
+    _potionImageRequested: false,
+    _potionImageLoading: false,
+    _potionImageNextAttemptAt: 0,
+    _potionImageGeneration: 1,
+    getAttribute: function(name) { return attributes[name] || ""; },
+    setAttribute: function(name, value) {
+      attributes[name] = value;
+      if (name === "src") assignedSources.push(value);
+    }
+  };
+  function FakeDate() { return {getTime: function() { return now; }}; }
+  const context = {
+    IMAGE_RETRY_MAX_MS: 300000,
+    IMAGE_AUTOMATIC_RETRY_LIMIT: 6,
+    imageGeneration: 1,
+    imageLoads: 0,
+    imageNodes: [image],
+    imageLoadTimer: null,
+    Date: FakeDate,
+    Math,
+    isFinite,
+    id: function(name) {
+      return name === "page-content" ? root : {className: ""};
+    },
+    mathTop: function(node) { return node.offsetTop; },
+    readingRestoreAffects: function() { return false; },
+    armReadingRestoreQuietPeriod: function() {},
+    maintainReadingRestore: function() {},
+    fitCompactImage: function() {},
+    invertNightImage: function() {},
+    updateScroll: function() {},
+    scheduleMathRepair: function() {},
+    scheduleImageLoad: function(delay) {
+      if (context.imageLoadTimer !== null) return;
+      context.imageLoadTimer = context.window.setTimeout(function() {
+        context.loadImagesNearViewport();
+      }, typeof delay === "number" ? delay : 40);
+    },
+    resetImageLoading: function() {},
+    clear: function() {},
+    window: {
+      setTimeout: function(callback, delay) {
+        const timer = {callback, delay, cancelled: false};
+        timers.push(timer);
+        return timer;
+      },
+      clearTimeout: function(timer) { timer.cancelled = true; }
+    }
+  };
+  vm.createContext(context);
+  vm.runInContext(imageRetryLogic[1], context);
+
+  context.loadImagesNearViewport();
+  assert.equal(assignedSources.length, 1);
+  context.loadImagesNearViewport();
+  assert.equal(assignedSources.length, 1,
+    "an in-flight image is never downloaded concurrently");
+  context.imageFinished(image, false);
+  assert.equal(image._potionImageRequested, false);
+  now = 1000;
+  timers[timers.length - 1].callback();
+  assert.equal(assignedSources.length, 2,
+    "a transient image failure is retried after backoff");
+  context.imageFinished(image, false);
+  now = 3000;
+  timers[timers.length - 1].callback();
+  assert.equal(assignedSources.length, 3,
+    "an image remains retryable beyond the former two-attempt cutoff");
+  context.imageFinished(image, true);
+  assert.equal(image._potionImageNextAttemptAt, 0,
+    "a later successful load clears retry backoff");
+}
 assert.match(frontend,
   /function repairMathNearViewport\(\)[\s\S]*maintainReadingRestore\(null, true\)/);
 assert.match(frontend,

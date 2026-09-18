@@ -33,7 +33,9 @@
         readingViewportWidth = 0;
     var POSITION_RESTORE_QUIET_MS = 400,
         TRANSIENT_POSITION_UPDATE_MS = 100,
-        IMAGE_COMPACT_MAX_HEIGHT = 430;
+        IMAGE_COMPACT_MAX_HEIGHT = 430,
+        IMAGE_RETRY_MAX_MS = 300000,
+        IMAGE_AUTOMATIC_RETRY_LIMIT = 6;
     var selectionTimer = null,
         selectionState = null,
         selectionMenuActive = false,
@@ -2049,10 +2051,7 @@
             image = imageNodes[i];
             if (!readingRestoreAffects(image)) continue;
             if (image._potionImageLoading ||
-                (image._potionImageRequested && !image.complete) ||
-                (!image._potionImageRequested &&
-                    image._potionImageAttempts < 2 &&
-                    image.getAttribute("data-src")))
+                (image._potionImageRequested && !image.complete))
                 return true;
         }
         return false;
@@ -2478,7 +2477,8 @@
 
     /* IMAGE_FIT_LOGIC_BEGIN */
     function fitCompactImage(image) {
-        var parent, availableWidth, width, height, scale;
+        var parent, availableWidth, width, height,
+            widthScale, heightScale, scale;
 
         if (!image ||
             (" " + image.className + " ").indexOf(" expanded ") >= 0)
@@ -2501,13 +2501,28 @@
 
         if (!availableWidth) return;
 
-        scale = Math.min(
-            1,
-            availableWidth / width,
-            IMAGE_COMPACT_MAX_HEIGHT / height
-        );
-        image.style.width = Math.max(1, Math.round(width * scale)) + "px";
-        image.style.height = Math.max(1, Math.round(height * scale)) + "px";
+        widthScale = availableWidth / width;
+        heightScale = IMAGE_COMPACT_MAX_HEIGHT / height;
+        scale = Math.min(1, widthScale, heightScale);
+        /* Mesquite may leave an RGBA image blank at exactly its intrinsic
+         * size, while any scaled rendering paints correctly. */
+        if (scale === 1 && width < availableWidth)
+            image.style.width = Math.round(width + 1) + "px";
+        else
+            image.style.width =
+                Math.max(1, Math.round(width * scale)) + "px";
+
+        /*
+         * Images that fit below the compact height cap can use the same
+         * intrinsic-ratio path as expanded images.  Height-limited images
+         * retain explicit dimensions for the existing Kindle aspect-ratio
+         * workaround.
+         */
+        if (heightScale >= 1 || widthScale <= heightScale)
+            image.style.height = "auto";
+        else
+            image.style.height =
+                Math.max(1, Math.round(height * scale)) + "px";
     }
 
     function fitCompactImages() {
@@ -2517,7 +2532,39 @@
     }
     /* IMAGE_FIT_LOGIC_END */
 
+    /* IMAGE_RETRY_LOGIC_BEGIN */
+    function imageRetryDelay(attempts) {
+        var delay = 1000,
+            remaining = Math.max(0, attempts - 1);
+
+        while (remaining > 0 && delay < IMAGE_RETRY_MAX_MS) {
+            delay *= 2;
+            remaining--;
+        }
+
+        return Math.min(delay, IMAGE_RETRY_MAX_MS);
+    }
+
+    function commitLoadedImagePaint(image) {
+        var generation;
+
+        if (!image) return;
+
+        generation = image._potionImageGeneration;
+        image.style.visibility = "hidden";
+        image.offsetHeight;
+
+        window.setTimeout(function() {
+            if (image._potionImageGeneration !== generation)
+                return;
+            image.style.visibility = "";
+            image.offsetHeight;
+        }, 60);
+    }
+
     function imageFinished(image, loaded) {
+        var retryDelay;
+
         if (image._potionImageGeneration !== imageGeneration)
             return;
 
@@ -2527,23 +2574,34 @@
         }
 
         if (loaded) {
+            image._potionImageNextAttemptAt = 0;
             fitCompactImage(image);
             invertNightImage(image);
+            commitLoadedImagePaint(image);
             updateScroll();
             scheduleMathRepair();
         } else {
             image._potionImageRequested = false;
+            retryDelay = imageRetryDelay(image._potionImageAttempts);
+            image._potionImageNextAttemptAt =
+                new Date().getTime() + retryDelay;
         }
 
         maintainReadingRestore(image, false);
 
-        scheduleImageLoad(loaded ? 20 : 500);
+        if (loaded)
+            scheduleImageLoad(20);
+        else if (image._potionImageAttempts <= IMAGE_AUTOMATIC_RETRY_LIMIT)
+            scheduleImageLoad(retryDelay);
     }
 
     function loadImagesNearViewport() {
         var root = id("page-content"),
             limit = root.scrollTop + root.clientHeight * 2.5,
-            i, image, source;
+            earliest = null,
+            now = new Date().getTime(),
+            lower = root.scrollTop - root.clientHeight,
+            i, image, source, top, wait;
 
         imageLoadTimer = null;
 
@@ -2553,18 +2611,28 @@
         for (i = 0; i < imageNodes.length && imageLoads < 2; ++i) {
             image = imageNodes[i];
 
-            if (image._potionImageRequested ||
-                image._potionImageAttempts >= 2 ||
-                image.offsetParent === null)
+            if (image._potionImageRequested || image.offsetParent === null)
                 continue;
 
-            if (mathTop(image, root) > limit)
+            top = mathTop(image, root);
+
+            if (top > limit)
                 break;
+
+            if (top + Math.max(1, image.offsetHeight || 1) < lower)
+                continue;
 
             source = image.getAttribute("data-src");
 
             if (!source)
                 continue;
+
+            wait = (image._potionImageNextAttemptAt || 0) - now;
+            if (wait > 0) {
+                if (earliest === null || wait < earliest)
+                    earliest = wait;
+                continue;
+            }
 
             image._potionImageRequested = true;
             image._potionImageLoading = true;
@@ -2583,6 +2651,9 @@
                         "")
             );
         }
+
+        if (earliest !== null)
+            scheduleImageLoad(Math.max(20, earliest));
     }
 
     function prepareImages() {
@@ -2601,6 +2672,7 @@
 
             images[i]._potionImageAttempts = source ? 1 : 0;
             images[i]._potionImageRequested = !!source;
+            images[i]._potionImageNextAttemptAt = 0;
             images[i]._potionImageGeneration = imageGeneration;
 
             images[i].onload = function() {
@@ -2637,6 +2709,7 @@
 
         scheduleImageLoad(0);
     }
+    /* IMAGE_RETRY_LOGIC_END */
 
     function prepareToggles() {
         var buttons =
