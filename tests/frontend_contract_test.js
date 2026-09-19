@@ -22,6 +22,7 @@ const httpServer = fs.readFileSync(process.argv[14], "utf8");
 const whisperTouch = fs.readFileSync(process.argv[15], "utf8");
 const bionicFontDirectory = process.argv[16];
 const potionFontconfig = fs.readFileSync(process.argv[17], "utf8");
+const notionClient = fs.readFileSync(process.argv[18], "utf8");
 const vendorDirectory = path.dirname(path.dirname(bionicFontDirectory));
 const emojiFontDirectory = path.join(vendorDirectory, "noto-emoji", "fonts");
 const emojiFontPath = path.join(emojiFontDirectory, "NotoEmoji-Regular.ttf");
@@ -67,7 +68,20 @@ assert.doesNotMatch(appCss, /\.appearance-sheet[^\{]*\{[^}]*animation|\.appearan
 assert.match(appCss,
   /\.appearance-sheet\s*\{[\s\S]*top:\s*0;[\s\S]*bottom:\s*0;[\s\S]*background:\s*transparent/);
 assert.match(appCss,
-  /\.appearance-sheet-inner\s*\{[\s\S]*width:\s*96%;[\s\S]*height:\s*520px/);
+  /\.appearance-sheet-inner\s*\{[\s\S]*width:\s*96%;[\s\S]*height:\s*590px/);
+const codeSizeRow = index.match(
+  /<div class="appearance-setting-row">\s*<strong>CODE SIZE<\/strong>([\s\S]*?)<\/div>\s*<\/div>/);
+assert.ok(codeSizeRow, "CODE SIZE row in the appearance sheet");
+assert.match(codeSizeRow[1],
+  /id="appearance-code-size"[\s\S]*id="appearance-code-smaller"[^>]*>Smaller<\/button>[\s\S]*id="appearance-code-larger"[^>]*>Larger<\/button>/);
+assert.doesNotMatch(codeSizeRow[1], /aria-pressed|data-value/,
+  "code size buttons are actions, not a persistent selection");
+assert.ok(
+  index.indexOf('id="appearance-line-spacing"') <
+    index.indexOf('id="appearance-code-size"') &&
+    index.indexOf('id="appearance-code-size"') <
+    index.indexOf('id="appearance-bionic-reading"'),
+  "CODE SIZE sits between LINE SPACING and BIONIC READING");
 assert.match(runKindle, /'supportedOrientation','UDLR'/);
 assert.match(runKindle, /LD_PRELOAD=.*libmesquite-whisper-touch\.so \/usr\/bin\/mesquite/);
 assert.match(runKindle,
@@ -275,6 +289,74 @@ assert.match(appCss,
   /#page-content\.line-spacing-plusplusplus \.potion-editable-content,[\s\S]*line-height:\s*2/);
 assert.doesNotMatch(appCss,
   /#page-content\.(?:word|line)-spacing-(?:plus|plusplus)\s+(?:h[1-6]|table|th|td|\.toggle-summary|\.child-page)/);
+assert.match(appCss,
+  /\.page-content pre\s*\{[^}]*font-family:\s*monospace;[^}]*font-size:\s*18px;[^}]*line-height:\s*1\.4/,
+  "the pre rule declares explicit font properties CODE SIZE can override");
+assert.doesNotMatch(appCss, /font:\s*18px\/1\.4 monospace/,
+  "the pre rule must not use the font shorthand, which would hide size overrides");
+for (let px = 14; px <= 30; px += 2)
+  assert.ok(
+    new RegExp(
+      "#page-content\\.code-size-" + px +
+        " pre\\s*\\{[^}]*font-size:\\s*" + px + "px;"
+    ).test(appCss),
+    "code-size-" + px + " must size pre blocks to " + px + "px");
+assert.match(appCss,
+  /\.appearance-code-size-segments button,[\s\S]*?\.appearance-code-size-segments button:first-child \{ width:\s*50%; \}/,
+  "the two code-size buttons share the row equally");
+assert.match(appCss,
+  /\.appearance-code-size-segments button:disabled\s*\{[^}]*color:\s*#888/,
+  "clamped code-size buttons need visible disabled contrast");
+assert.match(frontend,
+  /kind === "code"\) \{\s*codeSize = parseInt\(value, 10\);\s*settingKey = "codeSize";\s*value = String\(codeSize\)/,
+  "code size changes persist through changeReaderAppearance");
+assert.match(frontend,
+  /typeof settings\.codeSize === "number" &&[\s\S]*?CODE_SIZE_MIN[\s\S]*?CODE_SIZE_MAX[\s\S]*?:\s*18;/,
+  "untrusted code size values fall back to 18px");
+assert.match(frontend,
+  /applyBionicClass\(\);\s*applySpacingClasses\(root\);\s*applyCodeSizeClass\(root\)/,
+  "applyAppearance installs the code-size class alongside spacing");
+assert.match(frontend,
+  /id\("appearance-code-smaller"\)\.onclick = function\(\) \{\s*adjustCodeSize\(-CODE_SIZE_STEP\)/);
+assert.match(frontend,
+  /id\("appearance-code-larger"\)\.onclick = function\(\) \{\s*adjustCodeSize\(CODE_SIZE_STEP\)/);
+assert.match(frontend,
+  /id\("appearance-code-smaller"\)\.disabled = codeSize <= CODE_SIZE_MIN;\s*id\("appearance-code-larger"\)\.disabled = codeSize >= CODE_SIZE_MAX/,
+  "code-size buttons disable at the grid limits");
+assert.doesNotMatch(frontend, /setSelectedButtons\(\s*"appearance-code-size"/,
+  "code size is an action, not a selected segment");
+
+const CODE_SIZE_LOGIC_TESTS = (() => {
+  const codeSizeLogic = frontend.match(
+    /\/\* CODE_SIZE_LOGIC_BEGIN \*\/([\s\S]*?)\/\* CODE_SIZE_LOGIC_END \*\//);
+  assert.ok(codeSizeLogic, "missing code-size logic test boundary");
+  const codeSizeCalls = [];
+  const codeSizeContext = {
+    codeSize: 18,
+    CODE_SIZE_MIN: 14,
+    CODE_SIZE_MAX: 30,
+    CODE_SIZE_STEP: 2,
+    changeReaderAppearance: function(kind, value) {
+      codeSizeCalls.push(kind + ":" + value);
+      codeSizeContext.codeSize = parseInt(value, 10);
+    }
+  };
+  vm.createContext(codeSizeContext);
+  vm.runInContext(codeSizeLogic[1], codeSizeContext);
+  codeSizeContext.adjustCodeSize(2);
+  assert.deepEqual(codeSizeCalls, ["code:20"],
+    "Larger steps the code size through the appearance pipeline");
+  codeSizeContext.codeSize = 30;
+  codeSizeContext.adjustCodeSize(2);
+  assert.deepEqual(codeSizeCalls, ["code:20"],
+    "code size clamps at its maximum without a no-op apply");
+  codeSizeContext.codeSize = 14;
+  codeSizeContext.adjustCodeSize(-2);
+  assert.deepEqual(codeSizeCalls, ["code:20"],
+    "code size clamps at its minimum without a no-op apply");
+  return true;
+})();
+assert.equal(CODE_SIZE_LOGIC_TESTS, true);
 {
   const match = frontend.match(
     /var pageButtonDownCode = 0,([\s\S]*?)function saveSetting\(key, value\)/);
@@ -527,7 +609,7 @@ const pinSource = frontend.match(
 const showSource = frontend.match(
   /function showPages\(positionSaved\) \{([\s\S]*?)\n    \}\n\n    function loadPages/)[1];
 const loadSource = frontend.match(
-  /function loadPages\(\) \{([\s\S]*?)\n    \}\n\n    function openPage/)[1];
+  /function loadPages\(\) \{([\s\S]*?)\n    \}\n\n    \/\* EQUATION_ENRICHMENT_BEGIN/)[1];
 assert.doesNotMatch(chooseSource, /loadPages|GET[^\n]*\/api\/pages/);
 assert.doesNotMatch(pinSource, /loadPages|GET[^\n]*\/api\/pages/);
 assert.match(pinSource, /updatePageMetadata\(pageId, "pinned", pinned\)[\s\S]*renderSortedPages\(false\)/);
@@ -542,6 +624,125 @@ assert.match(frontend, /id\("search-button"\)\.onclick = loadPages/);
 assert.match(frontend, /id\("search"\)\.onkeydown = function\(event\)[\s\S]*event\.keyCode === 13[\s\S]*loadPages\(\)/);
 assert.match(frontend,
   /updatePageMetadata\([\s\S]*currentPageId,[\s\S]*"opened",[\s\S]*Math\.floor\(new Date\(\)\.getTime\(\) \/ 1000\)/);
+
+const equationEnrichmentLogic = frontend.match(
+  /\/\* EQUATION_ENRICHMENT_BEGIN \*\/([\s\S]*?)\/\* EQUATION_ENRICHMENT_END \*\//);
+assert.ok(equationEnrichmentLogic, "missing asynchronous equation enrichment");
+assert.doesNotMatch(equationEnrichmentLogic[1],
+  /innerHTML|outerHTML|replaceChild|removeChild/,
+  "equation enrichment must not replace page or block HTML");
+assert.match(equationEnrichmentLogic[1],
+  /range\.extractContents\(\)[\s\S]*document\.createElement\("span"\)/,
+  "enrichment wraps only the exact logical color range");
+{
+  function mathNode(atomic, expression, className) {
+    return {
+      className: className || "math",
+      getAttribute: function(name) {
+        if (name === "data-potion-atomic" && atomic) return "1";
+        if (name === "data-potion-expression" && atomic) return expression;
+        return null;
+      }
+    };
+  }
+  const display = mathNode(false, "display");
+  const first = mathNode(true, "x^2");
+  const second = mathNode(true, "y = \\sin(x)", "math compatibility-class");
+  const content = {logicalText: "we have \ufffc to show"};
+  const editable = {
+    getElementsByClassName: function(name) {
+      return name === "potion-editable-content" ? [content] : [];
+    }
+  };
+  const root = {
+    getElementsByClassName: function(name) {
+      if (name === "math") return [display, first, second];
+      if (name === "potion-editable") return [editable];
+      return [];
+    }
+  };
+  const reader = {className: ""};
+  const context = {
+    currentPageId: "page-one",
+    night: false,
+    nightPageMode: "standard",
+    id: function(name) {
+      return name === "page-content" ? root : reader;
+    },
+    collectReadingBlocks: function() {},
+    scheduleMathRepair: function() {},
+    updateScroll: function() {},
+    applyNightPageAppearance: function() {},
+    logicalNodeText: function(node) { return node.logicalText; },
+    encodeURIComponent,
+    request: function() {}
+  };
+  vm.createContext(context);
+  vm.runInContext(equationEnrichmentLogic[1], context);
+  const appliedColors = [];
+  context.applyEnrichedColor = function(target, color) {
+    appliedColors.push({target: target, color: color});
+  };
+  context.applyEquationEnrichment("page-one", {
+    blocks: [{
+      editableIndex: 0,
+      blockText: "we have \ufffc to show",
+      colors: [{start: 0, end: 17, color: "yellow_background"}]
+    }],
+    equations: [
+      {color: "default", expression: "x^2"},
+      {color: "yellow_background", underline: true, bold: true,
+        expression: "y = \\sin(x)"}
+    ]
+  });
+  assert.equal(appliedColors.length, 1);
+  assert.equal(appliedColors[0].target, content);
+  assert.deepEqual(appliedColors[0].color,
+    {start: 0, end: 17, color: "yellow_background"},
+    "one merged color range covers text, an atomic equation, and more text");
+  assert.equal(display.className, "math",
+    "display math is not part of inline-equation enrichment");
+  assert.equal(first.className, "math");
+  assert.match(second.className, /notion-color-yellow-bg/);
+  assert.match(second.className, /potion-equation-underline/);
+  assert.match(second.className, /potion-equation-bold/);
+  assert.match(second.className, /compatibility-class/,
+    "equation enrichment preserves unrelated renderer classes");
+
+  first.className = "math unchanged";
+  second.className = "math unchanged";
+  context.applyEquationEnrichment("page-one", {equations: [{color: "red"}]});
+  assert.equal(first.className, "math unchanged");
+  assert.equal(second.className, "math unchanged",
+    "an equation-count mismatch must not partially annotate a page");
+}
+assert.match(httpServer,
+  /"\/enrichment"[\s\S]*retrieve_page_enrichment/);
+assert.match(httpServer,
+  /"blocks"[\s\S]*"editableIndex"[\s\S]*"blockText"[\s\S]*"colors"/);
+assert.match(httpServer,
+  /"equationEnrichment"[\s\S]*equation_enrichment/);
+assert.match(httpServer,
+  /html\.find\("data-potion-expression="\)/,
+  "inline-equation gating must not depend on class attribute order");
+assert.match(frontend,
+  /if \(page\.equationEnrichment\)\s*loadEquationEnrichment\(currentPageId, generation\)/);
+assert.match(frontend,
+  /generation === pageGeneration[\s\S]*pendingPageEnrichment/,
+  "stale enrichment responses must not replace the current page result");
+assert.match(frontend,
+  /!pendingPageEnrichment \|\| positionRestoring \|\| selectionState \|\|\s*selectionHoldTimer !== null/,
+  "enrichment waits for reading restoration and pending long presses");
+assert.match(frontend,
+  /data-potion-expression[\s\S]*equations\[i\]\.expression/,
+  "equation annotations are matched by expression, not count alone");
+assert.match(appCss,
+  /\.page-content \.math\.potion-equation-underline/);
+const retrievePageSource = notionClient.match(
+  /bool NotionClient::retrieve_page\([^\{]*\{([\s\S]*?)\n\}\n\nbool NotionClient::retrieve_page_enrichment/);
+assert.ok(retrievePageSource, "retrieve_page and enrichment must remain separate");
+assert.doesNotMatch(retrievePageSource[1], /\/children|collect\(|retrieve_page_enrichment/,
+  "the initial page response must not wait for the recursive block walk");
 
 const fontReferences = [...katexCss.matchAll(/fonts\/([^)'\"]+\.(?:woff2?|ttf))/g)]
   .map((match) => match[1]);
@@ -770,6 +971,7 @@ function optimisticContext() {
     collectReadingBlocks: function() { calls.push("blocks"); },
     applyNightPageAppearance: function() { calls.push("night"); },
     updateScroll: function() { calls.push("scroll"); },
+    tryApplyPageEnrichment: function() { calls.push("enrichment"); },
     setSelectionButtonsDisabled: function(value) { calls.push("disabled:" + value); },
     warning: function(message) { calls.push("warning:" + message); },
     request: function(method, url, body, callback) {
@@ -891,6 +1093,7 @@ const finishContext = {
   },
   beginCustomSelection: function() { finishCalls.push("begin"); },
   inspectSelection: function(source) { finishCalls.push("inspect:" + source); },
+  tryApplyPageEnrichment: function() {},
   window: { setTimeout: function() {} },
   Date: Date
 };
@@ -1175,6 +1378,7 @@ function readingRestoreFixture() {
     currentPageId: "page",
     mathRepairTimer: null,
     imageNodes: [],
+    tryApplyPageEnrichment: function() {},
     window: {
       setTimeout: function(callback, delay) {
         const timer = {callback, delay, cancelled: false};

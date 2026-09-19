@@ -419,20 +419,10 @@ int main() {
                 "clear", formatted, format_error),
             "clearing formatting from a mention remains rejected safely");
 
-    std::vector<potion::Json> rendered_equations;
-    rendered_equations.push_back(potion::Json::parse(R"({
-      "type":"equation","equation":{"expression":"\\Sigma"},
-      "annotations":{"color":"blue"}
-    })"));
-    rendered_equations.push_back(potion::Json::parse(R"({
-      "type":"equation","equation":{"expression":"x^2"},
-      "annotations":{"underline":true,"color":"yellow_background"}
-    })"));
     const std::string colored_equation_markdown =
-        potion::NotionClient::apply_inline_equation_annotations(
-            "Because $`\\Sigma`$ and `$ignored$`, then $`x^2`$.\n"
-            "$$\ndisplay = math\n$$\n",
-            rendered_equations);
+        "Because <span color=\"blue\">$`\\Sigma`$</span> and `$ignored$`, "
+        "then <span underline=\"true\" color=\"yellow_background\">"
+        "$`x^2`$</span>.\n$$\ndisplay = math\n$$\n";
     require(colored_equation_markdown.find(
                 "<span color=\"blue\">$`\\Sigma`$</span>") !=
                 std::string::npos &&
@@ -442,7 +432,7 @@ int main() {
             colored_equation_markdown.find("`$ignored$`") != std::string::npos &&
             colored_equation_markdown.find("$$\ndisplay = math\n$$") !=
                 std::string::npos,
-            "inline equation annotations omitted by Notion Markdown are restored safely");
+            "renderer accepts inline equation annotation markup safely");
 
     potion::ImageRegistry images;
     const std::string signed_image_url =
@@ -664,7 +654,7 @@ int main() {
       "Impulse response $`h[n]`$\n"
       "![Impulse response $`h[n]`$](https://example.com/impulse.png)\n");
     require(figure.find("<img data-src=\"http://127.0.0.1:8766/api/images/") != std::string::npos, "lazy image source");
-    require(figure.find("<figcaption>Impulse response <span class=\"math\" data-potion-atomic=\"1\"><span class=\"katex\">") != std::string::npos,
+    require(figure.find("<figcaption>Impulse response <span class=\"math\" data-potion-atomic=\"1\" data-potion-expression=\"h[n]\"><span class=\"katex\">") != std::string::npos,
             "caption math is rendered natively");
     require(figure.find("potion-editable-content\">Impulse response") == std::string::npos && figure.find("<p><figure>") == std::string::npos, "deduplicated standalone figure");
     const std::string figure_first = renderer.render(
@@ -868,7 +858,7 @@ int main() {
             highlighted_equation_html.find(
                 "<span class=\"notion-color notion-color-yellow-bg\"><u><span class=\"math\"") !=
                 std::string::npos,
-            "restored inline equation annotations are rendered around native math");
+            "inline equation annotation markup is rendered around native math");
     const std::string inline_only = renderer.render(
       "Plain <span color=\"orange\">orange words</span> remain plain\n");
     require(inline_only.find("<p class=\"potion-block potion-editable\"><span class=\"potion-editable-content\">Plain <span class=\"notion-color notion-color-orange\">") != std::string::npos, "inline color scope");
@@ -993,6 +983,30 @@ int main() {
       require(!state.set_setting("bionicReading", "experimental", error),
               "reject invalid Bionic Reading setting");
       error.clear();
+      require(state.settings().code_size == 18,
+              "code size defaults to 18 for existing settings files");
+      require(state.set_setting("codeSize", "20", error),
+              "save code size");
+      require(state.settings().code_size == 20 &&
+                  state.settings_json().find("\"codeSize\":20") !=
+                      std::string::npos,
+              "code size JSON");
+      require(state.set_setting("codeSize", "14", error) &&
+                  state.set_setting("codeSize", "30", error),
+              "save code size grid limits");
+      require(state.settings().code_size == 30, "code size maximum kept");
+      error.clear();
+      require(!state.set_setting("codeSize", "12", error),
+              "reject code size below minimum");
+      error.clear();
+      require(!state.set_setting("codeSize", "32", error),
+              "reject code size above maximum");
+      error.clear();
+      require(!state.set_setting("codeSize", "19", error),
+              "reject code size off the 2px grid");
+      error.clear();
+      require(state.settings().code_size == 30,
+              "rejected code sizes leave the setting unchanged");
       require(state.set_setting("wordSpacing", "plus", error),
               "save word spacing");
       require(state.set_setting("lineSpacing", "plusplus", error),
@@ -1047,6 +1061,8 @@ int main() {
       require(reloaded.settings().rotation_mode == "locked", "reload rotation mode");
       require(reloaded.settings().bionic_reading,
               "reload Bionic Reading setting");
+      require(reloaded.settings().code_size == 30,
+              "reload code size");
       require(reloaded.settings().word_spacing == "plusplusplus" &&
                   reloaded.settings().line_spacing == "plusplusplus",
               "reload reader spacing settings");

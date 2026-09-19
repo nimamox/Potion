@@ -297,138 +297,132 @@ bool NotionClient::retrieve_page(const std::string &token, const std::string &pa
     if (markdown.status != 200) { error = error_message(markdown); return false; }
     Json meta = Json::parse(metadata.body), content = Json::parse(markdown.body);
     std::string source = content.get("markdown").string();
-    if (source.find('$') != std::string::npos) {
-      std::vector<Json> equations;
-      std::size_t visited = 0;
-      bool equation_lookup_ok = true;
-      const auto append_equations = [&](const Json &rich_text) {
-        for (const auto &part : rich_text.items())
-          if (part.get("type").string() == "equation")
-            equations.push_back(part);
-      };
-      std::function<void(const std::string &, unsigned)> collect;
-      collect = [&](const std::string &parent, unsigned depth) {
-        if (!equation_lookup_ok || depth > 32 || visited > 4096) {
-          equation_lookup_ok = false;
-          return;
-        }
-        std::string cursor;
-        do {
-          std::string path = "/v1/blocks/" + parent + "/children?page_size=100";
-          if (!cursor.empty()) path += "&start_cursor=" + cursor;
-          const auto response = api_get(token, path);
-          if (response.status != 200) {
-            equation_lookup_ok = false;
-            return;
-          }
-          const Json root = Json::parse(response.body);
-          for (const auto &block : root.get("results").items()) {
-            if (++visited > 4096) {
-              equation_lookup_ok = false;
-              return;
-            }
-            const std::string type = block.get("type").string();
-            const Json &type_body = block.get(type);
-            append_equations(type_body.get("rich_text"));
-            for (const auto &cell : type_body.get("cells").items())
-              append_equations(cell);
-            append_equations(type_body.get("caption"));
-            if (block.get("has_children").boolean() &&
-                type != "child_page" && type != "child_database")
-              collect(block.get("id").string(), depth + 1);
-            if (!equation_lookup_ok) return;
-          }
-          cursor = root.get("has_more").boolean() ?
-              root.get("next_cursor").string() : std::string{};
-        } while (!cursor.empty());
-      };
-      collect(page_id, 0);
-      if (equation_lookup_ok && !equations.empty())
-        source = apply_inline_equation_annotations(source, equations);
-    }
     page = {page_id, title_of(meta), {}, std::move(source),
             content.get("truncated").boolean()};
     return true;
   } catch (const std::exception &e) { error = e.what(); return false; }
 }
 
-std::string NotionClient::apply_inline_equation_annotations(
-    const std::string &markdown, const std::vector<Json> &equations) {
-  std::string result;
-  result.reserve(markdown.size());
-  std::size_t equation_index = 0;
-  bool fenced_code = false;
-  for (std::size_t i = 0; i < markdown.size();) {
-    const bool line_start = i == 0 || markdown[i - 1] == '\n';
-    if (line_start && markdown.compare(i, 3, "```") == 0) {
-      fenced_code = !fenced_code;
-      result += "```";
-      i += 3;
-      continue;
-    }
-    if (!fenced_code && markdown[i] == '`') {
-      const std::size_t end = markdown.find('`', i + 1);
-      if (end != std::string::npos) {
-        result.append(markdown, i, end - i + 1);
-        i = end + 1;
-        continue;
+bool NotionClient::retrieve_page_enrichment(
+    const std::string &token, const std::string &page_id,
+    std::vector<InlineEquationAnnotation> &annotations,
+    std::vector<RichTextColorEnrichment> &colors,
+    std::string &error) const {
+  try {
+    annotations.clear();
+    colors.clear();
+    std::size_t visited = 0;
+    std::size_t editable_index = 0;
+    std::function<bool(const std::string &, unsigned)> collect;
+    const auto append = [&](const Json &rich_text) {
+      for (const auto &part : rich_text.items()) {
+        if (part.get("type").string() != "equation") continue;
+        const Json &value = part.get("annotations");
+        annotations.push_back({
+            value.get("bold").boolean(),
+            value.get("italic").boolean(),
+            value.get("strikethrough").boolean(),
+            value.get("underline").boolean(),
+            value.get("color").string(),
+            part.get("equation").get("expression").string()});
       }
-    }
-    if (!fenced_code && markdown[i] == '$' &&
-        (i == 0 || markdown[i - 1] != '$') &&
-        (i + 1 >= markdown.size() || markdown[i + 1] != '$')) {
-      std::size_t end = i + 1;
-      while ((end = markdown.find('$', end)) != std::string::npos) {
-        std::size_t slashes = 0;
-        while (end > i + slashes && markdown[end - slashes - 1] == '\\')
-          ++slashes;
-        if ((slashes & 1) == 0) break;
-        ++end;
+    };
+    collect = [&](const std::string &parent, unsigned depth) {
+      if (depth > 32 || visited > 4096) {
+        error = "This page is too deeply nested to enrich safely";
+        return false;
       }
-      if (end != std::string::npos) {
-        const std::string token = markdown.substr(i, end - i + 1);
-        std::string expression = markdown.substr(i + 1, end - i - 1);
-        if (expression.size() >= 2 && expression.front() == '`' &&
-            expression.back() == '`')
-          expression = expression.substr(1, expression.size() - 2);
-        if (equation_index < equations.size() &&
-            equations[equation_index].get("equation").get("expression").string() ==
-                expression) {
-          const std::string color = equations[equation_index]
-              .get("annotations").get("color").string();
-          const Json &annotations =
-              equations[equation_index].get("annotations");
-          std::string decorated = token;
-          if (annotations.get("bold").boolean() &&
-              annotations.get("italic").boolean())
-            decorated = "***" + decorated + "***";
-          else if (annotations.get("bold").boolean())
-            decorated = "**" + decorated + "**";
-          else if (annotations.get("italic").boolean())
-            decorated = "*" + decorated + "*";
-          if (annotations.get("strikethrough").boolean())
-            decorated = "~~" + decorated + "~~";
-          if (annotations.get("underline").boolean() ||
-              (!color.empty() && color != "default")) {
-            std::string attributes;
-            if (annotations.get("underline").boolean())
-              attributes += " underline=\"true\"";
-            if (!color.empty() && color != "default")
-              attributes += " color=\"" + color + "\"";
-            decorated = "<span" + attributes + ">" + decorated + "</span>";
-          }
-          result += decorated;
-          ++equation_index;
-        } else {
-          result += token;
+      std::string cursor;
+      do {
+        std::string path = "/v1/blocks/" + parent + "/children?page_size=100";
+        if (!cursor.empty()) path += "&start_cursor=" + cursor;
+        const auto response = api_get(token, path);
+        if (response.status != 200) {
+          error = error_message(response);
+          return false;
         }
-        i = end + 1;
-        continue;
-      }
-    }
-    result.push_back(markdown[i++]);
+        const Json root = Json::parse(response.body);
+        for (const auto &block : root.get("results").items()) {
+          if (++visited > 4096) {
+            error = "This page has too many blocks to enrich safely";
+            return false;
+          }
+          const std::string type = block.get("type").string();
+          const Json &type_body = block.get(type);
+          const Json &rich_text = type_body.get("rich_text");
+          append(rich_text);
+          if (block_counts_as_editable(block)) {
+            RichTextColorEnrichment enrichment;
+            enrichment.editable_index = editable_index++;
+            enrichment.block_text = logical_rich_text(rich_text);
+            std::uint64_t at = 0;
+            for (const auto &part : rich_text.items()) {
+              const std::uint64_t length =
+                  part.get("type").string() == "text" ?
+                      utf16_length(part.get("plain_text").string()) : 1;
+              const std::string color =
+                  part.get("annotations").get("color").string();
+              if (!color.empty() && color != "default" && length) {
+                if (at > 0xffffffffull ||
+                    length > 0xffffffffull - at) {
+                  error = "This block is too large to enrich safely";
+                  return false;
+                }
+                if (!enrichment.ranges.empty() &&
+                    enrichment.ranges.back().end == at &&
+                    enrichment.ranges.back().color == color) {
+                  enrichment.ranges.back().end =
+                      static_cast<std::uint32_t>(at + length);
+                } else {
+                  enrichment.ranges.push_back({
+                      static_cast<std::uint32_t>(at),
+                      static_cast<std::uint32_t>(at + length), color});
+                }
+              }
+              at += length;
+            }
+            const std::size_t first =
+                enrichment.block_text.find_first_not_of(" \t\r");
+            const std::size_t last =
+                enrichment.block_text.find_last_not_of(" \t\r");
+            if (first != std::string::npos &&
+                (first != 0 || last + 1 != enrichment.block_text.size())) {
+              const std::uint32_t leading = static_cast<std::uint32_t>(
+                  utf16_length(enrichment.block_text.substr(0, first)));
+              const std::uint32_t visible_end = static_cast<std::uint32_t>(
+                  utf16_length(enrichment.block_text.substr(0, last + 1)));
+              std::vector<RichTextColorRange> adjusted;
+              for (const auto &range : enrichment.ranges) {
+                const std::uint32_t start = std::max(range.start, leading);
+                const std::uint32_t end = std::min(range.end, visible_end);
+                if (start < end)
+                  adjusted.push_back(
+                      {start - leading, end - leading, range.color});
+              }
+              enrichment.ranges = std::move(adjusted);
+              enrichment.block_text =
+                  enrichment.block_text.substr(first, last - first + 1);
+            }
+            if (!enrichment.ranges.empty())
+              colors.push_back(std::move(enrichment));
+          }
+          for (const auto &cell : type_body.get("cells").items()) append(cell);
+          append(type_body.get("caption"));
+          if (block.get("has_children").boolean() &&
+              type != "child_page" && type != "child_database" &&
+              !collect(block.get("id").string(), depth + 1))
+            return false;
+        }
+        cursor = root.get("has_more").boolean() ?
+            root.get("next_cursor").string() : std::string{};
+      } while (!cursor.empty());
+      return true;
+    };
+    return collect(page_id, 0);
+  } catch (const std::exception &exception) {
+    error = exception.what();
+    return false;
   }
-  return result;
 }
 bool NotionClient::build_formatted_rich_text(
     const Json &source, const std::string &expected_text,

@@ -7,6 +7,7 @@ namespace potion {
 struct Settings {
   double font_scale{1.0};
   std::string card_font{"Bookerly"};
+  int code_size{18};
   bool bionic_reading{};
   std::string word_spacing{"normal"};
   std::string line_spacing{"normal"};

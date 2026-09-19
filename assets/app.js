@@ -36,12 +36,17 @@
         IMAGE_COMPACT_MAX_HEIGHT = 430,
         IMAGE_RETRY_MAX_MS = 300000,
         IMAGE_AUTOMATIC_RETRY_LIMIT = 6;
+    var CODE_SIZE_MIN = 14,
+        CODE_SIZE_MAX = 30,
+        CODE_SIZE_STEP = 2;
     var selectionTimer = null,
         selectionState = null,
         selectionMenuActive = false,
         formatSaveBusy = false,
         formatSaveActive = null,
         formatSaveQueue = [],
+        pendingPageEnrichment = null,
+        pageGeneration = 0,
         selectionHoldTimer = null,
         selectionHoldActive = false,
         selectionHoldX = 0,
@@ -55,6 +60,7 @@
     var SELECTION_DRAG_UPDATE_MS = 50;
     var fontScales = [0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6],
         fontScale = 1,
+        codeSize = 18,
         pageFont = "Bookerly",
         bionicReading = false,
         bionicApplyBusy = false,
@@ -427,6 +433,7 @@
             selection = window.getSelection();
             if (selection && selection.removeAllRanges) selection.removeAllRanges();
         }
+        tryApplyPageEnrichment();
     }
 
     function editableIndex(block) {
@@ -870,6 +877,7 @@
         if (selectionHoldTimer !== null) window.clearTimeout(selectionHoldTimer);
         selectionHoldTimer = null;
         selectWordAtPoint(selectionHoldX, selectionHoldY);
+        if (!selectionHoldActive) tryApplyPageEnrichment();
     }
 
     function startSelectionHold(event) {
@@ -905,6 +913,7 @@
                        Math.abs(point.y - selectionHoldY) > 28) {
                 clearSelectionHoldTimer();
                 selectionHoldStartedAt = 0;
+                tryApplyPageEnrichment();
                 return;
             } else return;
         }
@@ -940,6 +949,7 @@
             window.setTimeout(function() { selectionSuppressClick = false; }, 800);
         }
         selectionHoldStartedAt = 0;
+        tryApplyPageEnrichment();
         return handled;
     }
 
@@ -1074,11 +1084,16 @@
         formatSaveActive = null;
         formatSaveBusy = false;
         if (refresh) refreshAfterLocalFormatting();
+        tryApplyPageEnrichment();
     }
 
     function runNextFormatSave() {
         var job, state, pageId, format, enabled;
-        if (formatSaveBusy || !formatSaveQueue.length) return;
+        if (formatSaveBusy) return;
+        if (!formatSaveQueue.length) {
+            tryApplyPageEnrichment();
+            return;
+        }
         job = formatSaveQueue.shift();
         formatSaveActive = job;
         state = job.state;
@@ -1374,6 +1389,8 @@
             bionicReading ? "on" : "off",
             "data-value"
         );
+        id("appearance-code-smaller").disabled = codeSize <= CODE_SIZE_MIN;
+        id("appearance-code-larger").disabled = codeSize >= CODE_SIZE_MAX;
     }
 
     function applySpacingClasses(root) {
@@ -1387,6 +1404,24 @@
             root.className += " line-spacing-" + lineSpacing;
     }
 
+    /* CODE_SIZE_LOGIC_BEGIN */
+    function applyCodeSizeClass(root) {
+        root.className = root.className.replace(
+            /(^|\s)code-size-\d+(?=\s|$)/g,
+            ""
+        );
+        root.className += " code-size-" + codeSize;
+    }
+
+    function adjustCodeSize(delta) {
+        var next = codeSize + delta;
+        if (next < CODE_SIZE_MIN) next = CODE_SIZE_MIN;
+        else if (next > CODE_SIZE_MAX) next = CODE_SIZE_MAX;
+        if (next === codeSize) return;
+        changeReaderAppearance("code", String(next));
+    }
+    /* CODE_SIZE_LOGIC_END */
+
     function applyAppearance(persist) {
         clearSelectionMenu(true);
         var root = id("page-content");
@@ -1399,6 +1434,7 @@
         ) + " " + pageFontClasses[pageFont];
         applyBionicClass();
         applySpacingClasses(root);
+        applyCodeSizeClass(root);
 
         if (night) {
             if (document.documentElement.className.indexOf("night-mode") < 0)
@@ -1482,6 +1518,10 @@
             fontScale = parseFloat(value);
             settingKey = "fontScale";
             value = String(fontScale);
+        } else if (kind === "code") {
+            codeSize = parseInt(value, 10);
+            settingKey = "codeSize";
+            value = String(codeSize);
         } else if (kind === "word") {
             wordSpacing = value;
             settingKey = "wordSpacing";
@@ -2068,6 +2108,7 @@
         positionRestoreAnchor = null;
         root.style.visibility = "";
         transientReadingPosition = currentReadingPosition();
+        tryApplyPageEnrichment();
     }
 
     function armReadingRestoreQuietPeriod() {
@@ -2102,6 +2143,7 @@
             positionRestoring = false;
             positionRestoreAnchor = null;
             transientReadingPosition = currentReadingPosition();
+            tryApplyPageEnrichment();
             return false;
         }
 
@@ -3053,6 +3095,205 @@
         );
     }
 
+    /* EQUATION_ENRICHMENT_BEGIN */
+    function equationColorClass(color) {
+        var classes = {
+            gray: "notion-color-gray",
+            brown: "notion-color-brown",
+            orange: "notion-color-orange",
+            yellow: "notion-color-yellow",
+            green: "notion-color-green",
+            blue: "notion-color-blue",
+            purple: "notion-color-purple",
+            pink: "notion-color-pink",
+            red: "notion-color-red",
+            gray_background: "notion-color-gray-bg",
+            brown_background: "notion-color-brown-bg",
+            orange_background: "notion-color-orange-bg",
+            yellow_background: "notion-color-yellow-bg",
+            green_background: "notion-color-green-bg",
+            blue_background: "notion-color-blue-bg",
+            purple_background: "notion-color-purple-bg",
+            pink_background: "notion-color-pink-bg",
+            red_background: "notion-color-red-bg"
+        };
+
+        return classes[color] || "";
+    }
+
+    function ancestorHasClass(node, stop, className) {
+        var classes;
+        while (node && node !== stop) {
+            if (node.nodeType === 1) {
+                classes = " " + node.className + " ";
+                if (classes.indexOf(" " + className + " ") >= 0)
+                    return true;
+            }
+            node = node.parentNode;
+        }
+        return false;
+    }
+
+    function logicalRangeHasColor(content, start, end, colorClass) {
+        var at = 0, any = false, all = true;
+        function visit(node) {
+            var leaf = null, next, child;
+            if (node.nodeType === 3) leaf = node.nodeValue;
+            else if (node.nodeType === 1 &&
+                     node.tagName.toLowerCase() === "br") leaf = "\n";
+            else if (node.nodeType === 1 &&
+                     node.getAttribute("data-potion-atomic") !== null)
+                leaf = "\ufffc";
+            if (leaf !== null) {
+                next = at + leaf.length;
+                if (at < end && next > start) {
+                    any = true;
+                    if (!ancestorHasClass(node, content, colorClass))
+                        all = false;
+                }
+                at = next;
+                return;
+            }
+            child = node.firstChild;
+            while (child) {
+                visit(child);
+                child = child.nextSibling;
+            }
+        }
+        visit(content);
+        return any && all;
+    }
+
+    function applyEnrichedColor(content, color) {
+        var colorClass = equationColorClass(color.color),
+            range, fragment, wrapper;
+        if (!colorClass || color.end <= color.start ||
+            logicalRangeHasColor(
+                content, color.start, color.end, colorClass))
+            return;
+        range = logicalRange(content, color.start, color.end);
+        if (!range) return;
+        try {
+            fragment = range.extractContents();
+            cleanSelectionFragment(fragment, "highlight");
+            wrapper = document.createElement("span");
+            wrapper.className = "notion-color " + colorClass;
+            wrapper.appendChild(fragment);
+            range.insertNode(wrapper);
+            if (content.normalize) content.normalize();
+        } catch (ignored) {}
+    }
+
+    function equationBaseClassName(node) {
+        var className = node.className.replace(
+            /(^|\s)(?:notion-color(?:-[^\s]+)?|potion-equation-(?:bold|italic|strikethrough|underline))(?=\s|$)/g,
+            " "
+        ).replace(/^\s+|\s+$/g, "").replace(/\s+/g, " ");
+        return className || "math";
+    }
+
+    function applyEquationEnrichment(pageId, result) {
+        var root = id("page-content"),
+            all, equations, blocks, editableBlocks, content, nodes = [],
+            colorClass, i, j, block, annotation, className;
+
+        if (pageId !== currentPageId ||
+            id("reader-view").className.indexOf("hidden") >= 0 ||
+            !result || !result.equations)
+            return;
+
+        equations = result.equations;
+        blocks = result.blocks || [];
+        all = root.getElementsByClassName("math");
+
+        for (i = 0; i < all.length; ++i) {
+            if (all[i].getAttribute("data-potion-atomic") === "1")
+                nodes.push(all[i]);
+        }
+
+        /* Never risk applying annotations to the wrong equation. */
+        if (nodes.length !== equations.length) return;
+        for (i = 0; i < nodes.length; ++i) {
+            if (nodes[i].getAttribute("data-potion-expression") !==
+                equations[i].expression)
+                return;
+        }
+
+        editableBlocks = root.getElementsByClassName("potion-editable");
+        for (i = 0; i < blocks.length; ++i) {
+            block = blocks[i];
+            if (block.editableIndex < 0 ||
+                block.editableIndex >= editableBlocks.length)
+                continue;
+            content = editableBlocks[block.editableIndex]
+                .getElementsByClassName("potion-editable-content")[0];
+            if (!content || logicalNodeText(content) !== block.blockText)
+                continue;
+            for (j = 0; j < block.colors.length; ++j)
+                applyEnrichedColor(content, block.colors[j]);
+        }
+
+        for (i = 0; i < nodes.length; ++i) {
+            annotation = equations[i] || {};
+            className = equationBaseClassName(nodes[i]);
+            colorClass = equationColorClass(annotation.color);
+            if (colorClass &&
+                !ancestorHasClass(nodes[i].parentNode, root, colorClass))
+                className += " notion-color " + colorClass;
+            if (annotation.bold)
+                className += " potion-equation-bold";
+            if (annotation.italic)
+                className += " potion-equation-italic";
+            if (annotation.strikethrough)
+                className += " potion-equation-strikethrough";
+            if (annotation.underline)
+                className += " potion-equation-underline";
+            nodes[i].className = className;
+        }
+
+        if (night && nightPageMode !== "standard")
+            applyNightPageAppearance();
+        collectReadingBlocks();
+        scheduleMathRepair(0);
+        updateScroll();
+    }
+
+    function loadEquationEnrichment(pageId, generation) {
+        request(
+            "GET",
+            "/api/pages/" + encodeURIComponent(pageId) + "/enrichment",
+            null,
+            function(error, result) {
+                /* Enrichment is optional; the already-rendered page remains usable. */
+                if (!error && pageId === currentPageId &&
+                    generation === pageGeneration) {
+                    pendingPageEnrichment = {
+                        pageId: pageId,
+                        generation: generation,
+                        result: result
+                    };
+                    tryApplyPageEnrichment();
+                }
+            }
+        );
+    }
+
+    function tryApplyPageEnrichment() {
+        var pending;
+        if (!pendingPageEnrichment || positionRestoring || selectionState ||
+            selectionHoldTimer !== null || selectionHoldActive ||
+            selectionDragActive ||
+            formatSaveBusy || formatSaveQueue.length)
+            return;
+        pending = pendingPageEnrichment;
+        pendingPageEnrichment = null;
+        if (pending.pageId !== currentPageId ||
+            pending.generation !== pageGeneration)
+            return;
+        applyEquationEnrichment(pending.pageId, pending.result);
+    }
+    /* EQUATION_ENRICHMENT_END */
+
     function openPage(pageId, navigation, positionSaved) {
         if (busy) return;
 
@@ -3068,8 +3309,10 @@
         }
 
         var previous = currentPageId,
-            readerWasOpen = id("reader-view").className.indexOf("hidden") < 0;
+            readerWasOpen = id("reader-view").className.indexOf("hidden") < 0,
+            generation = ++pageGeneration;
 
+        pendingPageEnrichment = null;
         clearSelectionMenu(true);
         setAppearanceButtonVisible(false);
 
@@ -3108,6 +3351,7 @@
                 setPinButton(id("page-pin"), currentPagePinned);
 
                 restoreNightPalette(id("page-content"));
+                pendingPageEnrichment = null;
                 resetMathRepair();
                 resetImageLoading();
                 clearReadingPositionState();
@@ -3152,6 +3396,9 @@
                         setBusy(false);
                         updateScroll();
                     }
+
+                    if (page.equationEnrichment)
+                        loadEquationEnrichment(currentPageId, generation);
                 }, 0);
             }
         );
@@ -3166,6 +3413,13 @@
                     fonts[settings.cardFont] ?
                         settings.cardFont :
                         "Bookerly";
+
+                codeSize =
+                    typeof settings.codeSize === "number" &&
+                    settings.codeSize >= CODE_SIZE_MIN &&
+                    settings.codeSize <= CODE_SIZE_MAX &&
+                    (settings.codeSize - CODE_SIZE_MIN) % CODE_SIZE_STEP === 0 ?
+                        settings.codeSize : 18;
 
                 bionicReading = settings.bionicReading === true;
 
@@ -3357,6 +3611,12 @@
     connectAppearanceSegments("appearance-word-spacing", "word");
     connectAppearanceSegments("appearance-line-spacing", "line");
     connectAppearanceSegments("appearance-bionic-reading", "bionic");
+    id("appearance-code-smaller").onclick = function() {
+        adjustCodeSize(-CODE_SIZE_STEP);
+    };
+    id("appearance-code-larger").onclick = function() {
+        adjustCodeSize(CODE_SIZE_STEP);
+    };
 
     id("night").onclick = function() {
         night = !night;

@@ -8,6 +8,19 @@
 namespace potion {
 struct PageSummary { std::string id, title, icon, edited; };
 struct PageDocument { std::string id, title, icon, markdown; bool truncated{}; };
+struct InlineEquationAnnotation {
+  bool bold{}, italic{}, strikethrough{}, underline{};
+  std::string color, expression;
+};
+struct RichTextColorRange {
+  std::uint32_t start{}, end{};
+  std::string color;
+};
+struct RichTextColorEnrichment {
+  std::size_t editable_index{};
+  std::string block_text;
+  std::vector<RichTextColorRange> ranges;
+};
 struct BinaryResponse { std::string content_type, body; };
 class NotionClient {
 public:
@@ -20,6 +33,11 @@ public:
                                         std::string &error) const;
   bool retrieve_page(const std::string &token, const std::string &page_id,
                      PageDocument &page, std::string &error) const;
+  bool retrieve_page_enrichment(
+      const std::string &token, const std::string &page_id,
+      std::vector<InlineEquationAnnotation> &annotations,
+      std::vector<RichTextColorEnrichment> &colors,
+      std::string &error) const;
   bool format_block_text(const std::string &token, const std::string &page_id,
                          std::size_t editable_index,
                          const std::string &expected_text,
@@ -32,8 +50,6 @@ public:
       std::uint32_t start_utf16, std::uint32_t end_utf16,
       const std::string &selected_text, const std::string &format,
       Json &formatted, std::string &error, bool *enabled = nullptr);
-  static std::string apply_inline_equation_annotations(
-      const std::string &markdown, const std::vector<Json> &equations);
   static bool block_counts_as_editable(const Json &block);
   static void add_svg_intrinsic_dimensions(std::string &body);
   bool retrieve_image(const std::string &url, BinaryResponse &image,

@@ -378,6 +378,60 @@ void HttpServer::handle_client(int client) noexcept {
       else body += "null";
       respond(client, 200, "OK", "application/json", body + "}");
     } else if (request.method == "GET" &&
+               request.target.compare(0, 11, "/api/pages/") == 0 &&
+               request.target.size() > 22 &&
+               request.target.compare(request.target.size() - 11, 11,
+                                      "/enrichment") == 0) {
+      if (!state_.authenticated())
+        throw std::runtime_error("Connect Potion to Notion first");
+      const std::string id = request.target.substr(11, request.target.size() - 22);
+      if (!valid_page_id(id)) throw std::runtime_error("Invalid page id");
+      std::vector<InlineEquationAnnotation> annotations;
+      std::vector<RichTextColorEnrichment> colors;
+      std::string error;
+      if (!notion_.retrieve_page_enrichment(
+              state_.token(), id, annotations, colors, error))
+        throw std::runtime_error(error);
+      std::string body = R"({"type":"page-enrichment","equations":[)";
+      bool first = true;
+      for (const auto &annotation : annotations) {
+        if (!first) body += ',';
+        first = false;
+        body += std::string(R"({"bold":)") +
+                (annotation.bold ? "true" : "false") +
+                R"(,"italic":)" + (annotation.italic ? "true" : "false") +
+                R"(,"strikethrough":)" +
+                (annotation.strikethrough ? "true" : "false") +
+                R"(,"underline":)" +
+                (annotation.underline ? "true" : "false") +
+                R"(,"color":)" +
+                json_escape(annotation.color.empty() ? "default" :
+                                                     annotation.color) +
+                R"(,"expression":)" +
+                json_escape(annotation.expression) + "}";
+      }
+      body += R"(],"blocks":[)";
+      first = true;
+      for (const auto &block : colors) {
+        if (!first) body += ',';
+        first = false;
+        body += R"({"editableIndex":)" +
+                std::to_string(block.editable_index) +
+                R"(,"blockText":)" + json_escape(block.block_text) +
+                R"(,"colors":[)";
+        bool first_range = true;
+        for (const auto &range : block.ranges) {
+          if (!first_range) body += ',';
+          first_range = false;
+          body += R"({"start":)" + std::to_string(range.start) +
+                  R"(,"end":)" + std::to_string(range.end) +
+                  R"(,"color":)" + json_escape(range.color) + "}";
+        }
+        body += "]}";
+      }
+      body += "]}";
+      respond(client, 200, "OK", "application/json", body);
+    } else if (request.method == "GET" &&
                request.target.compare(0, 11, "/api/pages/") == 0) {
       const std::string id = request.target.substr(11);
       if (!valid_page_id(id)) throw std::runtime_error("Invalid page id");
@@ -386,9 +440,14 @@ void HttpServer::handle_client(int client) noexcept {
         throw std::runtime_error(error);
       const auto position = positions_.visit(page.id, unix_timestamp(), error);
       if (!error.empty()) std::cerr << "Reading position: " << error << '\n';
+      const std::string html = renderer_.render(page.markdown);
+      const bool equation_enrichment =
+          html.find("data-potion-expression=") != std::string::npos;
       std::string body = R"({"type":"page","id":)" + json_escape(page.id) +
         R"(,"title":)" + json_escape(page.title) +
-        R"(,"html":)" + json_escape(renderer_.render(page.markdown)) +
+        R"(,"html":)" + json_escape(html) +
+        R"(,"equationEnrichment":)" +
+        (equation_enrichment ? "true" : "false") +
         R"(,"truncated":)" + (page.truncated ? "true" : "false") +
         R"(,"pinned":)" + (state_.page_pinned(page.id) ? "true" : "false") +
         R"(,"position":)";

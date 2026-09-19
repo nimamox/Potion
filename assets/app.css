@@ -434,9 +434,20 @@ h2 {
   border: 2px solid #aaa;
   background: #faf8fb;
   text-align: left;
-  font: 18px/1.4 monospace;
+  font-family: monospace;
+  font-size: 18px;
+  line-height: 1.4;
   white-space: pre-wrap;
 }
+#page-content.code-size-14 pre { font-size: 14px; }
+#page-content.code-size-16 pre { font-size: 16px; }
+#page-content.code-size-18 pre { font-size: 18px; }
+#page-content.code-size-20 pre { font-size: 20px; }
+#page-content.code-size-22 pre { font-size: 22px; }
+#page-content.code-size-24 pre { font-size: 24px; }
+#page-content.code-size-26 pre { font-size: 26px; }
+#page-content.code-size-28 pre { font-size: 28px; }
+#page-content.code-size-30 pre { font-size: 30px; }
 .page-content code {
   padding: 2px 6px;
   background: #faf8fb;
@@ -496,7 +507,8 @@ h2 {
   color: #111;
 }
 .page-content a,
-.page-content u {
+.page-content u,
+.page-content .math.potion-equation-underline {
   padding-bottom: 5px;
   text-decoration: none;
   background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAwAAAAHCAQAAACWu2SvAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAACYktHRAD/h4/MvwAAAAd0SU1FB+oIHQwvChLbftAAAAAldEVYdGRhdGU6Y3JlYXRlADIwMjYtMDgtMjlUMTI6NDc6MTArMDA6MDAdd4O2AAAAJXRFWHRkYXRlOm1vZGlmeQAyMDI2LTA4LTI5VDEyOjQ3OjEwKzAwOjAwbCo7CgAAACh0RVh0ZGF0ZTp0aW1lc3RhbXAAMjAyNi0wOC0yOVQxMjo0NzoxMCswMDowMDs/GtUAAABCSURBVAjXdc6xDcAgAAPBUyo6MlJYiLWYgtmchoJEwp39lmWgelQ/FVNETGUHY8URYwcRzaWJ6CvtPmYvuQ+zpyMvkxQgGAmKtl4AAAAASUVORK5CYII=");
@@ -506,6 +518,15 @@ h2 {
 .page-content a u {
   padding-bottom: 0;
   background-image: none;
+}
+.page-content .math.potion-equation-bold {
+  font-weight: bold;
+}
+.page-content .math.potion-equation-italic {
+  font-style: italic;
+}
+.page-content .math.potion-equation-strikethrough {
+  text-decoration: line-through;
 }
 .page-content [dir="rtl"] {
   direction: rtl;
@@ -622,7 +643,7 @@ h2 {
   bottom: 0;
   left: 0;
   width: 96%;
-  height: 520px;
+  height: 590px;
   margin: 0 auto;
   padding: 14px 20px 16px;
   border-top: 4px solid #111;
@@ -750,7 +771,13 @@ h2 {
 }
 .appearance-segments button:first-child { width: 40%; border-left: 2px solid #111; }
 .appearance-bionic-segments button,
-.appearance-bionic-segments button:first-child { width: 50%; }
+.appearance-bionic-segments button:first-child,
+.appearance-code-size-segments button,
+.appearance-code-size-segments button:first-child { width: 50%; }
+.appearance-code-size-segments button:disabled {
+  color: #888;
+  border-color: #888;
+}
 .appearance-segments button.selected {
   background: #111;
   color: #fff;
@@ -1197,7 +1224,8 @@ h2 {
   color: #eee;
 }
 .night-mode .page-content a,
-.night-mode .page-content u {
+.night-mode .page-content u,
+.night-mode .page-content .math.potion-equation-underline {
   background-image: url("data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAwAAAAHCAQAAACWu2SvAAAAIGNIUk0AAHomAACAhAAA+gAAAIDoAAB1MAAA6mAAADqYAAAXcJy6UTwAAAACYktHRAD/h4/MvwAAAAd0SU1FB+oIHQwvChLbftAAAAAldEVYdGRhdGU6Y3JlYXRlADIwMjYtMDgtMjlUMTI6NDc6MTArMDA6MDAdd4O2AAAAJXRFWHRkYXRlOm1vZGlmeQAyMDI2LTA4LTI5VDEyOjQ3OjEwKzAwOjAwbCo7CgAAACh0RVh0ZGF0ZTp0aW1lc3RhbXAAMjAyNi0wOC0yOVQxMjo0NzoxMCswMDowMDs/GtUAAABFSURBVAjXVc6xDYAwEEPRE1W6MBJZKGtlisz2KEDC2NXpWz6XUrpLV+nSbI+2lmD5tBLAcBhgvmBWHhkqZ7yM2t+SHHIDV+dzxJ5DXSAAAAAASUVORK5CYII=");
 }
 .night-mode .page-content a u {
