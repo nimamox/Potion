@@ -734,6 +734,12 @@ assert.match(frontend,
   /!pendingPageEnrichment \|\| positionRestoring \|\| selectionState \|\|\s*selectionHoldTimer !== null/,
   "enrichment waits for reading restoration and pending long presses");
 assert.match(frontend,
+  /function schedulePageEnrichmentApply\(\)[\s\S]*window\.setTimeout[\s\S]*tryApplyPageEnrichment/,
+  "selection callbacks must defer enrichment DOM changes to a later task");
+assert.match(frontend,
+  /selection = window\.getSelection\(\);\s*if \(selection && selection\.rangeCount && !selection\.isCollapsed\)\s*return;/,
+  "enrichment must not rewrite text underneath a native selection");
+assert.match(frontend,
   /data-potion-expression[\s\S]*equations\[i\]\.expression/,
   "equation annotations are matched by expression, not count alone");
 assert.match(appCss,
@@ -971,7 +977,7 @@ function optimisticContext() {
     collectReadingBlocks: function() { calls.push("blocks"); },
     applyNightPageAppearance: function() { calls.push("night"); },
     updateScroll: function() { calls.push("scroll"); },
-    tryApplyPageEnrichment: function() { calls.push("enrichment"); },
+    schedulePageEnrichmentApply: function() { calls.push("enrichment"); },
     setSelectionButtonsDisabled: function(value) { calls.push("disabled:" + value); },
     warning: function(message) { calls.push("warning:" + message); },
     request: function(method, url, body, callback) {
@@ -1093,7 +1099,7 @@ const finishContext = {
   },
   beginCustomSelection: function() { finishCalls.push("begin"); },
   inspectSelection: function(source) { finishCalls.push("inspect:" + source); },
-  tryApplyPageEnrichment: function() {},
+  schedulePageEnrichmentApply: function() {},
   window: { setTimeout: function() {} },
   Date: Date
 };
@@ -1144,10 +1150,12 @@ const nativeSelection = {
 const dragThrottleContext = {
   selectionDragUpdateTimer: null,
   selectionDragPoint: null,
+  selectionDragLastUpdateAt: 0,
   selectionHoldActive: true,
   selectionDragActive: true,
   selectionAnchor: {node: anchorNode, start: 1, end: 4},
-  SELECTION_DRAG_UPDATE_MS: 50,
+  selectionDragUpdateMs: 50,
+  SELECTION_DRAG_UPDATE_NORMAL_MS: 50,
   caretAtPoint: function(pointX) {
     dragThrottleCalls.push("caret:" + pointX);
     return {startContainer: endpointNode, startOffset: 8};
@@ -1183,6 +1191,21 @@ assert.deepEqual(dragThrottleCalls,
   "the timer applies only the newest point through setBaseAndExtent");
 assert.equal(dragThrottleCalls.includes("remove"), false,
   "the preferred drag path does not replace the native Range");
+const liveLargePageCalls = [];
+const originalUpdateCustomSelection = dragThrottleContext.updateCustomSelection;
+dragThrottleContext.selectionDragUpdateMs = 75;
+dragThrottleContext.selectionDragLastUpdateAt = 0;
+dragThrottleContext.updateCustomSelection = function(point) {
+  liveLargePageCalls.push(point.x + "," + point.y);
+};
+dragThrottleContext.scheduleDragSelectionUpdate({x: 70, y: 80});
+assert.deepEqual(liveLargePageCalls, ["70,80"],
+  "a large page applies its first paced update inside touchmove");
+assert.equal(dragThrottleContext.selectionDragUpdateTimer, null,
+  "the live large-page update does not wait for a starvable timer");
+dragThrottleContext.selectionDragUpdateMs = 50;
+dragThrottleContext.selectionDragLastUpdateAt = 0;
+dragThrottleContext.updateCustomSelection = originalUpdateCustomSelection;
 const wordNode = {
   nodeType: 3,
   nodeValue: "virtualization",
@@ -1222,6 +1245,46 @@ dragThrottleContext.window.getSelection = function() {
 assert.equal(dragThrottleContext.updateCustomSelection({x: 0, y: 0}), true);
 assert.deepEqual(extendCalls, ["collapse:4", "extend:0"],
   "Selection.extend fallback keeps the far edge of the original word anchored");
+const silentNoopCalls = [];
+const fallbackRange = {
+  setStart: function(node, offset) {
+    silentNoopCalls.push("start:" + offset + ":" + (node === anchorNode));
+  },
+  setEnd: function(node, offset) {
+    silentNoopCalls.push("end:" + offset + ":" + (node === endpointNode));
+  }
+};
+dragThrottleContext.selectionAnchor = {node: anchorNode, start: 1, end: 4};
+dragThrottleContext.caretAtPoint = function() {
+  return {startContainer: endpointNode, startOffset: 8};
+};
+dragThrottleContext.document.createRange = function() {
+  silentNoopCalls.push("range");
+  return fallbackRange;
+};
+dragThrottleContext.window.getSelection = function() {
+  return {
+    rangeCount: 1,
+    setBaseAndExtent: function() { silentNoopCalls.push("extent-noop"); },
+    getRangeAt: function() {
+      return {
+        startContainer: anchorNode,
+        startOffset: 1,
+        endContainer: anchorNode,
+        endOffset: 4
+      };
+    },
+    removeAllRanges: function() { silentNoopCalls.push("remove"); },
+    addRange: function(range) {
+      assert.equal(range, fallbackRange);
+      silentNoopCalls.push("add");
+    }
+  };
+};
+assert.equal(dragThrottleContext.updateCustomSelection({x: 3, y: 3}), true);
+assert.deepEqual(silentNoopCalls,
+  ["extent-noop", "range", "start:1:true", "end:8:true", "remove", "add"],
+  "a silently ignored setBaseAndExtent falls back to replacing the Range");
 dragThrottleContext.scheduleDragSelectionUpdate({x: 50, y: 60});
 dragThrottleContext.clearDragSelectionUpdate();
 assert.equal(dragThrottleContext.selectionDragUpdateTimer, null);
@@ -1232,6 +1295,9 @@ assert.match(frontend,
   /function clearSelectionMenu\(clearNative\)[\s\S]*clearDragSelectionUpdate\(\)/,
   "clearing selection cancels a pending drag update");
 assert.doesNotMatch(dragThrottleMatch[1], /inspectSelection/);
+assert.match(frontend,
+  /page\.html\.length >= SELECTION_DRAG_LARGE_HTML_BYTES[\s\S]*SELECTION_DRAG_UPDATE_LARGE_MS[\s\S]*SELECTION_DRAG_UPDATE_NORMAL_MS/,
+  "very large pages use slower drag updates so Mesquite can paint each range");
 
 const moveMatch = frontend.match(
   /(function moveCustomSelection\(event\) \{[\s\S]*?\n    \})\n\n    function finishSelectionHold/);
@@ -1378,7 +1444,7 @@ function readingRestoreFixture() {
     currentPageId: "page",
     mathRepairTimer: null,
     imageNodes: [],
-    tryApplyPageEnrichment: function() {},
+    schedulePageEnrichmentApply: function() {},
     window: {
       setTimeout: function(callback, delay) {
         const timer = {callback, delay, cancelled: false};

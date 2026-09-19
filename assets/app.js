@@ -46,6 +46,7 @@
         formatSaveActive = null,
         formatSaveQueue = [],
         pendingPageEnrichment = null,
+        pageEnrichmentApplyTimer = null,
         pageGeneration = 0,
         selectionHoldTimer = null,
         selectionHoldActive = false,
@@ -56,8 +57,13 @@
         selectionAnchor = null,
         selectionSuppressClick = false;
     var selectionDragUpdateTimer = null,
-        selectionDragPoint = null;
-    var SELECTION_DRAG_UPDATE_MS = 50;
+        selectionDragPoint = null,
+        selectionDragLastUpdateAt = 0;
+    var selectionDragUpdateMs = 50;
+    var SELECTION_DRAG_UPDATE_NORMAL_MS = 50,
+        SELECTION_DRAG_UPDATE_LARGE_MS = 75,
+        SELECTION_DRAG_LARGE_HTML_BYTES = 200000;
+    var PAGE_ENRICHMENT_APPLY_DELAY_MS = 120;
     var fontScales = [0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6],
         fontScale = 1,
         codeSize = 18,
@@ -433,7 +439,7 @@
             selection = window.getSelection();
             if (selection && selection.removeAllRanges) selection.removeAllRanges();
         }
-        tryApplyPageEnrichment();
+        schedulePageEnrichmentApply();
     }
 
     function editableIndex(block) {
@@ -737,6 +743,7 @@
             selectionDragUpdateTimer = null;
         }
         selectionDragPoint = null;
+        selectionDragLastUpdateAt = 0;
     }
 
     function snapCaretToWord(caret, before) {
@@ -756,9 +763,28 @@
         return {startContainer: node, startOffset: offset};
     }
 
+    function selectionHasRange(selection, startNode, startOffset,
+                               endNode, endOffset) {
+        var actual;
+        /* Some old Selection implementations do not expose a readable Range.
+         * In that case retain the historical optimistic behavior. */
+        if (!selection.getRangeAt || typeof selection.rangeCount !== "number")
+            return true;
+        if (selection.rangeCount < 1) return false;
+        try {
+            actual = selection.getRangeAt(0);
+            return actual.startContainer === startNode &&
+                actual.startOffset === startOffset &&
+                actual.endContainer === endNode &&
+                actual.endOffset === endOffset;
+        } catch (ignored) {}
+        return false;
+    }
+
     function updateCustomSelection(point) {
         var caret, content, before, selection, range,
-            anchorNode, anchorOffset;
+            anchorNode, anchorOffset, startNode, startOffset,
+            endNode, endOffset;
         if (!point || !selectionAnchor || !window.getSelection) return false;
         caret = caretAtPoint(point.x, point.y);
         content = caret && selectionAncestor(
@@ -774,6 +800,10 @@
         caret = snapCaretToWord(caret, before);
         anchorNode = selectionAnchor.node;
         anchorOffset = before ? selectionAnchor.end : selectionAnchor.start;
+        startNode = before ? caret.startContainer : selectionAnchor.node;
+        startOffset = before ? caret.startOffset : selectionAnchor.start;
+        endNode = before ? selectionAnchor.node : caret.startContainer;
+        endOffset = before ? selectionAnchor.end : caret.startOffset;
         selection = window.getSelection();
         if (!selection) return false;
         if (selection.setBaseAndExtent) {
@@ -781,39 +811,59 @@
                 selection.setBaseAndExtent(
                     anchorNode, anchorOffset,
                     caret.startContainer, caret.startOffset);
-                return true;
+                if (selectionHasRange(
+                    selection, startNode, startOffset, endNode, endOffset))
+                    return true;
             } catch (ignored) {}
         }
         if (selection.collapse && selection.extend) {
             try {
                 selection.collapse(anchorNode, anchorOffset);
                 selection.extend(caret.startContainer, caret.startOffset);
-                return true;
+                if (selectionHasRange(
+                    selection, startNode, startOffset, endNode, endOffset))
+                    return true;
             } catch (ignored) {}
         }
         range = document.createRange();
-        if (before) {
-            range.setStart(caret.startContainer, caret.startOffset);
-            range.setEnd(selectionAnchor.node, selectionAnchor.end);
-        } else {
-            range.setStart(selectionAnchor.node, selectionAnchor.start);
-            range.setEnd(caret.startContainer, caret.startOffset);
-        }
+        range.setStart(startNode, startOffset);
+        range.setEnd(endNode, endOffset);
         selection.removeAllRanges();
         selection.addRange(range);
         return true;
     }
 
     function scheduleDragSelectionUpdate(point) {
+        var now = new Date().getTime();
         selectionDragPoint = point;
+
+        /* Mesquite can postpone timers for as long as touchmove events keep
+         * arriving.  On very large pages, perform the paced leading updates
+         * inside touchmove itself so the highlight advances while the finger
+         * is moving.  The timer below still supplies the trailing update when
+         * the finger pauses. */
+        if (selectionDragUpdateMs > SELECTION_DRAG_UPDATE_NORMAL_MS &&
+            (!selectionDragLastUpdateAt ||
+             now - selectionDragLastUpdateAt >= selectionDragUpdateMs)) {
+            if (selectionDragUpdateTimer !== null) {
+                window.clearTimeout(selectionDragUpdateTimer);
+                selectionDragUpdateTimer = null;
+            }
+            selectionDragPoint = null;
+            selectionDragLastUpdateAt = now;
+            updateCustomSelection(point);
+            return;
+        }
         if (selectionDragUpdateTimer !== null) return;
         selectionDragUpdateTimer = window.setTimeout(function() {
             var latest = selectionDragPoint;
             selectionDragUpdateTimer = null;
             selectionDragPoint = null;
-            if (selectionHoldActive && selectionDragActive)
+            if (selectionHoldActive && selectionDragActive) {
+                selectionDragLastUpdateAt = new Date().getTime();
                 updateCustomSelection(latest);
-        }, SELECTION_DRAG_UPDATE_MS);
+            }
+        }, selectionDragUpdateMs);
     }
     /* DRAG_SELECTION_UPDATE_END */
 
@@ -877,7 +927,7 @@
         if (selectionHoldTimer !== null) window.clearTimeout(selectionHoldTimer);
         selectionHoldTimer = null;
         selectWordAtPoint(selectionHoldX, selectionHoldY);
-        if (!selectionHoldActive) tryApplyPageEnrichment();
+        if (!selectionHoldActive) schedulePageEnrichmentApply();
     }
 
     function startSelectionHold(event) {
@@ -913,7 +963,7 @@
                        Math.abs(point.y - selectionHoldY) > 28) {
                 clearSelectionHoldTimer();
                 selectionHoldStartedAt = 0;
-                tryApplyPageEnrichment();
+                schedulePageEnrichmentApply();
                 return;
             } else return;
         }
@@ -949,7 +999,7 @@
             window.setTimeout(function() { selectionSuppressClick = false; }, 800);
         }
         selectionHoldStartedAt = 0;
-        tryApplyPageEnrichment();
+        schedulePageEnrichmentApply();
         return handled;
     }
 
@@ -1084,14 +1134,14 @@
         formatSaveActive = null;
         formatSaveBusy = false;
         if (refresh) refreshAfterLocalFormatting();
-        tryApplyPageEnrichment();
+        schedulePageEnrichmentApply();
     }
 
     function runNextFormatSave() {
         var job, state, pageId, format, enabled;
         if (formatSaveBusy) return;
         if (!formatSaveQueue.length) {
-            tryApplyPageEnrichment();
+            schedulePageEnrichmentApply();
             return;
         }
         job = formatSaveQueue.shift();
@@ -2108,7 +2158,7 @@
         positionRestoreAnchor = null;
         root.style.visibility = "";
         transientReadingPosition = currentReadingPosition();
-        tryApplyPageEnrichment();
+        schedulePageEnrichmentApply();
     }
 
     function armReadingRestoreQuietPeriod() {
@@ -2143,7 +2193,7 @@
             positionRestoring = false;
             positionRestoreAnchor = null;
             transientReadingPosition = currentReadingPosition();
-            tryApplyPageEnrichment();
+            schedulePageEnrichmentApply();
             return false;
         }
 
@@ -3272,19 +3322,33 @@
                         generation: generation,
                         result: result
                     };
-                    tryApplyPageEnrichment();
+                    schedulePageEnrichmentApply();
                 }
             }
         );
     }
 
+    function schedulePageEnrichmentApply() {
+        if (!pendingPageEnrichment || pageEnrichmentApplyTimer !== null)
+            return;
+        pageEnrichmentApplyTimer = window.setTimeout(function() {
+            pageEnrichmentApplyTimer = null;
+            tryApplyPageEnrichment();
+        }, PAGE_ENRICHMENT_APPLY_DELAY_MS);
+    }
+
     function tryApplyPageEnrichment() {
-        var pending;
+        var pending, selection;
         if (!pendingPageEnrichment || positionRestoring || selectionState ||
             selectionHoldTimer !== null || selectionHoldActive ||
             selectionDragActive ||
             formatSaveBusy || formatSaveQueue.length)
             return;
+        if (window.getSelection) {
+            selection = window.getSelection();
+            if (selection && selection.rangeCount && !selection.isCollapsed)
+                return;
+        }
         pending = pendingPageEnrichment;
         pendingPageEnrichment = null;
         if (pending.pageId !== currentPageId ||
@@ -3312,6 +3376,10 @@
             readerWasOpen = id("reader-view").className.indexOf("hidden") < 0,
             generation = ++pageGeneration;
 
+        if (pageEnrichmentApplyTimer !== null) {
+            window.clearTimeout(pageEnrichmentApplyTimer);
+            pageEnrichmentApplyTimer = null;
+        }
         pendingPageEnrichment = null;
         clearSelectionMenu(true);
         setAppearanceButtonVisible(false);
@@ -3369,6 +3437,10 @@
 
                 id("page-content").innerHTML = page.html;
                 id("page-content").scrollTop = 0;
+                selectionDragUpdateMs =
+                    page.html.length >= SELECTION_DRAG_LARGE_HTML_BYTES ?
+                        SELECTION_DRAG_UPDATE_LARGE_MS :
+                        SELECTION_DRAG_UPDATE_NORMAL_MS;
 
                 if (page.position)
                     id("page-content").style.visibility = "hidden";
