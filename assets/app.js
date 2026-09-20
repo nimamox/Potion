@@ -716,6 +716,10 @@
             range: range.cloneRange(),
             content: startContent,
             editableIndex: index,
+            notionBlockId:
+                startContent.getAttribute("data-notion-block-id") || "",
+            notionBlockType:
+                startContent.getAttribute("data-notion-block-type") || "",
             blockText: blockText,
             selectedText: text,
             start: start,
@@ -1188,6 +1192,8 @@
                 content: state.content,
                 range: state.range,
                 editableIndex: state.editableIndex,
+                notionBlockId: state.notionBlockId,
+                notionBlockType: state.notionBlockType,
                 blockText: state.blockText,
                 selectedText: state.selectedText,
                 start: state.start,
@@ -1199,6 +1205,8 @@
             previousHtml: state.content.innerHTML
         };
         job.body = "editableIndex=" + job.state.editableIndex +
+            "&blockId=" + encodeURIComponent(job.state.notionBlockId || "") +
+            "&blockType=" + encodeURIComponent(job.state.notionBlockType || "") +
             "&start=" + job.state.start +
             "&end=" + job.state.end +
             "&format=" + encodeURIComponent(format) +
@@ -1906,6 +1914,52 @@
         hide(id("settings"));
         id("status").innerHTML = "Connect to Notion";
         updateScroll();
+    }
+
+    function showRemoteSetupUrl(url) {
+        var container = id("remote-setup"), output = id("remote-setup-url");
+        output.innerHTML = "";
+        if (!url) {
+            hide(container);
+            return;
+        }
+        output.appendChild(document.createTextNode(url));
+        show(container);
+    }
+
+    function checkRemoteSetup() {
+        setBusy(true);
+        id("status").innerHTML = "Checking connection...";
+        request("GET", "/api/status", null, function(error, status) {
+            setBusy(false);
+            if (error) {
+                warning(error);
+                connectView();
+                return;
+            }
+            if (status.authenticated) {
+                showRemoteSetupUrl("");
+                loadPages();
+                return;
+            }
+            showRemoteSetupUrl(status.remoteSetupUrl || "");
+            warning("The token has not been accepted yet.");
+            connectView();
+        });
+    }
+
+    function refreshRemoteSetupUrl(retry) {
+        request("GET", "/api/status", null, function(error, status) {
+            if (error || status.authenticated) {
+                showRemoteSetupUrl("");
+                return;
+            }
+            showRemoteSetupUrl(status.remoteSetupUrl || "");
+            if (!status.remoteSetupUrl && retry)
+                window.setTimeout(function() {
+                    refreshRemoteSetupUrl(false);
+                }, 250);
+        });
     }
 
     function resetMathRepair() {
@@ -3279,6 +3333,10 @@
                 .getElementsByClassName("potion-editable-content")[0];
             if (!content || logicalNodeText(content) !== block.blockText)
                 continue;
+            if (block.blockId && block.blockType) {
+                content.setAttribute("data-notion-block-id", block.blockId);
+                content.setAttribute("data-notion-block-type", block.blockType);
+            }
             for (j = 0; j < block.colors.length; ++j)
                 applyEnrichedColor(content, block.colors[j]);
         }
@@ -3555,6 +3613,11 @@
                     else
                         connectView();
 
+                    showRemoteSetupUrl(
+                        status.authenticated ? "" :
+                            (status.remoteSetupUrl || "")
+                    );
+
                     if (status.tokenImportMessage)
                         warning(
                             "Token file: " +
@@ -3589,11 +3652,14 @@
                     warning(error);
                     connectView();
                 } else {
+                    showRemoteSetupUrl("");
                     loadPages();
                 }
             }
         );
     };
+
+    id("remote-setup-check").onclick = checkRemoteSetup;
 
     id("search-button").onclick = loadPages;
 
@@ -3806,12 +3872,14 @@
                 if (error) {
                     warning(error);
                 } else {
+                    showRemoteSetupUrl("");
                     clearReadingPositionState();
                     currentPageId = "";
                     currentPagePinned = false;
                     pageList = [];
                     pageListLoaded = false;
                     connectView();
+                    refreshRemoteSetupUrl(true);
                 }
             }
         );

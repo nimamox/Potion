@@ -67,11 +67,15 @@ std::string request(unsigned port, const std::string &path,
 struct RunningServer {
   potion::HttpServer server;
   std::thread thread;
-  explicit RunningServer(const std::string &state, const std::string &start_page = {})
+  explicit RunningServer(
+      const std::string &state, const std::string &start_page = {},
+      std::function<bool(const std::string &, std::string &)> validator = {})
       : server([&] { potion::ServerOptions options; options.data_dir = state;
           options.port = 0; options.simulator = true; options.worker_count = 4;
+          options.remote_setup_port = 0;
           options.asset_dir = POTION_TEST_ASSET_DIR;
-          options.start_page_id = start_page; return options; }()),
+          options.start_page_id = start_page;
+          options.token_validator = std::move(validator); return options; }()),
         thread([this] { server.run(); }) {
     for (int i = 0; i < 100 && server.bound_port() == 0; ++i)
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -110,6 +114,17 @@ int main() {
     const auto parsed = potion::Json::parse(R"({"ok":true,"items":[1,"x"]})");
     require(parsed.get("ok").boolean(), "JSON bool");
     require(parsed.get("items").items().size() == 2, "JSON array");
+    require(potion::Json::parse(R"("\uD83D\uDE00")").string() ==
+                "\xf0\x9f\x98\x80",
+            "JSON parser combines UTF-16 surrogate pairs");
+    const auto rejects_json = [](const std::string &source) {
+      try { potion::Json::parse(source); } catch (...) { return true; }
+      return false;
+    };
+    require(rejects_json(R"("\uD83D")") &&
+                rejects_json(R"("\uDE00")") &&
+                rejects_json(R"("\uD83D\u0041")"),
+            "JSON parser rejects unmatched UTF-16 surrogates");
 
     const auto empty_paragraph = potion::Json::parse(R"({
       "type":"paragraph","paragraph":{"rich_text":[]}})");
@@ -144,6 +159,25 @@ int main() {
             !formatted.items()[0].get("annotations").get("bold").boolean() &&
             formatted.items()[1].get("annotations").get("bold").boolean(),
             "only selected repeated occurrence is bold");
+
+    const auto trimmed_rich_text = potion::Json::parse(R"([
+      {"type":"text","text":{"content":" This is the second paragraph. ","link":null},
+       "plain_text":" This is the second paragraph. ",
+       "annotations":{"bold":false,"italic":false,"strikethrough":false,"underline":false,"code":false,"color":"default"}}
+    ])");
+    format_error.clear();
+    require(potion::NotionClient::build_formatted_rich_text(
+                trimmed_rich_text, "This is the second paragraph.",
+                12, 28, "second paragraph", "bold", formatted,
+                format_error) &&
+            formatted.items().size() == 3 &&
+            formatted.items()[0].get("text").get("content").string() ==
+                " This is the " &&
+            formatted.items()[1].get("text").get("content").string() ==
+                "second paragraph" &&
+            formatted.items()[1].get("annotations").get("bold").boolean() &&
+            formatted.items()[2].get("text").get("content").string() == ". ",
+            "formatting maps trimmed Markdown offsets back to Notion whitespace");
 
     const auto mixed_rich_text = potion::Json::parse(R"([
       {"type":"text","text":{"content":"mixed ","link":null},"plain_text":"mixed ",
@@ -470,6 +504,23 @@ int main() {
     require(images.resolve(image_key, resolved_image_url) &&
                 resolved_image_url == signed_image_url,
             "deterministic image key resolves to the complete original URL");
+
+    potion::ImageRegistry bounded_images;
+    const std::string oldest_key = bounded_images.register_url(
+        "https://example.com/image-0.png");
+    const std::string second_oldest_key = bounded_images.register_url(
+        "https://example.com/image-1.png");
+    for (int i = 2; i < 1024; ++i)
+      bounded_images.register_url(
+          "https://example.com/image-" + std::to_string(i) + ".png");
+    require(bounded_images.resolve(oldest_key, resolved_image_url),
+            "resolving an image refreshes its LRU position");
+    const std::string newest_key = bounded_images.register_url(
+        "https://example.com/image-1024.png");
+    require(bounded_images.resolve(oldest_key, resolved_image_url) &&
+                !bounded_images.resolve(second_oldest_key, resolved_image_url) &&
+                bounded_images.resolve(newest_key, resolved_image_url),
+            "image registry evicts the least recently used entry at its bound");
 
     const std::string notion_block_id =
         "1234567890abcdef1234567890abcdef";
@@ -1182,6 +1233,72 @@ int main() {
       require(::access((std::string(directory) + "/pins.conf").c_str(), F_OK) != 0,
               "logout removes persisted page pins");
 
+    }
+    {
+      RunningServer running(
+          directory, {},
+          [](const std::string &token, std::string &error) {
+            if (token == "valid-test-token") return true;
+            error = "Notion rejected the test token";
+            return false;
+          });
+      const unsigned main_port = running.server.bound_port();
+      std::string setup_url;
+      for (int i = 0; i < 100 && setup_url.empty(); ++i) {
+        setup_url = potion::Json::parse(request(main_port, "/api/status"))
+                        .get("remoteSetupUrl").string();
+        if (setup_url.empty())
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+      require(setup_url.compare(0, 7, "http://") == 0,
+              "logged-out status advertises temporary remote setup URL");
+      const auto path_at = setup_url.find('/', 7);
+      const auto colon = setup_url.rfind(':', path_at);
+      require(path_at != std::string::npos && colon != std::string::npos,
+              "remote setup URL contains a port and randomized path");
+      const unsigned setup_port =
+          static_cast<unsigned>(std::stoul(setup_url.substr(
+              colon + 1, path_at - colon - 1)));
+      const std::string setup_path = setup_url.substr(path_at);
+      require(setup_path == "/",
+              "remote setup URL stays short enough to type on another device");
+      const auto setup_page = raw_request(setup_port, setup_path);
+      require(setup_page.status == 200 &&
+                  setup_page.body.find("name=\"token\"") != std::string::npos &&
+                  setup_page.body.find("/api/") == std::string::npos,
+              "remote listener exposes only the minimal token form");
+      require(raw_request(setup_port, "/api/status").status == 404,
+              "remote listener does not expose Potion APIs");
+      const std::string rejected_token = "token=invalid";
+      const auto rejected = raw_request(setup_port, setup_path, &rejected_token);
+      require(rejected.status == 400 &&
+                  rejected.body.find("Notion rejected the test token") !=
+                      std::string::npos,
+              "invalid remote token keeps setup available with an error");
+      const std::string valid_token = "token=valid-test-token";
+      require(raw_request(setup_port, setup_path, &valid_token).status == 200,
+              "valid remote token is accepted");
+      for (int i = 0; i < 100; ++i) {
+        const auto status = potion::Json::parse(request(main_port, "/api/status"));
+        if (status.get("authenticated").boolean() &&
+            status.get("remoteSetupUrl").is_null())
+          break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+      }
+      const auto authenticated =
+          potion::Json::parse(request(main_port, "/api/status"));
+      require(authenticated.get("authenticated").boolean() &&
+                  authenticated.get("remoteSetupUrl").is_null(),
+              "successful login removes the remote setup URL");
+      bool setup_closed = false;
+      for (int i = 0; i < 100 && !setup_closed; ++i) {
+        try {
+          raw_request(setup_port, setup_path);
+          std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        } catch (...) { setup_closed = true; }
+      }
+      require(setup_closed,
+              "successful login closes the externally visible listener");
     }
     ::unlink((std::string(directory) + "/token").c_str());
     ::unlink((std::string(directory) + "/state.conf").c_str());

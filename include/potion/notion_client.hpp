@@ -18,6 +18,8 @@ struct RichTextColorRange {
 };
 struct RichTextColorEnrichment {
   std::size_t editable_index{};
+  std::string block_id;
+  std::string block_type;
   std::string block_text;
   std::vector<RichTextColorRange> ranges;
 };
@@ -40,6 +42,8 @@ public:
       std::string &error) const;
   bool format_block_text(const std::string &token, const std::string &page_id,
                          std::size_t editable_index,
+                         const std::string &block_id,
+                         const std::string &block_type,
                          const std::string &expected_text,
                          std::uint32_t start_utf16, std::uint32_t end_utf16,
                          const std::string &selected_text,

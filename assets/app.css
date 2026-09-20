@@ -119,6 +119,10 @@ h2 {
   white-space: nowrap;
   font-size: 0;
 }
+button:focus {
+  outline: 2px dashed #555;
+  outline-offset: -4px;
+}
 .header-button {
   display: inline-block;
   width: 140px;
@@ -222,6 +226,27 @@ h2 {
   color: #fff;
   font: bold 20px "Amazon Ember", Arial, sans-serif;
 }
+.remote-setup {
+  margin-top: 30px;
+  padding-top: 24px;
+  border-top: 2px solid #aaa;
+}
+.panel .remote-setup p {
+  margin: 0 0 12px;
+}
+.panel .remote-setup-url {
+  padding: 10px;
+  border: 2px solid #777;
+  font: bold 17px/1.35 monospace;
+  word-wrap: break-word;
+}
+#remote-setup-check {
+  width: 100%;
+  min-height: 62px;
+  border: 3px solid #111;
+  background: #fff;
+  font: bold 18px "Amazon Ember", Arial, sans-serif;
+}
 .view {
   position: fixed;
   top: 92px;
@@ -261,6 +286,7 @@ h2 {
   table-layout: fixed;
 }
 .page-sort button {
+  position: relative;
   display: table-cell;
   width: 50%;
   height: 62px;
@@ -429,15 +455,30 @@ h2 {
   font-family: "Amazon Ember", Arial, "Noto Emoji", sans-serif;
 }
 .page-content pre {
-  padding: 20px;
+  padding: 16px 20px;
   overflow-x: auto;
-  border: 2px solid #aaa;
-  background: #faf8fb;
+  border: 0;
+  border-left: 6px solid #777;
+  background: #fff;
   text-align: left;
   font-family: monospace;
   font-size: 18px;
   line-height: 1.4;
   white-space: pre-wrap;
+}
+
+.page-content code {
+  padding: 2px 6px;
+  background: #fff;
+  font-family: monospace;
+}
+
+.page-content pre > code {
+  padding: 0;
+  background: transparent;
+  font-family: inherit;
+  font-size: inherit;
+  line-height: inherit;
 }
 #page-content.code-size-14 pre { font-size: 14px; }
 #page-content.code-size-16 pre { font-size: 16px; }
@@ -448,11 +489,6 @@ h2 {
 #page-content.code-size-26 pre { font-size: 26px; }
 #page-content.code-size-28 pre { font-size: 28px; }
 #page-content.code-size-30 pre { font-size: 30px; }
-.page-content code {
-  padding: 2px 6px;
-  background: #faf8fb;
-  font-family: monospace;
-}
 .page-content blockquote {
   padding-left: 22px;
   border-left: 6px solid #777;
@@ -762,6 +798,7 @@ h2 {
 }
 .appearance-segments button {
   width: 20%;
+  position: relative;
   height: 48px;
   padding: 0 8px;
   border: 2px solid #111;
@@ -1300,6 +1337,26 @@ h2 {
 .night-mode .appearance-segments button.selected {
   background: #eee;
   color: #000;
+}
+.appearance-segments button.selected::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  background: #fff;
+  border-radius: 50%;
+}
+.page-sort button.active::after {
+  content: "";
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  width: 8px;
+  height: 8px;
+  background: #fff;
+  border-radius: 50%;
 }
 /* Do not let KaTeX fraction rules collapse onto fractional device pixels. */
 .katex .mfrac .frac-line {

@@ -13,8 +13,13 @@ void append_utf8(std::string &out, unsigned code) {
   else if (code <= 0x7ff) {
     out.push_back(static_cast<char>(0xc0 | code >> 6));
     out.push_back(static_cast<char>(0x80 | (code & 63)));
-  } else {
+  } else if (code <= 0xffff) {
     out.push_back(static_cast<char>(0xe0 | code >> 12));
+    out.push_back(static_cast<char>(0x80 | ((code >> 6) & 63)));
+    out.push_back(static_cast<char>(0x80 | (code & 63)));
+  } else {
+    out.push_back(static_cast<char>(0xf0 | code >> 18));
+    out.push_back(static_cast<char>(0x80 | ((code >> 12) & 63)));
     out.push_back(static_cast<char>(0x80 | ((code >> 6) & 63)));
     out.push_back(static_cast<char>(0x80 | (code & 63)));
   }
@@ -27,6 +32,19 @@ private:
   void ws() { while (at_ < text_.size() && (text_[at_] == ' ' || text_[at_] == '\n' || text_[at_] == '\r' || text_[at_] == '\t')) ++at_; }
   [[noreturn]] void fail() const { throw std::runtime_error("invalid JSON at byte " + std::to_string(at_)); }
   bool take(char c) { ws(); if (at_ < text_.size() && text_[at_] == c) { ++at_; return true; } return false; }
+  unsigned parse_hex4() {
+    if (at_ + 4 > text_.size()) fail();
+    unsigned code = 0;
+    for (int i = 0; i < 4; ++i) {
+      const char h = text_[at_++];
+      code <<= 4;
+      if (h >= '0' && h <= '9') code += h - '0';
+      else if (h >= 'a' && h <= 'f') code += h - 'a' + 10;
+      else if (h >= 'A' && h <= 'F') code += h - 'A' + 10;
+      else fail();
+    }
+    return code;
+  }
   Json parse_value() {
     ws(); if (at_ >= text_.size()) fail();
     if (text_[at_] == '"') return Json(parse_string());
@@ -55,14 +73,17 @@ private:
       else if (c == 'n') out.push_back('\n'); else if (c == 'r') out.push_back('\r');
       else if (c == 't') out.push_back('\t');
       else if (c == 'u') {
-        if (at_ + 4 > text_.size()) fail();
-        unsigned code = 0;
-        for (int i = 0; i < 4; ++i) {
-          char h = text_[at_++]; code <<= 4;
-          if (h >= '0' && h <= '9') code += h - '0';
-          else if (h >= 'a' && h <= 'f') code += h - 'a' + 10;
-          else if (h >= 'A' && h <= 'F') code += h - 'A' + 10; else fail();
+        unsigned code = parse_hex4();
+        if (code >= 0xd800 && code <= 0xdbff) {
+          if (at_ + 2 > text_.size() || text_[at_] != '\\' ||
+              text_[at_ + 1] != 'u')
+            fail();
+          at_ += 2;
+          const unsigned low = parse_hex4();
+          if (low < 0xdc00 || low > 0xdfff) fail();
+          code = 0x10000 + ((code - 0xd800) << 10) + (low - 0xdc00);
         }
+        else if (code >= 0xdc00 && code <= 0xdfff) fail();
         append_utf8(out, code);
       } else fail();
     }

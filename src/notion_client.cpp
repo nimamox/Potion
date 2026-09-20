@@ -1,4 +1,5 @@
 #include "potion/notion_client.hpp"
+#include "potion/reading_positions.hpp"
 #include <curl/curl.h>
 #include <algorithm>
 #include <cctype>
@@ -13,7 +14,26 @@
 namespace potion {
 namespace {
 std::once_flag curl_once;
-size_t write_body(char *data, size_t size, size_t count, void *opaque) { auto *body = static_cast<std::string *>(opaque); body->append(data, size * count); return size * count; }
+struct DownloadBuffer {
+  std::string *body{};
+  std::size_t limit{};
+  bool exceeded{};
+};
+size_t write_body(char *data, size_t size, size_t count, void *opaque) {
+  auto *buffer = static_cast<DownloadBuffer *>(opaque);
+  if (size != 0 && count > static_cast<std::size_t>(-1) / size) {
+    buffer->exceeded = true;
+    return 0;
+  }
+  const std::size_t incoming = size * count;
+  if (buffer->body->size() > buffer->limit ||
+      incoming > buffer->limit - buffer->body->size()) {
+    buffer->exceeded = true;
+    return 0;
+  }
+  buffer->body->append(data, incoming);
+  return incoming;
+}
 std::string title_of(const Json &page) {
   for (const auto &property : page.get("properties").members()) {
     if (property.second.get("type").string() != "title") continue;
@@ -241,10 +261,11 @@ static NotionClient::Response perform_request(const std::string &url,
     const char *method = nullptr) {
   CURL *curl = curl_easy_init(); if (!curl) throw std::runtime_error("Unable to initialize HTTPS client");
   NotionClient::Response response; curl_slist *list = nullptr;
+  DownloadBuffer download{&response.body, limit, false};
   for (const auto &header : headers) list = curl_slist_append(list, header.c_str());
   char error[CURL_ERROR_SIZE]{};
   curl_easy_setopt(curl, CURLOPT_URL, url.c_str()); curl_easy_setopt(curl, CURLOPT_HTTPHEADER, list);
-  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_body); curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response.body);
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_body); curl_easy_setopt(curl, CURLOPT_WRITEDATA, &download);
   curl_easy_setopt(curl, CURLOPT_ERRORBUFFER, error); curl_easy_setopt(curl, CURLOPT_CONNECTTIMEOUT, 15L); curl_easy_setopt(curl, CURLOPT_TIMEOUT, 45L);
   if (!ca_bundle.empty()) curl_easy_setopt(curl, CURLOPT_CAINFO, ca_bundle.c_str());
   curl_easy_setopt(curl, CURLOPT_FOLLOWLOCATION, 1L); curl_easy_setopt(curl, CURLOPT_MAXREDIRS, 4L);
@@ -258,8 +279,9 @@ static NotionClient::Response perform_request(const std::string &url,
   const CURLcode result = curl_easy_perform(curl); curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &response.status);
   char *content_type = nullptr; curl_easy_getinfo(curl, CURLINFO_CONTENT_TYPE, &content_type); if (content_type) response.content_type = content_type;
   curl_slist_free_all(list); curl_easy_cleanup(curl);
+  if (download.exceeded)
+    throw std::runtime_error("Notion response is too large for this Kindle");
   if (result != CURLE_OK) throw std::runtime_error(error[0] ? error : curl_easy_strerror(result));
-  if (response.body.size() > limit) throw std::runtime_error("Notion response is too large for this Kindle");
   return response;
 }
 
@@ -354,6 +376,8 @@ bool NotionClient::retrieve_page_enrichment(
           if (block_counts_as_editable(block)) {
             RichTextColorEnrichment enrichment;
             enrichment.editable_index = editable_index++;
+            enrichment.block_id = block.get("id").string();
+            enrichment.block_type = type;
             enrichment.block_text = logical_rich_text(rich_text);
             std::uint64_t at = 0;
             for (const auto &part : rich_text.items()) {
@@ -403,8 +427,7 @@ bool NotionClient::retrieve_page_enrichment(
               enrichment.block_text =
                   enrichment.block_text.substr(first, last - first + 1);
             }
-            if (!enrichment.ranges.empty())
-              colors.push_back(std::move(enrichment));
+            colors.push_back(std::move(enrichment));
           }
           for (const auto &cell : type_body.get("cells").items()) append(cell);
           append(type_body.get("caption"));
@@ -434,7 +457,23 @@ bool NotionClient::build_formatted_rich_text(
     error = "Unsupported text format"; return false;
   }
   const std::string plain_text = logical_rich_text(source);
-  if (plain_text != expected_text) { error = "The page changed; reopen it before formatting text"; return false; }
+  if (plain_text != expected_text) {
+    const std::size_t first = plain_text.find_first_not_of(" \t\r");
+    const std::size_t last = plain_text.find_last_not_of(" \t\r");
+    if (first == std::string::npos ||
+        plain_text.substr(first, last - first + 1) != expected_text) {
+      error = "The page changed; reopen it before formatting text";
+      return false;
+    }
+    const std::size_t leading_utf16 =
+        utf16_length(plain_text.substr(0, first));
+    if (leading_utf16 > 0xffffffffull - end_utf16) {
+      error = "Invalid text selection";
+      return false;
+    }
+    start_utf16 += static_cast<std::uint32_t>(leading_utf16);
+    end_utf16 += static_cast<std::uint32_t>(leading_utf16);
+  }
   if (start_utf16 >= end_utf16 || end_utf16 > utf16_length(plain_text)) { error = "Invalid text selection"; return false; }
   std::size_t selection_start = 0, selection_end = 0;
   if (!utf16_byte(plain_text, start_utf16, selection_start) ||
@@ -523,6 +562,7 @@ bool NotionClient::block_counts_as_editable(const Json &block) {
 }
 bool NotionClient::format_block_text(const std::string &token,
     const std::string &page_id, std::size_t editable_index,
+    const std::string &block_id, const std::string &block_type,
     const std::string &expected_text, std::uint32_t start_utf16,
     std::uint32_t end_utf16, const std::string &selected_text,
     const std::string &format, bool &enabled, std::string &error) const {
@@ -530,6 +570,31 @@ bool NotionClient::format_block_text(const std::string &token,
     EditableBlock target;
     std::size_t seen = 0;
     bool found = false;
+    if (!block_id.empty() || !block_type.empty()) {
+      PageUuid parsed_id;
+      if (!parse_page_uuid(block_id, parsed_id) ||
+          (block_type != "paragraph" &&
+           block_type != "bulleted_list_item" &&
+           block_type != "numbered_list_item" &&
+           block_type != "callout")) {
+        error = "Invalid editable block metadata";
+        return false;
+      }
+      const auto response = api_get(token, "/v1/blocks/" + block_id);
+      if (response.status != 200) {
+        error = error_message(response);
+        return false;
+      }
+      const Json block = Json::parse(response.body);
+      const std::string type = block.get("type").string();
+      if (block.get("id").string() != block_id || type != block_type ||
+          !block_counts_as_editable(block)) {
+        error = "The page changed; reopen it before formatting text";
+        return false;
+      }
+      target = {block_id, type, {}, block.get(type).get("rich_text")};
+      found = true;
+    }
     std::function<bool(const std::string &, unsigned)> collect;
     collect = [&](const std::string &parent, unsigned depth) {
       if (depth > 32 || seen > 4096) { error = "This page is too deeply nested to edit safely"; return false; }
@@ -558,7 +623,7 @@ bool NotionClient::format_block_text(const std::string &token,
       } while (!cursor.empty() && !found);
       return true;
     };
-    if (!collect(page_id, 0)) return false;
+    if (!found && !collect(page_id, 0)) return false;
     if (!found) { error = "The page changed; reopen it before formatting text"; return false; }
     Json rich_text;
     if (!build_formatted_rich_text(target.rich_text, expected_text, start_utf16,

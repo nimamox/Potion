@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
   <title>Potion</title>
   <link rel="stylesheet" href="vendor/katex/katex.min.css?v=0.16.25-native">
-  <link rel="stylesheet" href="app.css?v=20260919-8-responsive-large-page-selection">
+  <link rel="stylesheet" href="app.css?v=20260920-1-remote-token-setup">
 </head>
 <body>
   <header class="app-header">
@@ -35,6 +35,12 @@
     <label for="token">Notion access token</label>
     <input id="token" type="password" autocomplete="off">
     <button id="connect" class="primary" type="button">Connect</button>
+    <div id="remote-setup" class="remote-setup hidden">
+      <p>Or open this temporary address on a phone or computer connected to the same network:</p>
+      <p id="remote-setup-url" class="remote-setup-url"></p>
+      <p>After submitting the token there, choose:</p>
+      <button id="remote-setup-check" type="button">Check connection</button>
+    </div>
   </section>
 
   <section id="pages-view" class="view hidden">
@@ -146,6 +152,6 @@
     <button id="scroll-up" class="scroll-button hidden" title="Scroll up">&#9650;</button>
     <button id="scroll-down" class="scroll-button hidden" title="Scroll down">&#9660;</button>
   </div>
-  <script src="app.js?v=20260919-8-responsive-large-page-selection"></script>
+  <script src="app.js?v=20260920-1-remote-token-setup"></script>
 </body>
 </html>

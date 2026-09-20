@@ -118,6 +118,21 @@ assert.doesNotMatch(frontend, /\/api\/input|\/api\/simulator\/input|pollInput|wa
 assert.doesNotMatch(httpServer, /\/api\/input|\/api\/simulator\/input|gpiokey|\/dev\/input|input_event/);
 assert.match(httpServer, /select\(highest \+ 1, &set, nullptr, nullptr, nullptr\)/);
 assert.match(httpServer,
+  /create_listener\(INADDR_LOOPBACK, options_\.port/,
+  "Potion's full application server remains loopback-only");
+assert.match(httpServer,
+  /create_listener\(INADDR_ANY, options_\.remote_setup_port,[\s\S]*?port\)/,
+  "only the temporary logged-out setup listener binds externally on the fixed setup port");
+assert.match(httpServer,
+  /POTION_SETUP[\s\S]*?state_\.authenticated\(\)[\s\S]*?close_setup_listener\(\)/,
+  "the Kindle firewall exception uses an app-owned chain removed with the setup listener");
+assert.match(httpServer,
+  /handle_remote_setup_client[\s\S]*request\.target != path[\s\S]*request\.method == "GET"[\s\S]*request\.method == "POST"/,
+  "the external listener accepts only its token-form path");
+assert.match(httpServer,
+  /state_\.authenticated\(\)[\s\S]*::close\(setup_listener\)[\s\S]*clear_remote_setup\(\)/,
+  "the temporary listener closes after authentication");
+assert.match(httpServer,
   /retrieve_registered_image\([\s\S]*?retrieve_image\(url, result, download_error,[\s\S]*?CachePolicy::proxied_image/);
 assert.match(httpServer,
   /is_immutable_asset_path\(relative\)[\s\S]*?CachePolicy::immutable_asset/);
@@ -260,6 +275,18 @@ assert.match(frontend,
   "only a tap on the full-screen sheet backdrop should dismiss the panel");
 assert.match(frontend,
   /function connectView\(\)[\s\S]*setAppearanceButtonVisible\(false\)[\s\S]*hide\(id\("reader-view"\)\)/);
+assert.match(index,
+  /id="remote-setup"[\s\S]*id="remote-setup-url"[\s\S]*id="remote-setup-check"/,
+  "the Kindle login view shows the temporary setup URL and a manual check button");
+assert.match(frontend,
+  /function showRemoteSetupUrl\(url\)[\s\S]*document\.createTextNode\(url\)/,
+  "the LAN setup URL must be inserted as text, never interpreted as HTML");
+assert.match(frontend,
+  /id\("remote-setup-check"\)\.onclick = checkRemoteSetup/,
+  "remote login completion is checked explicitly without background polling");
+assert.doesNotMatch(frontend,
+  /setInterval\([^\n]*(?:remote|status)|setTimeout\([^\n]*checkRemoteSetup/,
+  "remote login must not revive continuous status polling");
 assert.match(frontend,
   /function showPages\(positionSaved\)[\s\S]*setAppearanceButtonVisible\(false\)[\s\S]*show\(id\("pages-view"\)\)/);
 assert.match(frontend,
@@ -294,6 +321,9 @@ assert.match(appCss,
   "the pre rule declares explicit font properties CODE SIZE can override");
 assert.doesNotMatch(appCss, /font:\s*18px\/1\.4 monospace/,
   "the pre rule must not use the font shorthand, which would hide size overrides");
+assert.match(appCss,
+  /\.page-content pre\s*>?\s*code\s*\{[^}]*padding:\s*0;[^}]*background:\s*transparent;/,
+  "inline-code padding must not indent the first line of fenced code blocks");
 for (let px = 14; px <= 30; px += 2)
   assert.ok(
     new RegExp(
@@ -648,7 +678,11 @@ assert.match(equationEnrichmentLogic[1],
   const display = mathNode(false, "display");
   const first = mathNode(true, "x^2");
   const second = mathNode(true, "y = \\sin(x)", "math compatibility-class");
-  const content = {logicalText: "we have \ufffc to show"};
+  const content = {
+    logicalText: "we have \ufffc to show",
+    attributes: {},
+    setAttribute: function(name, value) { this.attributes[name] = value; }
+  };
   const editable = {
     getElementsByClassName: function(name) {
       return name === "potion-editable-content" ? [content] : [];
@@ -686,6 +720,8 @@ assert.match(equationEnrichmentLogic[1],
   context.applyEquationEnrichment("page-one", {
     blocks: [{
       editableIndex: 0,
+      blockId: "block-one",
+      blockType: "paragraph",
       blockText: "we have \ufffc to show",
       colors: [{start: 0, end: 17, color: "yellow_background"}]
     }],
@@ -696,6 +732,8 @@ assert.match(equationEnrichmentLogic[1],
     ]
   });
   assert.equal(appliedColors.length, 1);
+  assert.equal(content.attributes["data-notion-block-id"], "block-one");
+  assert.equal(content.attributes["data-notion-block-type"], "paragraph");
   assert.equal(appliedColors[0].target, content);
   assert.deepEqual(appliedColors[0].color,
     {start: 0, end: 17, color: "yellow_background"},
@@ -719,7 +757,16 @@ assert.match(equationEnrichmentLogic[1],
 assert.match(httpServer,
   /"\/enrichment"[\s\S]*retrieve_page_enrichment/);
 assert.match(httpServer,
-  /"blocks"[\s\S]*"editableIndex"[\s\S]*"blockText"[\s\S]*"colors"/);
+  /"blocks"[\s\S]*"editableIndex"[\s\S]*"blockId"[\s\S]*"blockType"[\s\S]*"blockText"[\s\S]*"colors"/);
+assert.match(notionClient,
+  /format_block_text[\s\S]*?api_get\(token, "\/v1\/blocks\/" \+ block_id\)/,
+  "enriched formatting fetches its known block directly");
+assert.match(notionClient,
+  /if \(!found && !collect\(page_id, 0\)\)/,
+  "formatting retains recursive index lookup when enrichment metadata is absent");
+assert.match(notionClient,
+  /incoming > buffer->limit - buffer->body->size\(\)[\s\S]*?return 0;/,
+  "HTTP response limits are enforced by the write callback during download");
 assert.match(httpServer,
   /"equationEnrichment"[\s\S]*equation_enrichment/);
 assert.match(httpServer,
@@ -951,6 +998,8 @@ function optimisticContext() {
     content: content,
     range: {},
     editableIndex: 2,
+    notionBlockId: "01234567-89ab-cdef-0123-456789abcdef",
+    notionBlockType: "paragraph",
     start: 1,
     end: 5,
     blockText: "linked text",
@@ -999,6 +1048,9 @@ assert.equal(optimisticFailure.content.innerHTML, "optimistic",
 assert.ok(optimisticFailure.calls.indexOf("clear:true") < optimisticFailure.calls.indexOf("request"),
   "the selection popup closes before the background request starts");
 assert.equal(optimisticFailure.requests.length, 1);
+assert.match(optimisticFailure.requests[0].body,
+  /blockId=01234567-89ab-cdef-0123-456789abcdef&blockType=paragraph/,
+  "formatting sends enriched direct-block metadata when available");
 optimisticFailure.requests[0].callback("Notion rejected the edit", null);
 assert.equal(optimisticFailure.content.innerHTML,
   '<a href="https://example.com"><strong class="notion-color">linked</strong></a>',

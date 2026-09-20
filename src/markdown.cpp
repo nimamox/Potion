@@ -293,34 +293,41 @@ std::string ImageRegistry::register_notion_url(const std::string &url,
   const std::string key = key_for_url(url);
   std::lock_guard<std::mutex> lock(mutex_);
   const auto existing = urls_.find(key);
-  if (existing != urls_.end() && existing->second.original_url != url)
+  if (existing != urls_.end() && existing->second.source.original_url != url)
     throw std::runtime_error("Image URL SHA-256 collision");
-  if (existing == urls_.end())
-    urls_[key] = {url, url, block_id, expires_at};
+  if (existing != urls_.end()) {
+    touch(existing);
+    return key;
+  }
+  lru_.push_front(key);
+  urls_.emplace(key, Entry{{url, url, block_id, expires_at}, lru_.begin()});
+  evict_if_needed();
   return key;
 }
-bool ImageRegistry::resolve(const std::string &key, std::string &url) const {
+bool ImageRegistry::resolve(const std::string &key, std::string &url) {
   ImageSource source;
   if (!resolve_source(key, source)) return false;
   url = source.url;
   return true;
 }
 bool ImageRegistry::resolve_source(const std::string &key,
-                                   ImageSource &source) const {
+                                   ImageSource &source) {
   std::lock_guard<std::mutex> lock(mutex_);
-  const auto it = urls_.find(key);
+  auto it = urls_.find(key);
   if (it == urls_.end()) return false;
-  source = it->second;
+  touch(it);
+  source = it->second.source;
   return true;
 }
 bool ImageRegistry::update_notion_url(const std::string &key,
                                       const std::string &url,
                                       std::int64_t expires_at) {
   std::lock_guard<std::mutex> lock(mutex_);
-  const auto it = urls_.find(key);
-  if (it == urls_.end() || !it->second.notion_hosted()) return false;
-  it->second.url = url;
-  it->second.expires_at = expires_at;
+  auto it = urls_.find(key);
+  if (it == urls_.end() || !it->second.source.notion_hosted()) return false;
+  touch(it);
+  it->second.source.url = url;
+  it->second.source.expires_at = expires_at;
   return true;
 }
 std::shared_ptr<std::mutex> ImageRegistry::request_lock(
@@ -330,9 +337,44 @@ std::shared_ptr<std::mutex> ImageRegistry::request_lock(
   if (!request_mutex) request_mutex = std::make_shared<std::mutex>();
   return request_mutex;
 }
+void ImageRegistry::touch(std::map<std::string, Entry>::iterator entry) {
+  lru_.splice(lru_.begin(), lru_, entry->second.lru);
+  entry->second.lru = lru_.begin();
+}
+void ImageRegistry::evict_if_needed() {
+  static const std::size_t maximum_entries = 1024;
+  while (urls_.size() > maximum_entries) {
+    auto candidate = lru_.end();
+    for (auto it = lru_.end(); it != lru_.begin();) {
+      --it;
+      const auto request_lock = request_locks_.find(*it);
+      if (request_lock == request_locks_.end() ||
+          request_lock->second.use_count() == 1) {
+        candidate = it;
+        break;
+      }
+    }
+    if (candidate == lru_.end()) break;
+    const std::string key = *candidate;
+    lru_.erase(candidate);
+    urls_.erase(key);
+    const auto request_lock = request_locks_.find(key);
+    if (request_lock != request_locks_.end() &&
+        request_lock->second.use_count() == 1)
+      request_locks_.erase(request_lock);
+  }
+  for (auto it = request_locks_.begin(); it != request_locks_.end();) {
+    if (urls_.find(it->first) == urls_.end() &&
+        it->second.use_count() == 1)
+      it = request_locks_.erase(it);
+    else
+      ++it;
+  }
+}
 void ImageRegistry::clear() {
   std::lock_guard<std::mutex> lock(mutex_);
   urls_.clear();
+  lru_.clear();
   request_locks_.clear();
 }
 

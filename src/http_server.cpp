@@ -10,12 +10,15 @@
 #include <cstring>
 #include <fcntl.h>
 #include <fstream>
+#include <ifaddrs.h>
 #include <iostream>
+#include <net/if.h>
 #include <netinet/in.h>
 #include <sstream>
 #include <stdexcept>
 #include <sys/select.h>
 #include <sys/socket.h>
+#include <sys/wait.h>
 #include <unistd.h>
 namespace potion {
 namespace {
@@ -138,6 +141,165 @@ bool valid_page_id(const std::string &id) {
   PageUuid uuid;
   return parse_page_uuid(id, uuid);
 }
+
+std::string html_escape(const std::string &text) {
+  std::string out;
+  out.reserve(text.size());
+  for (const char c : text) {
+    if (c == '&') out += "&amp;";
+    else if (c == '<') out += "&lt;";
+    else if (c == '>') out += "&gt;";
+    else if (c == '"') out += "&quot;";
+    else if (c == '\'') out += "&#39;";
+    else out += c;
+  }
+  return out;
+}
+
+std::string default_route_interface() {
+  std::ifstream routes("/proc/net/route");
+  std::string line, interface_name, destination, gateway, flags;
+  std::getline(routes, line);
+  while (routes >> interface_name >> destination >> gateway >> flags) {
+    unsigned long parsed_flags = 0;
+    try { parsed_flags = std::stoul(flags, nullptr, 16); } catch (...) { continue; }
+    if (destination == "00000000" && (parsed_flags & 1) != 0)
+      return interface_name;
+    std::getline(routes, line);
+  }
+  return {};
+}
+
+std::string local_ipv4_address() {
+  ifaddrs *addresses = nullptr;
+  if (::getifaddrs(&addresses) != 0) return {};
+  const std::string preferred = default_route_interface();
+  std::string fallback;
+  for (ifaddrs *entry = addresses; entry; entry = entry->ifa_next) {
+    if (!entry->ifa_addr || entry->ifa_addr->sa_family != AF_INET ||
+        (entry->ifa_flags & IFF_LOOPBACK) != 0 ||
+        (entry->ifa_flags & IFF_UP) == 0)
+      continue;
+    char address[INET_ADDRSTRLEN]{};
+    const auto *ipv4 = reinterpret_cast<sockaddr_in *>(entry->ifa_addr);
+    if (!::inet_ntop(AF_INET, &ipv4->sin_addr, address, sizeof(address)))
+      continue;
+    if (preferred == entry->ifa_name) {
+      ::freeifaddrs(addresses);
+      return address;
+    }
+    if (fallback.empty() || fallback.compare(0, 8, "169.254.") == 0)
+      fallback = address;
+  }
+  ::freeifaddrs(addresses);
+  return fallback;
+}
+
+bool run_command(const std::vector<std::string> &arguments) {
+  std::vector<char *> argv;
+  argv.reserve(arguments.size() + 1);
+  for (const auto &argument : arguments)
+    argv.push_back(const_cast<char *>(argument.c_str()));
+  argv.push_back(nullptr);
+
+  const pid_t child = ::fork();
+  if (child < 0) return false;
+  if (child == 0) {
+    const int null_fd = ::open("/dev/null", O_WRONLY);
+    if (null_fd >= 0) {
+      ::dup2(null_fd, STDOUT_FILENO);
+      ::dup2(null_fd, STDERR_FILENO);
+      ::close(null_fd);
+    }
+    ::execv(argv[0], argv.data());
+    ::_exit(127);
+  }
+  int status = 0;
+  while (::waitpid(child, &status, 0) < 0) {
+    if (errno == EINTR) continue;
+    return false;
+  }
+  return WIFEXITED(status) && WEXITSTATUS(status) == 0;
+}
+
+bool set_setup_firewall_rule(std::uint16_t port, bool enabled) {
+  const std::string port_text = std::to_string(port);
+  const std::string chain = "POTION_SETUP";
+  const auto cleanup = [&chain] {
+    const bool exists = run_command(
+        {"/usr/sbin/iptables", "-L", chain, "-n"});
+    while (run_command(
+        {"/usr/sbin/iptables", "-D", "INPUT", "-j", chain})) {}
+    if (!exists) return true;
+    return run_command({"/usr/sbin/iptables", "-F", chain}) &&
+           run_command({"/usr/sbin/iptables", "-X", chain});
+  };
+  if (!cleanup()) return false;
+  if (!enabled) return true;
+  const bool installed =
+      run_command({"/usr/sbin/iptables", "-N", chain}) &&
+      run_command({"/usr/sbin/iptables", "-A", chain, "-i", "wlan0", "-p",
+                   "tcp", "--dport", port_text, "-j", "ACCEPT"}) &&
+      run_command({"/usr/sbin/iptables", "-I", "INPUT", "1", "-j", chain});
+  if (!installed) cleanup();
+  return installed;
+}
+
+int create_listener(std::uint32_t address_value, std::uint16_t port,
+                    std::uint16_t &bound_port) {
+  const int listener = ::socket(AF_INET, SOCK_STREAM, 0);
+  if (listener < 0) return -1;
+  int reuse = 1;
+  setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+  sockaddr_in address{};
+  address.sin_family = AF_INET;
+  address.sin_addr.s_addr = htonl(address_value);
+  address.sin_port = htons(port);
+  if (::bind(listener, reinterpret_cast<sockaddr *>(&address), sizeof(address)) != 0 ||
+      ::listen(listener, 16) != 0) {
+    ::close(listener);
+    return -1;
+  }
+  socklen_t length = sizeof(address);
+  if (::getsockname(listener, reinterpret_cast<sockaddr *>(&address), &length) != 0) {
+    ::close(listener);
+    return -1;
+  }
+  bound_port = ntohs(address.sin_port);
+  return listener;
+}
+
+std::string remote_setup_page(const std::string &action,
+                              const std::string &error = {}) {
+  std::string notice;
+  if (!error.empty())
+    notice = "<p class=\"error\">" + html_escape(error) + "</p>";
+  return "<!doctype html><html><head><meta charset=\"utf-8\">"
+         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+         "<title>Connect Potion</title><style>"
+         "body{max-width:34rem;margin:3rem auto;padding:0 1rem;font:18px sans-serif;"
+         "color:#111;background:#fff}label{display:block;margin:1.5rem 0 .4rem}"
+         "input{box-sizing:border-box;width:100%;padding:.8rem;font:16px monospace}"
+         "button{margin-top:1rem;padding:.8rem 1.4rem;border:2px solid #111;"
+         "background:#111;color:#fff;font:bold 17px sans-serif}.error{color:#900}"
+         "</style></head><body><h1>Connect Potion</h1>"
+         "<p>Paste the Notion integration token for this Kindle.</p>" + notice +
+         "<form method=\"post\" action=\"" + html_escape(action) + "\">"
+         "<label for=\"token\">Notion access token</label>"
+         "<input id=\"token\" name=\"token\" type=\"password\" maxlength=\"4096\" "
+         "autocomplete=\"off\" autofocus required>"
+         "<button type=\"submit\">Connect Potion</button></form></body></html>";
+}
+
+std::string remote_setup_success_page() {
+  return "<!doctype html><html><head><meta charset=\"utf-8\">"
+         "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">"
+         "<title>Potion connected</title><style>body{max-width:34rem;margin:3rem auto;"
+         "padding:0 1rem;font:18px sans-serif}</style></head><body>"
+         "<h1>Potion is connected</h1><p>This temporary setup page is now closed. "
+         "Return to the Kindle and choose <strong>Check connection</strong>.</p>"
+         "</body></html>";
+}
 }
 
 const char *cache_control_value(CachePolicy policy) noexcept {
@@ -177,7 +339,7 @@ HttpServer::HttpServer(ServerOptions options)
     const auto result = import_token_file(
         options_.token_import_path, state_,
         [this](const std::string &token, std::string &error) {
-          return notion_.validate_token(token, error);
+          return validate_token(token, error);
         },
         token_import_message_);
     if (result == TokenImportResult::imported)
@@ -187,6 +349,29 @@ HttpServer::HttpServer(ServerOptions options)
              result == TokenImportResult::failed)
       std::cerr << "Token import: " << token_import_message_ << '\n';
   }
+}
+bool HttpServer::validate_token(const std::string &token, std::string &error) {
+  if (options_.token_validator)
+    return options_.token_validator(token, error);
+  return notion_.validate_token(token, error);
+}
+std::string HttpServer::remote_setup_url() const {
+  std::lock_guard<std::mutex> lock(remote_setup_mutex_);
+  return remote_setup_url_;
+}
+std::string HttpServer::remote_setup_path() const {
+  std::lock_guard<std::mutex> lock(remote_setup_mutex_);
+  return remote_setup_path_;
+}
+void HttpServer::publish_remote_setup(std::string path, std::string url) {
+  std::lock_guard<std::mutex> lock(remote_setup_mutex_);
+  remote_setup_path_ = std::move(path);
+  remote_setup_url_ = std::move(url);
+}
+void HttpServer::clear_remote_setup() {
+  std::lock_guard<std::mutex> lock(remote_setup_mutex_);
+  remote_setup_path_.clear();
+  remote_setup_url_.clear();
 }
 HttpServer::~HttpServer() {
   stop();
@@ -220,13 +405,64 @@ void HttpServer::worker_loop() noexcept {
       std::unique_lock<std::mutex> lock(pending_mutex_);
       pending_condition_.wait(lock, [this] { return stopping_.load() || !pending_clients_.empty(); });
       if (pending_clients_.empty()) return;
-      client = pending_clients_.front(); pending_clients_.pop_front();
+      const PendingClient pending = pending_clients_.front();
+      pending_clients_.pop_front();
+      client = pending.fd;
+      if (!stopping_.load()) {
+        lock.unlock();
+        if (pending.remote_setup) handle_remote_setup_client(client);
+        else handle_client(client);
+        continue;
+      }
     }
     if (stopping_.load()) {
       { std::lock_guard<std::mutex> lock(clients_mutex_); active_clients_.erase(client); }
       ::close(client);
-    } else handle_client(client);
+    }
   }
+}
+
+void HttpServer::handle_remote_setup_client(int client) noexcept {
+  try {
+    Request request;
+    const std::string path = remote_setup_path();
+    if (!read_request(client, request))
+      respond(client, 400, "Bad Request", "text/plain; charset=utf-8",
+              "Invalid request\n");
+    else if (state_.authenticated() || path.empty() || request.target != path)
+      respond(client, 404, "Not Found", "text/plain; charset=utf-8",
+              "Not found\n");
+    else if (request.method == "GET")
+      respond(client, 200, "OK", "text/html; charset=utf-8",
+              remote_setup_page(path));
+    else if (request.method == "POST") {
+      const std::string token = trim(parameter(request.body, "token"));
+      std::string error;
+      if (token.empty()) error = "A Notion access token is required";
+      else if (!validate_token(token, error)) {
+        if (error.empty()) error = "Notion rejected the token";
+      } else if (!state_.save_token(token, error)) {
+        if (error.empty()) error = "Potion could not store the token";
+      } else {
+        respond(client, 200, "OK", "text/html; charset=utf-8",
+                remote_setup_success_page());
+        wake_listener();
+        { std::lock_guard<std::mutex> lock(clients_mutex_);
+          active_clients_.erase(client); }
+        ::close(client);
+        return;
+      }
+      respond(client, 400, "Bad Request", "text/html; charset=utf-8",
+              remote_setup_page(path, error));
+    } else
+      respond(client, 405, "Method Not Allowed", "text/plain; charset=utf-8",
+              "Method not allowed\n");
+  } catch (const std::exception &) {
+    respond(client, 400, "Bad Request", "text/plain; charset=utf-8",
+            "Invalid request\n");
+  }
+  { std::lock_guard<std::mutex> lock(clients_mutex_); active_clients_.erase(client); }
+  ::close(client);
 }
 
 void HttpServer::handle_client(int client) noexcept {
@@ -246,6 +482,9 @@ void HttpServer::handle_client(int client) noexcept {
         body += R"(,"tokenImportMessage":)" + json_escape(token_import_message_);
       if (!options_.start_page_id.empty())
         body += R"(,"startPageId":)" + json_escape(options_.start_page_id);
+      const std::string setup_url = remote_setup_url();
+      if (!state_.authenticated() && !setup_url.empty())
+        body += R"(,"remoteSetupUrl":)" + json_escape(setup_url);
       respond(client, 200, "OK", "application/json", body + "}");
     }
     else if (request.method == "GET" && request.target == "/api/settings")
@@ -267,15 +506,17 @@ void HttpServer::handle_client(int client) noexcept {
     } else if (request.method == "POST" && request.target == "/api/auth/token") {
       const std::string token = trim(parameter(request.body, "token")); std::string error;
       if (token.empty()) throw std::runtime_error("A Notion access token is required");
-      if (!notion_.validate_token(token, error)) throw std::runtime_error(error);
+      if (!validate_token(token, error)) throw std::runtime_error(error);
       if (!state_.save_token(token, error)) throw std::runtime_error(error);
       respond(client, 200, "OK", "application/json", R"({"type":"authenticated"})");
+      wake_listener();
     } else if (request.method == "POST" && request.target == "/api/auth/logout") {
       std::string error; if (!state_.clear_token(error)) throw std::runtime_error(error);
       if (!positions_.clear(error)) throw std::runtime_error(error);
       if (!state_.clear_page_pins(error)) throw std::runtime_error(error);
       images_.clear();
       respond(client, 200, "OK", "application/json", R"({"type":"logged-out"})");
+      wake_listener();
     } else if (request.method == "GET" && request.target == "/api/pages") {
       if (!state_.authenticated()) throw std::runtime_error("Connect Potion to Notion first");
       std::string error;
@@ -336,6 +577,8 @@ void HttpServer::handle_client(int client) noexcept {
       bool enabled = false;
       if (!notion_.format_block_text(
               state_.token(), id, static_cast<std::size_t>(index),
+              parameter(request.body, "blockId"),
+              parameter(request.body, "blockType"),
               parameter(request.body, "blockText"),
               static_cast<std::uint32_t>(start), static_cast<std::uint32_t>(end),
               parameter(request.body, "selectedText"),
@@ -417,6 +660,8 @@ void HttpServer::handle_client(int client) noexcept {
         first = false;
         body += R"({"editableIndex":)" +
                 std::to_string(block.editable_index) +
+                R"(,"blockId":)" + json_escape(block.block_id) +
+                R"(,"blockType":)" + json_escape(block.block_type) +
                 R"(,"blockText":)" + json_escape(block.block_text) +
                 R"(,"colors":[)";
         bool first_range = true;
@@ -524,51 +769,107 @@ void HttpServer::handle_client(int client) noexcept {
 
 int HttpServer::run() {
   stop_requested = 0;
-  const int listener = ::socket(AF_INET, SOCK_STREAM, 0);
-  if (listener < 0) throw std::runtime_error("socket failed");
+  std::uint16_t main_port = 0;
+  const int listener = create_listener(INADDR_LOOPBACK, options_.port, main_port);
+  if (listener < 0)
+    throw std::runtime_error(std::string("listen: ") + std::strerror(errno));
   int pipes[2];
   if (::pipe(pipes) != 0) { ::close(listener); throw std::runtime_error("pipe failed"); }
   wake_read_ = pipes[0]; wake_write_ = pipes[1];
   stop_wake_fd = wake_write_;
   ::fcntl(wake_read_, F_SETFL, O_NONBLOCK); ::fcntl(wake_write_, F_SETFL, O_NONBLOCK);
-  int reuse = 1; setsockopt(listener, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-  sockaddr_in address{}; address.sin_family = AF_INET;
-  address.sin_addr.s_addr = htonl(INADDR_LOOPBACK); address.sin_port = htons(options_.port);
-  if (::bind(listener, reinterpret_cast<sockaddr *>(&address), sizeof(address)) != 0 ||
-      ::listen(listener, 16) != 0) {
-    stop_wake_fd = -1;
-    ::close(wake_read_); ::close(wake_write_);
-    wake_read_ = wake_write_ = -1;
-    ::close(listener);
-    throw std::runtime_error(std::string("listen: ") + std::strerror(errno));
-  }
-  socklen_t address_length = sizeof(address);
-  getsockname(listener, reinterpret_cast<sockaddr *>(&address), &address_length);
-  bound_port_.store(ntohs(address.sin_port));
+  bound_port_.store(main_port);
   for (std::size_t i = 0; i < std::max<std::size_t>(2, options_.worker_count); ++i)
     workers_.emplace_back(&HttpServer::worker_loop, this);
   std::cout << "Potion daemon listening at http://127.0.0.1:" << bound_port() << "/\n";
+  if (!options_.simulator &&
+      !set_setup_firewall_rule(options_.remote_setup_port, false))
+    std::cerr << "Could not clean up Potion's previous setup port\n";
+  int setup_listener = -1;
+  bool setup_firewall_open = false;
+  const auto close_setup_listener =
+      [this, &setup_listener, &setup_firewall_open] {
+        if (setup_listener >= 0) {
+          ::close(setup_listener);
+          setup_listener = -1;
+        }
+        if (setup_firewall_open) {
+          if (!set_setup_firewall_rule(options_.remote_setup_port, false))
+            std::cerr << "Could not close Potion's temporary setup port\n";
+          setup_firewall_open = false;
+        }
+        clear_remote_setup();
+      };
+  const auto refresh_setup_listener =
+      [this, &setup_listener, &setup_firewall_open,
+       &close_setup_listener] {
+    if (state_.authenticated()) {
+      close_setup_listener();
+      return;
+    }
+    if (setup_listener >= 0) return;
+    const std::string address = local_ipv4_address();
+    if (address.empty()) {
+      clear_remote_setup();
+      return;
+    }
+    std::uint16_t port = 0;
+    setup_listener = create_listener(INADDR_ANY, options_.remote_setup_port,
+                                     port);
+    if (setup_listener < 0) {
+      clear_remote_setup();
+      return;
+    }
+    if (!options_.simulator && !set_setup_firewall_rule(port, true)) {
+      std::cerr << "Could not open Potion's temporary setup port\n";
+      ::close(setup_listener);
+      setup_listener = -1;
+      clear_remote_setup();
+      return;
+    }
+    setup_firewall_open = !options_.simulator;
+    const std::string path = "/";
+    publish_remote_setup(path, "http://" + address + ":" +
+                               std::to_string(port) + "/");
+    std::cout << "Temporary Potion setup page available at " <<
+                 remote_setup_url() << "\n";
+  };
   while (!stopping_.load() && !stop_requested) {
+    refresh_setup_listener();
     fd_set set; FD_ZERO(&set); FD_SET(listener, &set); FD_SET(wake_read_, &set);
     int highest = std::max(listener, wake_read_);
+    if (setup_listener >= 0) {
+      FD_SET(setup_listener, &set);
+      highest = std::max(highest, setup_listener);
+    }
     const int ready = select(highest + 1, &set, nullptr, nullptr, nullptr);
     if (ready <= 0) continue;
     if (FD_ISSET(wake_read_, &set)) {
       char bytes[32]; while (::read(wake_read_, bytes, sizeof(bytes)) > 0) {}
+      refresh_setup_listener();
     }
-    if (!FD_ISSET(listener, &set) || stopping_.load()) continue;
-    const int client = ::accept(listener, nullptr, nullptr); if (client < 0) continue;
-    timeval io{5,0}; setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &io, sizeof(io));
-    setsockopt(client, SOL_SOCKET, SO_SNDTIMEO, &io, sizeof(io));
-    {
-      std::lock_guard<std::mutex> clients(clients_mutex_);
-      active_clients_.insert(client);
-      std::lock_guard<std::mutex> pending(pending_mutex_);
-      pending_clients_.push_back(client);
-    }
-    pending_condition_.notify_one();
+    if (stopping_.load()) continue;
+    const auto accept_client = [this](int source, bool remote_setup) {
+      const int client = ::accept(source, nullptr, nullptr);
+      if (client < 0) return;
+      timeval io{5,0};
+      setsockopt(client, SOL_SOCKET, SO_RCVTIMEO, &io, sizeof(io));
+      setsockopt(client, SOL_SOCKET, SO_SNDTIMEO, &io, sizeof(io));
+      {
+        std::lock_guard<std::mutex> clients(clients_mutex_);
+        active_clients_.insert(client);
+        std::lock_guard<std::mutex> pending(pending_mutex_);
+        pending_clients_.push_back({client, remote_setup});
+      }
+      pending_condition_.notify_one();
+    };
+    if (FD_ISSET(listener, &set)) accept_client(listener, false);
+    if (setup_listener >= 0 && FD_ISSET(setup_listener, &set))
+      accept_client(setup_listener, true);
   }
-  stop(); ::close(listener);
+  stop();
+  close_setup_listener();
+  ::close(listener);
   for (auto &worker : workers_) if (worker.joinable()) worker.join();
   stop_wake_fd = -1;
   if (wake_read_ >= 0) ::close(wake_read_);
