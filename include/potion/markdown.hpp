@@ -6,6 +6,7 @@
 #include <memory>
 #include <mutex>
 #include <string>
+#include <vector>
 namespace potion {
 struct ImageSource {
   std::string original_url;
@@ -42,10 +43,12 @@ private:
 class MarkdownRenderer {
 public:
   explicit MarkdownRenderer(ImageRegistry &images) : images_(images) {}
-  std::string render(const std::string &markdown) const;
+  std::string render(const std::string &markdown,
+                     std::vector<std::string> *image_keys = nullptr) const;
   static std::string sanitize_url(const std::string &url);
 private:
-  std::string inline_html(const std::string &text) const;
+  std::string inline_html(const std::string &text,
+                          std::vector<std::string> *image_keys) const;
   ImageRegistry &images_;
   MathRenderer math_;
 };

@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 namespace potion {
+class SessionImageCache;
 struct PageSummary { std::string id, title, icon, edited; };
 struct PageDocument { std::string id, title, icon, markdown; bool truncated{}; };
 struct InlineEquationAnnotation {
@@ -80,5 +81,6 @@ bool retrieve_registered_image(ImageRegistry &registry, const std::string &key,
                                std::int64_t now,
                                const ImageDownloadFunction &download,
                                const ImageRefreshFunction &refresh,
-                               BinaryResponse &image, std::string &error);
+                               BinaryResponse &image, std::string &error,
+                               SessionImageCache *cache = nullptr);
 }

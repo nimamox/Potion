@@ -1,5 +1,6 @@
 #include "potion/app_state.hpp"
 #include "potion/http_server.hpp"
+#include "potion/image_cache.hpp"
 #include "potion/json.hpp"
 #include "potion/markdown.hpp"
 #include "potion/notion_client.hpp"
@@ -69,13 +70,17 @@ struct RunningServer {
   std::thread thread;
   explicit RunningServer(
       const std::string &state, const std::string &start_page = {},
-      std::function<bool(const std::string &, std::string &)> validator = {})
+      std::function<bool(const std::string &, std::string &)> validator = {},
+      std::function<void(potion::ServerOptions &)> configure = {})
       : server([&] { potion::ServerOptions options; options.data_dir = state;
           options.port = 0; options.simulator = true; options.worker_count = 4;
           options.remote_setup_port = 0;
+          options.image_cache_dir = state + "/image-cache";
           options.asset_dir = POTION_TEST_ASSET_DIR;
           options.start_page_id = start_page;
-          options.token_validator = std::move(validator); return options; }()),
+          options.token_validator = std::move(validator);
+          if (configure) configure(options);
+          return options; }()),
         thread([this] { server.run(); }) {
     for (int i = 0; i < 100 && server.bound_port() == 0; ++i)
       std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -621,11 +626,93 @@ int main() {
                 external_downloads == 1 && external_refreshes == 0,
             "external images never trigger a Notion block refresh");
 
+    char image_cache_directory[] = "/tmp/potion-image-cache.XXXXXX";
+    require(::mkdtemp(image_cache_directory) != nullptr,
+            "create temporary image cache directory");
+    potion::SessionImageCache image_cache(image_cache_directory, 1024 * 1024,
+                                           8);
+    std::string cache_error;
+    require(image_cache.reset(cache_error), "initialize session image cache");
+    const std::uint64_t initial_cache_generation = image_cache.generation();
+    require(image_cache.store(image_key, "image/png", "cached bytes",
+                              initial_cache_generation),
+            "store image and MIME type atomically");
+    std::string cached_type, cached_body;
+    require(image_cache.load(image_key, cached_type, cached_body) &&
+                cached_type == "image/png" && cached_body == "cached bytes",
+            "session image cache preserves content type and bytes");
+    require(image_cache.reset(cache_error) &&
+                !image_cache.load(image_key, cached_type, cached_body),
+            "startup reset removes previous session image entries");
+    const std::uint64_t before_clear = image_cache.generation();
+    image_cache.clear();
+    require(!image_cache.store(image_key, "image/png", "stale download",
+                               before_clear) &&
+                !image_cache.load(image_key, cached_type, cached_body),
+            "a download started before logout cannot repopulate the cache");
+
+    potion::ImageRegistry cache_hit_registry;
+    const std::string cache_hit_key = cache_hit_registry.register_notion_url(
+        notion_image_url, notion_block_id, 900);
+    const std::uint64_t cache_hit_generation = image_cache.generation();
+    require(image_cache.store(cache_hit_key, "image/webp", "offline image",
+                              cache_hit_generation),
+            "seed expired signed URL cache entry");
+    int cache_hit_downloads = 0, cache_hit_refreshes = 0;
+    require(potion::retrieve_registered_image(
+                cache_hit_registry, cache_hit_key, 5000,
+                [&](const std::string &, potion::BinaryResponse &,
+                    std::string &, long *) {
+                  ++cache_hit_downloads;
+                  return false;
+                },
+                [&](const std::string &, std::string &, std::int64_t &,
+                    std::string &) {
+                  ++cache_hit_refreshes;
+                  return false;
+                },
+                refreshed_image, image_error, &image_cache) &&
+                refreshed_image.content_type == "image/webp" &&
+                refreshed_image.body == "offline image" &&
+                cache_hit_downloads == 0 && cache_hit_refreshes == 0,
+            "cache hit bypasses expired URL refresh and remote download");
+
+    image_cache.clear();
+    potion::ImageRegistry cache_miss_registry;
+    const std::string cache_miss_key = cache_miss_registry.register_url(
+        "https://example.com/cache-miss.png");
+    int cache_miss_downloads = 0;
+    const auto unused_refresh =
+        [](const std::string &, std::string &, std::int64_t &,
+           std::string &) { return false; };
+    const auto cache_miss_download =
+        [&](const std::string &, potion::BinaryResponse &result,
+            std::string &, long *status) {
+          ++cache_miss_downloads;
+          if (status) *status = 200;
+          result = {"image/png", "downloaded once"};
+          return true;
+        };
+    require(potion::retrieve_registered_image(
+                cache_miss_registry, cache_miss_key, 1000,
+                cache_miss_download, unused_refresh, refreshed_image,
+                image_error, &image_cache) && cache_miss_downloads == 1,
+            "cache miss uses the existing remote retrieval path");
+    cache_miss_registry.clear();
+    require(potion::retrieve_registered_image(
+                cache_miss_registry, cache_miss_key, 1000,
+                cache_miss_download, unused_refresh, refreshed_image,
+                image_error, &image_cache) && cache_miss_downloads == 1 &&
+                refreshed_image.body == "downloaded once",
+            "cached image remains available without registry or network");
+
     std::atomic<int> active_downloads{0}, peak_downloads{0};
+    std::atomic<int> serialized_downloads{0};
     const auto serialized_download =
         [&](const std::string &, potion::BinaryResponse &result,
             std::string &, long *status) {
           const int active = active_downloads.fetch_add(1) + 1;
+          serialized_downloads.fetch_add(1);
           int peak = peak_downloads.load();
           while (peak < active &&
                  !peak_downloads.compare_exchange_weak(peak, active)) {}
@@ -635,25 +722,52 @@ int main() {
           result = {"image/png", "serialized"};
           return true;
         };
-    const auto unused_refresh =
-        [](const std::string &, std::string &, std::int64_t &,
-           std::string &) { return false; };
     auto first_fetch = std::async(std::launch::async, [&] {
       potion::BinaryResponse result;
       std::string error;
       return potion::retrieve_registered_image(
           external_registry, external_key, 1000, serialized_download,
-          unused_refresh, result, error);
+          unused_refresh, result, error, &image_cache);
     });
     auto second_fetch = std::async(std::launch::async, [&] {
       potion::BinaryResponse result;
       std::string error;
       return potion::retrieve_registered_image(
           external_registry, external_key, 1000, serialized_download,
-          unused_refresh, result, error);
+          unused_refresh, result, error, &image_cache);
     });
-    require(first_fetch.get() && second_fetch.get() && peak_downloads == 1,
-            "duplicate proxy requests for one image are serialized");
+    require(first_fetch.get() && second_fetch.get() && peak_downloads == 1 &&
+                serialized_downloads.load() == 1,
+            "duplicate proxy requests share one download and cached result");
+    image_cache.clear();
+    potion::SessionImageCache bounded_cache(image_cache_directory,
+                                             1024 * 1024, 2);
+    require(bounded_cache.reset(cache_error), "reset bounded image cache");
+    potion::ImageRegistry cache_key_registry;
+    const std::string bounded_key_1 = cache_key_registry.register_url(
+        "https://example.com/bounded-1.png");
+    const std::string bounded_key_2 = cache_key_registry.register_url(
+        "https://example.com/bounded-2.png");
+    const std::string bounded_key_3 = cache_key_registry.register_url(
+        "https://example.com/bounded-3.png");
+    const std::uint64_t bounded_generation = bounded_cache.generation();
+    require(bounded_cache.store(bounded_key_1, "image/png", "one",
+                                bounded_generation) &&
+                bounded_cache.store(bounded_key_2, "image/png", "two",
+                                    bounded_generation) &&
+                bounded_cache.store(bounded_key_3, "image/png", "three",
+                                    bounded_generation),
+            "bounded image cache accepts new entries");
+    const bool bounded_first = bounded_cache.load(
+        bounded_key_1, cached_type, cached_body);
+    const bool bounded_second = bounded_cache.load(
+        bounded_key_2, cached_type, cached_body);
+    require(bounded_cache.load(bounded_key_3, cached_type, cached_body) &&
+                (!bounded_first || !bounded_second),
+            "bounded image cache evicts an older entry");
+    bounded_cache.clear();
+    require(::rmdir(image_cache_directory) == 0,
+            "remove temporary image cache directory");
 
     potion::MarkdownRenderer renderer(images);
     const std::string html = renderer.render(
@@ -701,13 +815,19 @@ int main() {
             editable_scope.find("<figure class=\"potion-block potion-editable\">") == std::string::npos,
             "unsupported block types are not editable");
 
+    std::vector<std::string> rendered_image_keys;
     const std::string figure = renderer.render(
       "Impulse response $`h[n]`$\n"
-      "![Impulse response $`h[n]`$](https://example.com/impulse.png)\n");
+      "![Impulse response $`h[n]`$](https://example.com/impulse.png)\n",
+      &rendered_image_keys);
     require(figure.find("<img data-src=\"http://127.0.0.1:8766/api/images/") != std::string::npos, "lazy image source");
     require(figure.find("<figcaption>Impulse response <span class=\"math\" data-potion-atomic=\"1\" data-potion-expression=\"h[n]\"><span class=\"katex\">") != std::string::npos,
             "caption math is rendered natively");
     require(figure.find("potion-editable-content\">Impulse response") == std::string::npos && figure.find("<p><figure>") == std::string::npos, "deduplicated standalone figure");
+    require(rendered_image_keys.size() == 1 &&
+                rendered_image_keys[0] == images.register_url(
+                    "https://example.com/impulse.png"),
+            "renderer reports page image keys for asynchronous prefetch");
     const std::string figure_first = renderer.render(
       "![Impulse response $`h[n]`$](https://example.com/impulse.png)\n"
       "Impulse response $`h[n]`$\n");
@@ -930,6 +1050,94 @@ int main() {
 
     char directory[] = "/tmp/potion-test.XXXXXX";
     require(::mkdtemp(directory) != nullptr, "mkdtemp");
+
+    {
+      const std::string server_cache = std::string(directory) + "/image-cache";
+      require(::mkdir(server_cache.c_str(), 0700) == 0,
+              "create stale server cache directory");
+      const std::string stale_cache_file = server_cache + "/stale.tmp";
+      { std::ofstream output(stale_cache_file); output << "old session"; }
+      const std::string first_url = "https://example.com/prefetch-first.png";
+      const std::string second_url = "https://example.com/prefetch-second.png";
+      potion::ImageRegistry key_registry;
+      const std::string first_key = key_registry.register_url(first_url);
+      const std::string second_key = key_registry.register_url(second_url);
+      std::atomic<int> downloads{0}, completed_downloads{0};
+      std::atomic<bool> first_download_started{false};
+      RunningServer running(
+          directory, {}, {},
+          [&](potion::ServerOptions &options) {
+            options.page_retriever =
+                [&](const std::string &, const std::string &page_id,
+                    potion::PageDocument &page, std::string &) {
+                  page.id = page_id;
+                  page.title = "Prefetch test";
+                  page.markdown = "![First](" + first_url + ")\n" +
+                                  "![Second](" + second_url + ")\n";
+                  return true;
+                };
+            options.image_downloader =
+                [&](const std::string &url, potion::BinaryResponse &result,
+                    std::string &, long *status) {
+                  downloads.fetch_add(1);
+                  if (url == first_url) {
+                    first_download_started.store(true);
+                    std::this_thread::sleep_for(std::chrono::milliseconds(500));
+                  }
+                  if (status) *status = 200;
+                  result = {url == first_url ? "image/png" : "image/webp",
+                            url == first_url ? "first image" : "second image"};
+                  completed_downloads.fetch_add(1);
+                  return true;
+                };
+            options.image_refresher = unused_refresh;
+          });
+      require(::access(stale_cache_file.c_str(), F_OK) != 0,
+              "server startup clears stale image cache files");
+      const std::string page_id = "5908cc548ef342b6b84e254fa1785a21";
+      const auto page_started = std::chrono::steady_clock::now();
+      const auto page_response = raw_request(
+          running.server.bound_port(), "/api/pages/" + page_id);
+      const auto page_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now() - page_started).count();
+      require(page_response.status == 200 && page_elapsed < 400,
+              "page response does not wait for image prefetch");
+      for (int i = 0; i < 100 && !first_download_started.load(); ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      require(first_download_started.load(),
+              "page images begin prefetching asynchronously");
+      const auto demand_started = std::chrono::steady_clock::now();
+      const auto demanded_second = raw_request(
+          running.server.bound_port(), "/api/images/" + second_key);
+      const auto demand_elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::steady_clock::now() - demand_started).count();
+      require(demanded_second.status == 200 &&
+                  demanded_second.body == "second image" &&
+                  demanded_second.headers.find("Content-Type: image/webp") !=
+                      std::string::npos &&
+                  demand_elapsed < 400,
+              "direct image demand bypasses the pending prefetch queue");
+      for (int i = 0; i < 200 && completed_downloads.load() < 2; ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      require(completed_downloads.load() == 2,
+              "background prefetch completes through the normal image path");
+      const auto cached_first = raw_request(
+          running.server.bound_port(), "/api/images/" + first_key);
+      const auto cached_second = raw_request(
+          running.server.bound_port(), "/api/images/" + second_key);
+      require(cached_first.status == 200 && cached_first.body == "first image" &&
+                  cached_second.status == 200 &&
+                  cached_second.body == "second image" &&
+                  downloads.load() == 2,
+              "prefetched and demanded images are reused from session cache");
+      const std::string empty_logout;
+      request(running.server.bound_port(), "/api/auth/logout", &empty_logout);
+      require(::access((server_cache + "/" + first_key + ".cache").c_str(),
+                       F_OK) != 0 &&
+                  ::access((server_cache + "/" + second_key + ".cache").c_str(),
+                           F_OK) != 0,
+              "logout clears cached image files");
+    }
 
     potion::PageUuid uuid;
     require(potion::parse_page_uuid("5908cc548ef342b6b84e254fa1785a21", uuid),
@@ -1311,6 +1519,7 @@ int main() {
       ::unlink((path + "/positions.dat.tmp").c_str());
       ::rmdir(path.c_str());
     }
+    ::rmdir((std::string(directory) + "/image-cache").c_str());
     ::rmdir(directory);
     std::cout << "Potion tests passed\n";
     return 0;

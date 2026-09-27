@@ -1,5 +1,6 @@
 #pragma once
 #include "potion/app_state.hpp"
+#include "potion/image_cache.hpp"
 #include "potion/markdown.hpp"
 #include "potion/notion_client.hpp"
 #include "potion/reading_positions.hpp"
@@ -28,12 +29,19 @@ struct ServerOptions {
   std::string simulator_asset_dir{"simulator"};
   std::string token_import_path;
   std::string ca_bundle_path;
+  std::string image_cache_dir{"/tmp/potion_cache"};
   std::string start_page_id;
   std::uint16_t port{8766};
   std::uint16_t remote_setup_port{8767};
   bool simulator{};
   std::size_t worker_count{4};
+  std::size_t image_cache_max_bytes{32 * 1024 * 1024};
+  std::size_t image_cache_max_entries{128};
   std::function<bool(const std::string &, std::string &)> token_validator;
+  std::function<bool(const std::string &, const std::string &, PageDocument &,
+                     std::string &)> page_retriever;
+  ImageDownloadFunction image_downloader;
+  ImageRefreshFunction image_refresher;
 };
 class HttpServer {
 public:
@@ -51,6 +59,11 @@ private:
   void handle_client(int client) noexcept;
   void handle_remote_setup_client(int client) noexcept;
   void worker_loop() noexcept;
+  void image_prefetch_loop() noexcept;
+  void schedule_image_prefetch(const std::vector<std::string> &keys);
+  void clear_image_prefetch() noexcept;
+  bool retrieve_image(const std::string &key, BinaryResponse &image,
+                      std::string &error);
   void wake_listener() noexcept;
   bool validate_token(const std::string &token, std::string &error);
   std::string remote_setup_url() const;
@@ -62,6 +75,7 @@ private:
   ReadingPositionStore positions_;
   NotionClient notion_;
   ImageRegistry images_;
+  SessionImageCache image_cache_;
   MarkdownRenderer renderer_;
   std::string token_import_message_;
   std::atomic<bool> stopping_{false};
@@ -72,6 +86,12 @@ private:
   std::condition_variable pending_condition_;
   std::deque<PendingClient> pending_clients_;
   std::vector<std::thread> workers_;
+  std::mutex image_prefetch_mutex_;
+  std::condition_variable image_prefetch_condition_;
+  std::deque<std::string> image_prefetch_queue_;
+  std::set<std::string> image_prefetch_queued_;
+  std::string image_prefetch_active_;
+  std::thread image_prefetch_worker_;
   mutable std::mutex remote_setup_mutex_;
   std::string remote_setup_path_;
   std::string remote_setup_url_;

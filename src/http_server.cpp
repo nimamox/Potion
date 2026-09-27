@@ -327,7 +327,10 @@ bool is_immutable_asset_path(const std::string &relative_path) noexcept {
 
 HttpServer::HttpServer(ServerOptions options)
     : options_(std::move(options)), state_(options_.data_dir), positions_(options_.data_dir),
-      notion_("2026-03-11", options_.ca_bundle_path), renderer_(images_) {
+      notion_("2026-03-11", options_.ca_bundle_path),
+      image_cache_(options_.image_cache_dir, options_.image_cache_max_bytes,
+                   options_.image_cache_max_entries),
+      renderer_(images_) {
   if (!options_.start_page_id.empty() && !valid_page_id(options_.start_page_id))
     throw std::runtime_error("Invalid startup page id");
   if (!options_.simulator) {
@@ -375,6 +378,13 @@ void HttpServer::clear_remote_setup() {
 }
 HttpServer::~HttpServer() {
   stop();
+  for (auto &worker : workers_)
+    if (worker.joinable() && worker.get_id() != std::this_thread::get_id())
+      worker.join();
+  if (image_prefetch_worker_.joinable() &&
+      image_prefetch_worker_.get_id() != std::this_thread::get_id())
+    image_prefetch_worker_.join();
+  image_cache_.clear();
   if (!options_.simulator) {
     std::string ignored;
     apply_kindle_rotation("auto", ignored);
@@ -394,7 +404,9 @@ void HttpServer::wake_listener() noexcept {
 }
 void HttpServer::stop() noexcept {
   if (stopping_.exchange(true)) return;
-  pending_condition_.notify_all(); wake_listener();
+  pending_condition_.notify_all();
+  image_prefetch_condition_.notify_all();
+  wake_listener();
   std::lock_guard<std::mutex> lock(clients_mutex_);
   for (const int client : active_clients_) ::shutdown(client, SHUT_RDWR);
 }
@@ -418,6 +430,73 @@ void HttpServer::worker_loop() noexcept {
     if (stopping_.load()) {
       { std::lock_guard<std::mutex> lock(clients_mutex_); active_clients_.erase(client); }
       ::close(client);
+    }
+  }
+}
+
+bool HttpServer::retrieve_image(const std::string &key, BinaryResponse &image,
+                                std::string &error) {
+  const ImageDownloadFunction download = options_.image_downloader
+      ? options_.image_downloader
+      : [this](const std::string &url, BinaryResponse &result,
+               std::string &download_error, long *status) {
+          return notion_.retrieve_image(url, result, download_error, status);
+        };
+  const ImageRefreshFunction refresh = options_.image_refresher
+      ? options_.image_refresher
+      : [this](const std::string &block_id, std::string &url,
+               std::int64_t &expires_at, std::string &refresh_error) {
+          return notion_.refresh_image_url(state_.token(), block_id, url,
+                                           expires_at, refresh_error);
+        };
+  return retrieve_registered_image(
+      images_, key, static_cast<std::int64_t>(unix_timestamp()), download,
+      refresh, image, error, &image_cache_);
+}
+
+void HttpServer::schedule_image_prefetch(
+    const std::vector<std::string> &keys) {
+  std::lock_guard<std::mutex> lock(image_prefetch_mutex_);
+  image_prefetch_queue_.clear();
+  image_prefetch_queued_.clear();
+  for (const auto &key : keys) {
+    if (key == image_prefetch_active_ ||
+        image_prefetch_queued_.find(key) != image_prefetch_queued_.end())
+      continue;
+    if (image_prefetch_queue_.size() >= options_.image_cache_max_entries)
+      break;
+    image_prefetch_queue_.push_back(key);
+    image_prefetch_queued_.insert(key);
+  }
+  image_prefetch_condition_.notify_one();
+}
+
+void HttpServer::clear_image_prefetch() noexcept {
+  std::lock_guard<std::mutex> lock(image_prefetch_mutex_);
+  image_prefetch_queue_.clear();
+  image_prefetch_queued_.clear();
+}
+
+void HttpServer::image_prefetch_loop() noexcept {
+  for (;;) {
+    std::string key;
+    {
+      std::unique_lock<std::mutex> lock(image_prefetch_mutex_);
+      image_prefetch_condition_.wait(lock, [this] {
+        return stopping_.load() || !image_prefetch_queue_.empty();
+      });
+      if (stopping_.load()) return;
+      key = image_prefetch_queue_.front();
+      image_prefetch_queue_.pop_front();
+      image_prefetch_queued_.erase(key);
+      image_prefetch_active_ = key;
+    }
+    BinaryResponse ignored_image;
+    std::string ignored_error;
+    retrieve_image(key, ignored_image, ignored_error);
+    {
+      std::lock_guard<std::mutex> lock(image_prefetch_mutex_);
+      if (image_prefetch_active_ == key) image_prefetch_active_.clear();
     }
   }
 }
@@ -514,6 +593,8 @@ void HttpServer::handle_client(int client) noexcept {
       std::string error; if (!state_.clear_token(error)) throw std::runtime_error(error);
       if (!positions_.clear(error)) throw std::runtime_error(error);
       if (!state_.clear_page_pins(error)) throw std::runtime_error(error);
+      clear_image_prefetch();
+      image_cache_.clear();
       images_.clear();
       respond(client, 200, "OK", "application/json", R"({"type":"logged-out"})");
       wake_listener();
@@ -681,11 +762,15 @@ void HttpServer::handle_client(int client) noexcept {
       const std::string id = request.target.substr(11);
       if (!valid_page_id(id)) throw std::runtime_error("Invalid page id");
       PageDocument page; std::string error;
-      if (!notion_.retrieve_page(state_.token(), id, page, error))
+      const bool retrieved = options_.page_retriever
+          ? options_.page_retriever(state_.token(), id, page, error)
+          : notion_.retrieve_page(state_.token(), id, page, error);
+      if (!retrieved)
         throw std::runtime_error(error);
       const auto position = positions_.visit(page.id, unix_timestamp(), error);
       if (!error.empty()) std::cerr << "Reading position: " << error << '\n';
-      const std::string html = renderer_.render(page.markdown);
+      std::vector<std::string> image_keys;
+      const std::string html = renderer_.render(page.markdown, &image_keys);
       const bool equation_enrichment =
           html.find("data-potion-expression=") != std::string::npos;
       std::string body = R"({"type":"page","id":)" + json_escape(page.id) +
@@ -702,29 +787,18 @@ void HttpServer::handle_client(int client) noexcept {
       else body += "null";
       body += "}";
       respond(client, 200, "OK", "application/json", body);
+      schedule_image_prefetch(image_keys);
     } else if (request.method == "GET" &&
                request.target.compare(0, 12, "/api/images/") == 0) {
       const std::string key = request.target.substr(12);
-      ImageSource source;
       std::string error;
       BinaryResponse image;
-      if (!images_.resolve_source(key, source))
-        respond(client, 404, "Not Found", "text/plain", "Not found\n");
-      else if (!retrieve_registered_image(
-                   images_, key, static_cast<std::int64_t>(unix_timestamp()),
-                   [this](const std::string &url, BinaryResponse &result,
-                          std::string &download_error, long *status) {
-                     return notion_.retrieve_image(url, result, download_error,
-                                                   status);
-                   },
-                   [this](const std::string &block_id, std::string &url,
-                          std::int64_t &expires_at, std::string &refresh_error) {
-                     return notion_.refresh_image_url(
-                         state_.token(), block_id, url, expires_at,
-                         refresh_error);
-                   },
-                   image, error))
-        throw std::runtime_error(error);
+      if (!retrieve_image(key, image, error)) {
+        if (error == "Not found")
+          respond(client, 404, "Not Found", "text/plain", "Not found\n");
+        else
+          throw std::runtime_error(error);
+      }
       else respond(client, 200, "OK", image.content_type, image.body,
                    CachePolicy::proxied_image);
     } else if (request.method == "POST" && request.target == "/api/refresh") {
@@ -769,6 +843,9 @@ void HttpServer::handle_client(int client) noexcept {
 
 int HttpServer::run() {
   stop_requested = 0;
+  std::string cache_error;
+  if (!image_cache_.reset(cache_error))
+    std::cerr << "Image cache: " << cache_error << '\n';
   std::uint16_t main_port = 0;
   const int listener = create_listener(INADDR_LOOPBACK, options_.port, main_port);
   if (listener < 0)
@@ -779,6 +856,7 @@ int HttpServer::run() {
   stop_wake_fd = wake_write_;
   ::fcntl(wake_read_, F_SETFL, O_NONBLOCK); ::fcntl(wake_write_, F_SETFL, O_NONBLOCK);
   bound_port_.store(main_port);
+  image_prefetch_worker_ = std::thread(&HttpServer::image_prefetch_loop, this);
   for (std::size_t i = 0; i < std::max<std::size_t>(2, options_.worker_count); ++i)
     workers_.emplace_back(&HttpServer::worker_loop, this);
   std::cout << "Potion daemon listening at http://127.0.0.1:" << bound_port() << "/\n";
@@ -871,6 +949,8 @@ int HttpServer::run() {
   close_setup_listener();
   ::close(listener);
   for (auto &worker : workers_) if (worker.joinable()) worker.join();
+  if (image_prefetch_worker_.joinable()) image_prefetch_worker_.join();
+  image_cache_.clear();
   stop_wake_fd = -1;
   if (wake_read_ >= 0) ::close(wake_read_);
   if (wake_write_ >= 0) ::close(wake_write_);

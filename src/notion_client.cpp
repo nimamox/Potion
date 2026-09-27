@@ -1,4 +1,5 @@
 #include "potion/notion_client.hpp"
+#include "potion/image_cache.hpp"
 #include "potion/reading_positions.hpp"
 #include <curl/curl.h>
 #include <algorithm>
@@ -680,14 +681,26 @@ bool retrieve_registered_image(ImageRegistry &registry, const std::string &key,
                                std::int64_t now,
                                const ImageDownloadFunction &download,
                                const ImageRefreshFunction &refresh,
-                               BinaryResponse &image, std::string &error) {
-  const auto request_mutex = registry.request_lock(key);
-  std::lock_guard<std::mutex> request_guard(*request_mutex);
+                               BinaryResponse &image, std::string &error,
+                               SessionImageCache *cache) {
+  const std::uint64_t cache_generation = cache ? cache->generation() : 0;
+  if (cache && cache->load(key, image.content_type, image.body)) return true;
   ImageSource source;
   if (!registry.resolve_source(key, source)) {
     error = "Not found";
     return false;
   }
+  const auto request_mutex = registry.request_lock(key);
+  std::lock_guard<std::mutex> request_guard(*request_mutex);
+  if (cache && cache->load(key, image.content_type, image.body)) return true;
+  if (!registry.resolve_source(key, source)) {
+    error = "Not found";
+    return false;
+  }
+  const auto cache_image = [&]() {
+    if (cache)
+      cache->store(key, image.content_type, image.body, cache_generation);
+  };
   bool refresh_attempted = false;
   const auto refresh_source = [&]() {
     refresh_attempted = true;
@@ -708,11 +721,17 @@ bool retrieve_registered_image(ImageRegistry &registry, const std::string &key,
     refresh_source();
 
   long status = 0;
-  if (download(source.url, image, error, &status)) return true;
+  if (download(source.url, image, error, &status)) {
+    cache_image();
+    return true;
+  }
   if (source.notion_hosted() && !refresh_attempted &&
       (status == 401 || status == 403) && refresh_source()) {
     status = 0;
-    return download(source.url, image, error, &status);
+    if (download(source.url, image, error, &status)) {
+      cache_image();
+      return true;
+    }
   }
   return false;
 }

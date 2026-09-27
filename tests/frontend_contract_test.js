@@ -133,7 +133,14 @@ assert.match(httpServer,
   /state_\.authenticated\(\)[\s\S]*::close\(setup_listener\)[\s\S]*clear_remote_setup\(\)/,
   "the temporary listener closes after authentication");
 assert.match(httpServer,
-  /retrieve_registered_image\([\s\S]*?retrieve_image\(url, result, download_error,[\s\S]*?CachePolicy::proxied_image/);
+  /bool HttpServer::retrieve_image[\s\S]*?retrieve_registered_image\([\s\S]*?&image_cache_\)/,
+  "image proxy and prefetch share the cache-aware retrieval path");
+assert.match(httpServer,
+  /request\.target\.compare\(0, 12, "\/api\/images\/"\)[\s\S]*?retrieve_image\(key, image, error\)[\s\S]*?CachePolicy::proxied_image/,
+  "lazy image requests retain their browser cache policy");
+assert.match(httpServer,
+  /respond\(client, 200, "OK", "application\/json", body\);\s*schedule_image_prefetch\(image_keys\)/,
+  "page image prefetch starts only after the page response is sent");
 assert.match(httpServer,
   /is_immutable_asset_path\(relative\)[\s\S]*?CachePolicy::immutable_asset/);
 assert.match(httpServer, /vendor\/fast-font\/[\s\S]*?\.otf/);
