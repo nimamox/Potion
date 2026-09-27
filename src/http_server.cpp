@@ -142,6 +142,24 @@ bool valid_page_id(const std::string &id) {
   return parse_page_uuid(id, uuid);
 }
 
+std::size_t unsigned_parameter(const std::string &query,
+                               const std::string &name,
+                               std::size_t fallback,
+                               std::size_t maximum) {
+  const std::string value = parameter(query, name);
+  if (value.empty()) return fallback;
+  std::size_t used = 0;
+  unsigned long long parsed = 0;
+  try {
+    parsed = std::stoull(value, &used);
+  } catch (...) {
+    throw std::runtime_error("Invalid " + name);
+  }
+  if (used != value.size() || parsed > maximum)
+    throw std::runtime_error("Invalid " + name);
+  return static_cast<std::size_t>(parsed);
+}
+
 std::string html_escape(const std::string &text) {
   std::string out;
   out.reserve(text.size());
@@ -330,6 +348,7 @@ HttpServer::HttpServer(ServerOptions options)
       notion_("2026-03-11", options_.ca_bundle_path),
       image_cache_(options_.image_cache_dir, options_.image_cache_max_bytes,
                    options_.image_cache_max_entries),
+      page_cache_(options_.page_cache_dir),
       renderer_(images_) {
   if (!options_.start_page_id.empty() && !valid_page_id(options_.start_page_id))
     throw std::runtime_error("Invalid startup page id");
@@ -384,6 +403,7 @@ HttpServer::~HttpServer() {
   if (image_prefetch_worker_.joinable() &&
       image_prefetch_worker_.get_id() != std::this_thread::get_id())
     image_prefetch_worker_.join();
+  page_cache_.clear();
   image_cache_.clear();
   if (!options_.simulator) {
     std::string ignored;
@@ -594,28 +614,88 @@ void HttpServer::handle_client(int client) noexcept {
       if (!positions_.clear(error)) throw std::runtime_error(error);
       if (!state_.clear_page_pins(error)) throw std::runtime_error(error);
       clear_image_prefetch();
+      page_cache_.clear();
       image_cache_.clear();
       images_.clear();
       respond(client, 200, "OK", "application/json", R"({"type":"logged-out"})");
       wake_listener();
     } else if (request.method == "GET" && request.target == "/api/pages") {
       if (!state_.authenticated()) throw std::runtime_error("Connect Potion to Notion first");
+      const std::string query = trim(parameter(request.query, "query"));
+      if (query.size() > 200)
+        throw std::runtime_error("Search query is too long");
+      const std::string refresh_value = parameter(request.query, "refresh");
+      if (!refresh_value.empty() && refresh_value != "1")
+        throw std::runtime_error("Invalid refresh value");
+      const bool refresh = refresh_value == "1";
+      const std::size_t page_size = unsigned_parameter(
+          request.query, "pageSize", 20, 50);
+      if (page_size == 0) throw std::runtime_error("Invalid pageSize");
+      std::size_t offset = unsigned_parameter(
+          request.query, "offset", 0, 1000000);
+      const std::string page_value = parameter(request.query, "page");
+      if (!page_value.empty() && parameter(request.query, "offset").empty()) {
+        const std::size_t page = unsigned_parameter(
+            request.query, "page", 1, 50000);
+        if (page == 0 || page - 1 > 1000000 / page_size)
+          throw std::runtime_error("Invalid page");
+        offset = (page - 1) * page_size;
+      }
       std::string error;
-      const auto pages = notion_.search_pages(state_.token(), parameter(request.query, "query"), error);
-      if (!error.empty()) throw std::runtime_error(error);
+      std::vector<PageSummary> pages;
+      const auto build = [this, &query](std::string &build_error) {
+        if (options_.page_searcher)
+          return options_.page_searcher(
+              state_.token(), query, build_error);
+        return notion_.search_pages(state_.token(), query, build_error);
+      };
+      if (!page_cache_.get_or_build(query, refresh, build, pages, error))
+        throw std::runtime_error(error);
       const std::string sort_mode = state_.settings().page_sort_mode;
-      std::string body = R"({"type":"pages","pages":[)"; bool first_page = true;
+      struct ListedPage {
+        PageSummary page;
+        std::uint32_t opened{};
+        bool pinned{};
+      };
+      std::vector<ListedPage> listed;
+      listed.reserve(pages.size());
       for (const auto &page : pages) {
         const auto position = positions_.get(page.id);
+        listed.push_back({page, position ? position->last_seen : 0,
+                          state_.page_pinned(page.id)});
+      }
+      std::sort(listed.begin(), listed.end(),
+                [&sort_mode](const ListedPage &left,
+                             const ListedPage &right) {
+        if (left.pinned != right.pinned) return left.pinned;
+        if (sort_mode == "opened" && left.opened != right.opened)
+          return left.opened > right.opened;
+        if (left.page.edited != right.page.edited)
+          return left.page.edited > right.page.edited;
+        if (left.page.title != right.page.title)
+          return left.page.title < right.page.title;
+        return left.page.id < right.page.id;
+      });
+      const std::size_t total = listed.size();
+      if (offset >= total && total != 0)
+        offset = ((total - 1) / page_size) * page_size;
+      const std::size_t end = std::min(total, offset + page_size);
+      std::string body = R"({"type":"pages","pages":[)"; bool first_page = true;
+      for (std::size_t i = offset; i < end; ++i) {
+        const auto &page = listed[i];
         if (!first_page) body += ',';
         first_page = false;
-        body += R"({"id":)" + json_escape(page.id) +
-                R"(,"title":)" + json_escape(page.title) +
-                R"(,"edited":)" + json_escape(page.edited) +
-                R"(,"opened":)" + std::to_string(position ? position->last_seen : 0) +
-                R"(,"pinned":)" + (state_.page_pinned(page.id) ? "true}" : "false}");
+        body += R"({"id":)" + json_escape(page.page.id) +
+                R"(,"title":)" + json_escape(page.page.title) +
+                R"(,"edited":)" + json_escape(page.page.edited) +
+                R"(,"opened":)" + std::to_string(page.opened) +
+                R"(,"pinned":)" + (page.pinned ? "true}" : "false}");
       }
-      body += R"(],"sortMode":)" + json_escape(sort_mode) + "}";
+      body += R"(],"sortMode":)" + json_escape(sort_mode) +
+              R"(,"offset":)" + std::to_string(offset) +
+              R"(,"pageSize":)" + std::to_string(page_size) +
+              R"(,"total":)" + std::to_string(total) +
+              R"(,"hasMore":)" + (end < total ? "true}" : "false}");
       respond(client, 200, "OK", "application/json", body);
     } else if (request.method == "POST" &&
                request.target.compare(0, 11, "/api/pages/") == 0 &&
@@ -860,6 +940,9 @@ int HttpServer::run() {
   std::string cache_error;
   if (!image_cache_.reset(cache_error))
     std::cerr << "Image cache: " << cache_error << '\n';
+  cache_error.clear();
+  if (!page_cache_.reset(cache_error))
+    std::cerr << "Pages cache: " << cache_error << '\n';
   std::uint16_t main_port = 0;
   const int listener = create_listener(INADDR_LOOPBACK, options_.port, main_port);
   if (listener < 0)
@@ -964,6 +1047,7 @@ int HttpServer::run() {
   ::close(listener);
   for (auto &worker : workers_) if (worker.joinable()) worker.join();
   if (image_prefetch_worker_.joinable()) image_prefetch_worker_.join();
+  page_cache_.clear();
   image_cache_.clear();
   stop_wake_fd = -1;
   if (wake_read_ >= 0) ::close(wake_read_);

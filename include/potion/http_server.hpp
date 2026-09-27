@@ -3,6 +3,7 @@
 #include "potion/image_cache.hpp"
 #include "potion/markdown.hpp"
 #include "potion/notion_client.hpp"
+#include "potion/page_cache.hpp"
 #include "potion/reading_positions.hpp"
 #include <atomic>
 #include <condition_variable>
@@ -30,6 +31,7 @@ struct ServerOptions {
   std::string token_import_path;
   std::string ca_bundle_path;
   std::string image_cache_dir{"/tmp/potion_cache"};
+  std::string page_cache_dir{"/tmp/potion_cache"};
   std::string start_page_id;
   std::uint16_t port{8766};
   std::uint16_t remote_setup_port{8767};
@@ -40,6 +42,9 @@ struct ServerOptions {
   std::function<bool(const std::string &, std::string &)> token_validator;
   std::function<bool(const std::string &, const std::string &, PageDocument &,
                      std::string &)> page_retriever;
+  std::function<std::vector<PageSummary>(const std::string &,
+                                         const std::string &,
+                                         std::string &)> page_searcher;
   ImageDownloadFunction image_downloader;
   ImageRefreshFunction image_refresher;
 };
@@ -76,6 +81,7 @@ private:
   NotionClient notion_;
   ImageRegistry images_;
   SessionImageCache image_cache_;
+  SessionPageCache page_cache_;
   MarkdownRenderer renderer_;
   std::string token_import_message_;
   std::atomic<bool> stopping_{false};

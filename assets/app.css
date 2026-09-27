@@ -310,22 +310,52 @@ button:focus {
 }
 .search-row input {
   display: table-cell;
-  width: 78%;
+  width: 60%;
   padding: 8px 12px;
 }
 .search-row button {
   display: table-cell;
-  width: 22%;
+  width: 20%;
+  padding: 0 4px;
   background: #fff;
 }
 .page-list {
   position: absolute;
   top: 74px;
   right: 0;
-  bottom: 0;
+  bottom: 72px;
   left: 0;
   overflow-y: auto;
   border-top: 2px solid #111;
+}
+.page-pagination {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: table;
+  width: 100%;
+  height: 72px;
+  table-layout: fixed;
+  border-top: 2px solid #111;
+  background: #fff;
+}
+.page-pagination button,
+.page-pagination span {
+  display: table-cell;
+  width: 33.333%;
+  height: 70px;
+  padding: 0 8px;
+  vertical-align: middle;
+  text-align: center;
+  font: bold 18px "Amazon Ember", Arial, sans-serif;
+}
+.page-pagination button {
+  border: 0;
+  background: #fff;
+}
+.page-pagination button:disabled {
+  color: #999;
 }
 .page-row {
   position: relative;
@@ -1231,6 +1261,7 @@ button:focus {
 .night-mode .view,
 .night-mode .reader-toolbar,
 .night-mode .page-row,
+.night-mode .page-pagination,
 .night-mode .page-open,
 .night-mode .page-pin,
 .night-mode .square,

@@ -7,6 +7,11 @@
         pageSortMode = "opened",
         pageList = [],
         pageListLoaded = false,
+        pageListOffset = 0,
+        pageListPageSize = 12,
+        pageListTotal = 0,
+        pageListHasMore = false,
+        pageListQuery = "",
         pageSortSaveBusy = false,
         pageHistory = [];
     var irisTimer = null,
@@ -3148,7 +3153,8 @@
                     setPinButton(id("page-pin"), pinned);
                 }
                 if (button) button.disabled = false;
-                renderSortedPages(false);
+                if (pageListLoaded)
+                    loadPages(false, pageListOffset);
             }
         );
     }
@@ -3240,7 +3246,19 @@
     function renderSortedPages(resetScroll) {
         sortPages();
         renderPageList(resetScroll);
+        renderPagePagination();
         updateScroll();
+    }
+
+    function renderPagePagination() {
+        var current = pageListTotal ?
+                Math.floor(pageListOffset / pageListPageSize) + 1 : 1,
+            pages = Math.max(1, Math.ceil(
+                pageListTotal / pageListPageSize));
+        id("pages-pagination-status").innerHTML =
+            "Page " + current + " of " + pages;
+        id("pages-previous").disabled = pageListOffset === 0;
+        id("pages-next").disabled = !pageListHasMore;
     }
 
     function choosePageSort(mode) {
@@ -3250,7 +3268,6 @@
         previous = pageSortMode;
         pageSortMode = mode;
         setSortButtons();
-        renderSortedPages(false);
         pageSortSaveBusy = true;
         id("sort-opened").disabled = true;
         id("sort-edited").disabled = true;
@@ -3267,6 +3284,8 @@
                     setSortButtons();
                     renderSortedPages(false);
                     warning(error);
+                } else {
+                    loadPages(false, pageListOffset);
                 }
             }
         );
@@ -3294,22 +3313,15 @@
         currentPageId = "";
         currentPagePinned = false;
 
-        if (!pageListLoaded) {
-            loadPages();
-            return;
-        }
-
-        renderSortedPages(false);
-
-        hide(id("reader-view"));
-        show(id("pages-view"));
-
-        id("status").innerHTML = "Pages";
-
-        updateScroll();
+        loadPages(false, pageListLoaded ? pageListOffset : 0);
     }
 
-    function loadPages() {
+    function loadPages(refreshSnapshot, requestedOffset) {
+        var query = id("search").value || "", offset;
+        if (busy) return;
+        offset = typeof requestedOffset === "number" ? requestedOffset : 0;
+        if (query !== pageListQuery) offset = 0;
+        offset = Math.max(0, offset);
         setBusy(true);
         warning("");
         id("status").innerHTML = "Loading Notion pages...";
@@ -3323,7 +3335,10 @@
         request(
             "GET",
             "/api/pages?query=" +
-                encodeURIComponent(id("search").value || ""),
+                encodeURIComponent(query) +
+                "&offset=" + offset +
+                "&pageSize=" + pageListPageSize +
+                (refreshSnapshot ? "&refresh=1" : ""),
             null,
             function(error, result) {
                 if (error) {
@@ -3335,14 +3350,19 @@
 
                 pageSortMode = result.sortMode === "edited" ? "edited" : "opened";
                 pageList = result.pages || [];
+                pageListOffset = Number(result.offset) || 0;
+                pageListPageSize = Number(result.pageSize) || pageListPageSize;
+                pageListTotal = Number(result.total) || 0;
+                pageListHasMore = result.hasMore === true;
+                pageListQuery = query;
                 pageListLoaded = true;
                 setSortButtons();
                 renderSortedPages(true);
 
                 id("status").innerHTML =
-                    pageList.length +
+                    pageListTotal +
                     " accessible page" +
-                    (pageList.length === 1 ? "" : "s");
+                    (pageListTotal === 1 ? "" : "s");
 
                 setBusy(false);
             }
@@ -3845,7 +3865,23 @@
 
     id("remote-setup-check").onclick = checkRemoteSetup;
 
-    id("search-button").onclick = loadPages;
+    id("search-button").onclick = function() {
+        loadPages(false, 0);
+    };
+
+    id("pages-refresh").onclick = function() {
+        loadPages(true, id("search").value === pageListQuery ?
+            pageListOffset : 0);
+    };
+
+    id("pages-previous").onclick = function() {
+        loadPages(false, Math.max(0, pageListOffset - pageListPageSize));
+    };
+
+    id("pages-next").onclick = function() {
+        if (pageListHasMore)
+            loadPages(false, pageListOffset + pageListPageSize);
+    };
 
     id("sort-opened").onclick = function() {
         choosePageSort("opened");
@@ -3858,7 +3894,7 @@
     id("search").onkeydown = function(event) {
         event = event || window.event;
         if (event.keyCode === 13)
-            loadPages();
+            loadPages(false, 0);
     };
 
     id("back").onclick = function() {
@@ -4062,6 +4098,10 @@
                     currentPagePinned = false;
                     pageList = [];
                     pageListLoaded = false;
+                    pageListOffset = 0;
+                    pageListTotal = 0;
+                    pageListHasMore = false;
+                    pageListQuery = "";
                     connectView();
                     refreshRemoteSetupUrl(true);
                 }

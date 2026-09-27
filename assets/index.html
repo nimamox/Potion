@@ -46,10 +46,11 @@
   <section id="pages-view" class="view hidden">
     <div class="section-heading">
       <h2>Notion Pages</h2>
-      <div class="search-row"><input id="search" type="text" placeholder="Search accessible pages"><button id="search-button" type="button">Search</button></div>
+      <div class="search-row"><input id="search" type="text" placeholder="Search accessible pages"><button id="search-button" type="button">Search</button><button id="pages-refresh" type="button">Refresh</button></div>
       <div class="page-sort-cell"><div class="page-sort" role="group" aria-label="Sort pages"><button id="sort-opened" type="button" aria-pressed="true">Opened</button><button id="sort-edited" type="button" aria-pressed="false">Edited</button></div></div>
     </div>
     <div id="pages" class="page-list"></div>
+    <div class="page-pagination"><button id="pages-previous" type="button">&lsaquo; Previous</button><span id="pages-pagination-status">Page 1 of 1</span><button id="pages-next" type="button">Next &rsaquo;</button></div>
   </section>
 
   <section id="reader-view" class="view hidden">

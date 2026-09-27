@@ -5,6 +5,7 @@
 #include "potion/markdown.hpp"
 #include "potion/notion_client.hpp"
 #include "potion/orientation.hpp"
+#include "potion/page_cache.hpp"
 #include "potion/reading_positions.hpp"
 #include <curl/curl.h>
 #include <atomic>
@@ -76,6 +77,7 @@ struct RunningServer {
           options.port = 0; options.simulator = true; options.worker_count = 4;
           options.remote_setup_port = 0;
           options.image_cache_dir = state + "/image-cache";
+          options.page_cache_dir = state + "/page-cache";
           options.asset_dir = POTION_TEST_ASSET_DIR;
           options.start_page_id = start_page;
           options.token_validator = std::move(validator);
@@ -1067,25 +1069,92 @@ int main() {
     char directory[] = "/tmp/potion-test.XXXXXX";
     require(::mkdtemp(directory) != nullptr, "mkdtemp");
 
+    const std::string page_cache_unit_dir =
+        std::string(directory) + "/page-cache-unit";
+    require(::mkdir(page_cache_unit_dir.c_str(), 0700) == 0,
+            "create temporary Pages cache directory");
+    { std::ofstream stale(page_cache_unit_dir + "/pages-stale.json");
+      stale << "old session"; }
+    potion::SessionPageCache page_cache(page_cache_unit_dir, 2, 64 * 1024);
+    require(page_cache.reset(cache_error) &&
+                ::access((page_cache_unit_dir + "/pages-stale.json").c_str(),
+                         F_OK) != 0,
+            "Pages cache startup reset removes prior-session snapshots");
+    int snapshot_builds = 0;
+    const auto build_snapshot = [&](std::string &error) {
+      ++snapshot_builds;
+      error.clear();
+      return std::vector<potion::PageSummary>{
+          {"5908cc548ef342b6b84e254fa1785a21",
+           "Snapshot " + std::to_string(snapshot_builds), {},
+           "2026-09-27T00:00:00.000Z"}};
+    };
+    std::vector<potion::PageSummary> snapshot;
+    require(page_cache.get_or_build("", false, build_snapshot, snapshot,
+                                    cache_error) &&
+                snapshot_builds == 1 && snapshot[0].title == "Snapshot 1" &&
+                ::access((page_cache_unit_dir + "/pages-1.json").c_str(),
+                         F_OK) == 0,
+            "Pages cache stores the first normalized session snapshot");
+    require(page_cache.get_or_build("", false, build_snapshot, snapshot,
+                                    cache_error) &&
+                snapshot_builds == 1 && snapshot[0].title == "Snapshot 1",
+            "Pages cache hit does not rebuild the Notion search");
+    require(page_cache.get_or_build("different", false, build_snapshot,
+                                    snapshot, cache_error) &&
+                snapshot_builds == 2 && snapshot[0].title == "Snapshot 2",
+            "different search queries use separate snapshots");
+    require(page_cache.get_or_build("", true, build_snapshot, snapshot,
+                                    cache_error) &&
+                snapshot_builds == 3 && snapshot[0].title == "Snapshot 3",
+            "explicit refresh atomically replaces one query snapshot");
+    const auto failed_refresh = [&](std::string &error) {
+      error = "refresh failed";
+      return std::vector<potion::PageSummary>{};
+    };
+    require(!page_cache.get_or_build("", true, failed_refresh, snapshot,
+                                     cache_error) &&
+                page_cache.get_or_build("", false, build_snapshot, snapshot,
+                                        cache_error) &&
+                snapshot_builds == 3 && snapshot[0].title == "Snapshot 3",
+            "failed refresh leaves the last good snapshot available");
+    page_cache.clear();
+    require(::access((page_cache_unit_dir + "/pages-2.json").c_str(), F_OK) != 0 &&
+                ::access((page_cache_unit_dir + "/pages-3.json").c_str(), F_OK) != 0,
+            "Pages cache clear removes all query snapshots");
+    require(::rmdir(page_cache_unit_dir.c_str()) == 0,
+            "remove temporary Pages cache directory");
+
     {
       const std::string server_cache = std::string(directory) + "/image-cache";
       require(::mkdir(server_cache.c_str(), 0700) == 0,
               "create stale server cache directory");
       const std::string stale_cache_file = server_cache + "/stale.tmp";
       { std::ofstream output(stale_cache_file); output << "old session"; }
+      const std::string server_page_cache =
+          std::string(directory) + "/page-cache";
+      require(::mkdir(server_page_cache.c_str(), 0700) == 0,
+              "create stale server Pages cache directory");
+      const std::string stale_page_cache_file =
+          server_page_cache + "/pages-stale.json";
+      { std::ofstream output(stale_page_cache_file); output << "old session"; }
       const std::string first_url = "https://example.com/prefetch-first.png";
       const std::string second_url = "https://example.com/prefetch-second.png";
       potion::ImageRegistry key_registry;
       const std::string first_key = key_registry.register_url(first_url);
       const std::string second_key = key_registry.register_url(second_url);
       std::atomic<int> downloads{0}, completed_downloads{0};
+      std::atomic<int> page_searches{0};
+      std::atomic<int> page_retrievals{0};
       std::atomic<bool> first_download_started{false};
       RunningServer running(
-          directory, {}, {},
+          directory, {},
+          [](const std::string &, std::string &) { return true; },
           [&](potion::ServerOptions &options) {
             options.page_retriever =
                 [&](const std::string &, const std::string &page_id,
                     potion::PageDocument &page, std::string &) {
+                  page_retrievals.fetch_add(1);
                   page.id = page_id;
                   page.title = "Prefetch test";
                   page.markdown = "![First](" + first_url + ")\n" +
@@ -1107,9 +1176,35 @@ int main() {
                   return true;
                 };
             options.image_refresher = unused_refresh;
+            options.page_searcher =
+                [&](const std::string &, const std::string &query,
+                    std::string &) {
+                  const int search = page_searches.fetch_add(1) + 1;
+                  const std::size_t count = query == "alpha" ? 3 : 25;
+                  std::vector<potion::PageSummary> pages;
+                  for (std::size_t i = 0; i < count; ++i) {
+                    potion::PageUuid uuid;
+                    uuid.bytes[12] = static_cast<std::uint8_t>(i >> 24);
+                    uuid.bytes[13] = static_cast<std::uint8_t>(i >> 16);
+                    uuid.bytes[14] = static_cast<std::uint8_t>(i >> 8);
+                    uuid.bytes[15] = static_cast<std::uint8_t>(i);
+                    pages.push_back({
+                        potion::format_page_uuid(uuid),
+                        query + " page " + std::to_string(i) +
+                            " search " + std::to_string(search),
+                        {}, "2026-09-" +
+                            std::to_string(27 - static_cast<int>(i % 20)) +
+                            "T00:00:00.000Z"});
+                  }
+                  return pages;
+                };
           });
+      const std::string page_cache_auth = "token=page-cache-test-token";
+      request(running.server.bound_port(), "/api/auth/token", &page_cache_auth);
       require(::access(stale_cache_file.c_str(), F_OK) != 0,
               "server startup clears stale image cache files");
+      require(::access(stale_page_cache_file.c_str(), F_OK) != 0,
+              "server startup clears stale Pages cache files");
       const std::string page_id = "5908cc548ef342b6b84e254fa1785a21";
       const auto page_started = std::chrono::steady_clock::now();
       const auto page_response = raw_request(
@@ -1118,6 +1213,10 @@ int main() {
           std::chrono::steady_clock::now() - page_started).count();
       require(page_response.status == 200 && page_elapsed < 400,
               "page response does not wait for image prefetch");
+      require(raw_request(running.server.bound_port(),
+                          "/api/pages/" + page_id).status == 200 &&
+                  page_retrievals.load() == 2,
+              "individual Notion page contents remain completely uncached");
       for (int i = 0; i < 100 && !first_download_started.load(); ++i)
         std::this_thread::sleep_for(std::chrono::milliseconds(5));
       require(first_download_started.load(),
@@ -1146,6 +1245,38 @@ int main() {
                   cached_second.body == "second image" &&
                   downloads.load() == 2,
               "prefetched and demanded images are reused from session cache");
+      const auto first_pages = potion::Json::parse(request(
+          running.server.bound_port(), "/api/pages?offset=0&pageSize=10"));
+      const auto second_pages = potion::Json::parse(request(
+          running.server.bound_port(), "/api/pages?offset=10&pageSize=10"));
+      require(page_searches.load() == 1 &&
+                  first_pages.get("pages").items().size() == 10 &&
+                  first_pages.get("total").number() == 25 &&
+                  first_pages.get("hasMore").boolean() &&
+                  second_pages.get("pages").items().size() == 10 &&
+                  second_pages.get("offset").number() == 10,
+              "backend pagination reuses one Notion Pages snapshot");
+      const auto query_pages = potion::Json::parse(request(
+          running.server.bound_port(),
+          "/api/pages?query=alpha&offset=0&pageSize=10"));
+      require(page_searches.load() == 2 &&
+                  query_pages.get("total").number() == 3,
+              "search query builds an isolated snapshot");
+      request(running.server.bound_port(),
+              "/api/pages?offset=20&pageSize=10");
+      require(page_searches.load() == 2,
+              "returning to an existing query reuses its snapshot");
+      const auto refreshed_pages = potion::Json::parse(request(
+          running.server.bound_port(),
+          "/api/pages?offset=0&pageSize=10&refresh=1"));
+      require(page_searches.load() == 3 &&
+                  refreshed_pages.get("pages").items()[0]
+                      .get("title").string().find("search 3") !=
+                      std::string::npos,
+              "explicit refresh rebuilds the active query snapshot");
+      require(::access((server_page_cache + "/pages-1.json").c_str(), F_OK) == 0 ||
+                  ::access((server_page_cache + "/pages-3.json").c_str(), F_OK) == 0,
+              "backend Pages snapshot is stored under the session cache");
       const std::string empty_logout;
       request(running.server.bound_port(), "/api/auth/logout", &empty_logout);
       require(::access((server_cache + "/" + first_key + ".cache").c_str(),
@@ -1153,6 +1284,10 @@ int main() {
                   ::access((server_cache + "/" + second_key + ".cache").c_str(),
                            F_OK) != 0,
               "logout clears cached image files");
+      require(::access((server_page_cache + "/pages-1.json").c_str(), F_OK) != 0 &&
+                  ::access((server_page_cache + "/pages-2.json").c_str(), F_OK) != 0 &&
+                  ::access((server_page_cache + "/pages-3.json").c_str(), F_OK) != 0,
+              "logout clears cached Pages snapshots");
     }
 
     potion::PageUuid uuid;
@@ -1536,6 +1671,7 @@ int main() {
       ::rmdir(path.c_str());
     }
     ::rmdir((std::string(directory) + "/image-cache").c_str());
+    ::rmdir((std::string(directory) + "/page-cache").c_str());
     ::rmdir(directory);
     std::cout << "Potion tests passed\n";
     return 0;

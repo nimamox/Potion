@@ -297,7 +297,7 @@ assert.doesNotMatch(frontend,
 assert.match(frontend,
   /function showPages\(positionSaved\)[\s\S]*setAppearanceButtonVisible\(false\)[\s\S]*show\(id\("pages-view"\)\)/);
 assert.match(frontend,
-  /function loadPages\(\)[\s\S]*setAppearanceButtonVisible\(false\)[\s\S]*show\(id\("pages-view"\)\)/);
+  /function loadPages\(refreshSnapshot, requestedOffset\)[\s\S]*setAppearanceButtonVisible\(false\)[\s\S]*show\(id\("pages-view"\)\)/);
 assert.match(frontend,
   /show\(id\("reader-view"\)\);\s*setAppearanceButtonVisible\(true\);/,
   "Aa must become visible only after a reader page opens");
@@ -563,8 +563,8 @@ assert.deepEqual(simulatorRotation.calls, []);
 assert.match(frontend, /settings\.rotationMode === "locked"/);
 assert.match(frontend, /key=rotationMode&value=/);
 
-// Page navigation is an in-memory ES5 model after GET /api/pages. Exercise
-// the production comparator/update functions rather than a duplicate model.
+// Each backend page is an ES5 model after GET /api/pages. Exercise the
+// production comparator/update functions rather than a duplicate model.
 const navigationMatch = frontend.match(
   /\/\* PAGE_NAVIGATION_LOGIC_BEGIN \*\/([\s\S]*?)\/\* PAGE_NAVIGATION_LOGIC_END \*\//);
 assert.ok(navigationMatch, "missing page navigation logic test boundary");
@@ -613,9 +613,11 @@ function exerciseChoose(failure) {
     busy: false,
     pageSortSaveBusy: false,
     pageSortMode: "opened",
+    pageListOffset: 12,
     id: (name) => buttons[name],
     setSortButtons: () => calls.push("buttons:" + context.pageSortMode),
     renderSortedPages: () => calls.push("render:" + context.pageSortMode),
+    loadPages: (refresh, offset) => calls.push("load:" + refresh + ":" + offset),
     warning: () => calls.push("warning"),
     encodeURIComponent,
     request: (method, path, body, done) => {
@@ -631,13 +633,11 @@ function exerciseChoose(failure) {
 const successfulSort = exerciseChoose(false);
 assert.equal(successfulSort.context.pageSortMode, "edited");
 assert.deepEqual(successfulSort.calls,
-  ["buttons:edited", "render:edited", "POST /api/settings"]);
-assert.ok(!successfulSort.calls.some((call) => call.indexOf("GET /api/pages") >= 0),
-  "sort switching must not fetch pages");
+  ["buttons:edited", "POST /api/settings", "load:false:12"]);
 const failedSort = exerciseChoose(true);
 assert.equal(failedSort.context.pageSortMode, "opened");
 assert.deepEqual(failedSort.calls,
-  ["buttons:edited", "render:edited", "POST /api/settings",
+  ["buttons:edited", "POST /api/settings",
     "buttons:opened", "render:opened", "warning"]);
 
 const chooseSource = chooseMatch[1];
@@ -646,19 +646,25 @@ const pinSource = frontend.match(
 const showSource = frontend.match(
   /function showPages\(positionSaved\) \{([\s\S]*?)\n    \}\n\n    function loadPages/)[1];
 const loadSource = frontend.match(
-  /function loadPages\(\) \{([\s\S]*?)\n    \}\n\n    \/\* EQUATION_ENRICHMENT_BEGIN/)[1];
-assert.doesNotMatch(chooseSource, /loadPages|GET[^\n]*\/api\/pages/);
-assert.doesNotMatch(pinSource, /loadPages|GET[^\n]*\/api\/pages/);
-assert.match(pinSource, /updatePageMetadata\(pageId, "pinned", pinned\)[\s\S]*renderSortedPages\(false\)/);
+  /function loadPages\(refreshSnapshot, requestedOffset\) \{([\s\S]*?)\n    \}\n\n    \/\* EQUATION_ENRICHMENT_BEGIN/)[1];
+assert.match(chooseSource, /loadPages\(false, pageListOffset\)/,
+  "global sort changes request a new slice from the cached backend snapshot");
+assert.match(pinSource, /updatePageMetadata\(pageId, "pinned", pinned\)[\s\S]*loadPages\(false, pageListOffset\)/);
 assert.equal((pinSource.match(/button\.disabled = false/g) || []).length, 2,
   "pin buttons must be re-enabled after both failed and successful writes");
 assert.match(pinSource,
-  /updatePageMetadata\(pageId, "pinned", pinned\)[\s\S]*button\.disabled = false;[\s\S]*renderSortedPages\(false\)/);
-assert.match(showSource, /renderSortedPages\(false\)/);
+  /updatePageMetadata\(pageId, "pinned", pinned\)[\s\S]*button\.disabled = false;[\s\S]*loadPages\(false, pageListOffset\)/);
+assert.match(showSource, /loadPages\(false, pageListLoaded \? pageListOffset : 0\)/);
 assert.match(loadSource, /"GET",[\s\S]*"\/api\/pages\?query="/,
   "search/initial load must still fetch page metadata");
-assert.match(frontend, /id\("search-button"\)\.onclick = loadPages/);
-assert.match(frontend, /id\("search"\)\.onkeydown = function\(event\)[\s\S]*event\.keyCode === 13[\s\S]*loadPages\(\)/);
+assert.match(loadSource, /"&offset=" \+ offset[\s\S]*"&pageSize=" \+ pageListPageSize[\s\S]*"&refresh=1"/,
+  "frontend pagination and explicit refresh use backend snapshot parameters");
+assert.match(index, /id="pages-refresh"[\s\S]*id="pages-previous"[\s\S]*id="pages-next"/);
+assert.match(frontend, /id\("search-button"\)\.onclick = function\(\)[\s\S]*loadPages\(false, 0\)/);
+assert.match(frontend, /id\("search"\)\.onkeydown = function\(event\)[\s\S]*event\.keyCode === 13[\s\S]*loadPages\(false, 0\)/);
+assert.match(frontend, /id\("pages-refresh"\)\.onclick[\s\S]*loadPages\(true,/);
+assert.match(frontend, /id\("pages-previous"\)\.onclick[\s\S]*pageListOffset - pageListPageSize/);
+assert.match(frontend, /id\("pages-next"\)\.onclick[\s\S]*pageListOffset \+ pageListPageSize/);
 assert.match(frontend,
   /updatePageMetadata\([\s\S]*currentPageId,[\s\S]*"opened",[\s\S]*Math\.floor\(new Date\(\)\.getTime\(\) \/ 1000\)/);
 

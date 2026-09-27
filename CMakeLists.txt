@@ -39,7 +39,7 @@ endif()
 
 add_library(potion_core
   src/json.cpp src/app_state.cpp src/orientation.cpp src/reading_positions.cpp src/markdown.cpp
-  src/math_renderer.cpp src/image_cache.cpp src/notion_client.cpp src/http_server.cpp)
+  src/math_renderer.cpp src/image_cache.cpp src/page_cache.cpp src/notion_client.cpp src/http_server.cpp)
 target_include_directories(potion_core PUBLIC include)
 target_link_libraries(potion_core PUBLIC potion_math CURL::libcurl OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
