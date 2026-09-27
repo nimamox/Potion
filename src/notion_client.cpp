@@ -330,10 +330,13 @@ bool NotionClient::retrieve_page_enrichment(
     const std::string &token, const std::string &page_id,
     std::vector<InlineEquationAnnotation> &annotations,
     std::vector<RichTextColorEnrichment> &colors,
+    std::vector<BlockTargetEnrichment> &targets,
+    bool include_targets,
     std::string &error) const {
   try {
     annotations.clear();
     colors.clear();
+    targets.clear();
     std::size_t visited = 0;
     std::size_t editable_index = 0;
     std::function<bool(const std::string &, unsigned)> collect;
@@ -373,6 +376,13 @@ bool NotionClient::retrieve_page_enrichment(
           const std::string type = block.get("type").string();
           const Json &type_body = block.get(type);
           const Json &rich_text = type_body.get("rich_text");
+          if (include_targets && type != "column_list" && type != "column" &&
+              type != "table_row") {
+            targets.push_back({
+                block.get("id").string(), type,
+                type == "equation" ? type_body.get("expression").string() :
+                                     std::string{}});
+          }
           append(rich_text);
           if (block_counts_as_editable(block)) {
             RichTextColorEnrichment enrichment;

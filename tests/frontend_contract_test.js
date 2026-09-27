@@ -765,6 +765,9 @@ assert.match(httpServer,
   /"\/enrichment"[\s\S]*retrieve_page_enrichment/);
 assert.match(httpServer,
   /"blocks"[\s\S]*"editableIndex"[\s\S]*"blockId"[\s\S]*"blockType"[\s\S]*"blockText"[\s\S]*"colors"/);
+assert.match(httpServer,
+  /parameter\(request\.query, "targets"\) == "1"[\s\S]*"targets"/,
+  "block target metadata is opt-in on the asynchronous enrichment endpoint");
 assert.match(notionClient,
   /format_block_text[\s\S]*?api_get\(token, "\/v1\/blocks\/" \+ block_id\)/,
   "enriched formatting fetches its known block directly");
@@ -780,7 +783,7 @@ assert.match(httpServer,
   /html\.find\("data-potion-expression="\)/,
   "inline-equation gating must not depend on class attribute order");
 assert.match(frontend,
-  /if \(page\.equationEnrichment\)\s*loadEquationEnrichment\(currentPageId, generation\)/);
+  /if \(page\.equationEnrichment \|\| needsTargetEnrichment\)\s*loadEquationEnrichment\([\s\S]*currentPageId, generation,[\s\S]*needsTargetEnrichment\)/);
 assert.match(frontend,
   /generation === pageGeneration[\s\S]*pendingPageEnrichment/,
   "stale enrichment responses must not replace the current page result");
@@ -803,6 +806,116 @@ const retrievePageSource = notionClient.match(
 assert.ok(retrievePageSource, "retrieve_page and enrichment must remain separate");
 assert.doesNotMatch(retrievePageSource[1], /\/children|collect\(|retrieve_page_enrichment/,
   "the initial page response must not wait for the recursive block walk");
+
+const normalizeBlockIdSource = frontend.match(
+  /(function normalizeNotionBlockId\(blockId\) \{[\s\S]*?\n    \})\n\n    function comparePageTitles/);
+const blockLinkLogic = frontend.match(
+  /\/\* BLOCK_LINK_NAVIGATION_BEGIN \*\/([\s\S]*?)\/\* BLOCK_LINK_NAVIGATION_END \*\//);
+assert.ok(normalizeBlockIdSource && blockLinkLogic,
+  "missing block-link navigation logic");
+{
+  function element(tag, className, attributes) {
+    return {
+      nodeType: 1,
+      tagName: tag.toUpperCase(),
+      className: className || "",
+      attributes: attributes || {},
+      parentNode: null,
+      style: {},
+      getAttribute: function(name) {
+        return Object.prototype.hasOwnProperty.call(this.attributes, name) ?
+          this.attributes[name] : null;
+      },
+      setAttribute: function(name, value) { this.attributes[name] = value; },
+      getElementsByClassName: function() { return []; }
+    };
+  }
+  const displayEquation = element(
+    "div", "potion-block math display-math",
+    {"data-potion-expression": "\\|A\\|_F"});
+  const root = {
+    scrollTop: 0,
+    scrollHeight: 1000,
+    clientHeight: 300,
+    style: {},
+    getElementsByTagName: function() { return [displayEquation]; }
+  };
+  displayEquation.parentNode = root;
+  const calls = [];
+  const context = {
+    currentPageId: "3e0d2870-a152-804f-abfe-f1771ec8f418",
+    pendingBlockJump: null,
+    pageTargetEnrichmentRequested: false,
+    pageGeneration: 7,
+    positionRestoreTimer: null,
+    positionRestoring: false,
+    positionRestoreAnchor: null,
+    transientReadingPosition: null,
+    id: function(name) { return name === "page-content" ? root : {}; },
+    hasClass: function(node, name) {
+      return (" " + node.className + " ").indexOf(" " + name + " ") >= 0;
+    },
+    pageIdKey: function(value) {
+      return String(value || "").replace(/-/g, "").toLowerCase();
+    },
+    mathTop: function() { return 220; },
+    updateScroll: function() { calls.push("update"); },
+    currentReadingPosition: function() { return {top: root.scrollTop}; },
+    scheduleReadingPositionSave: function() { calls.push("save"); },
+    loadEquationEnrichment: function(pageId, generation, targets) {
+      calls.push(["enrich", pageId, generation, targets]);
+      context.pageTargetEnrichmentRequested = true;
+    },
+    openPage: function() { calls.push(["open"].concat([].slice.call(arguments))); },
+    show: function(node) { node.className = node.className.replace(/hidden/g, ""); },
+    warning: function(message) { calls.push(["warning", message]); },
+    window: {clearTimeout: function() {}}
+  };
+  vm.createContext(context);
+  vm.runInContext(normalizeBlockIdSource[1], context);
+  vm.runInContext(blockLinkLogic[1], context);
+
+  assert.equal(context.normalizeNotionBlockId(
+    "3E0D2870-A152-8002-BC7A-FD8BF9B021A0"),
+    "3e0d2870a1528002bc7afd8bf9b021a0",
+    "hyphenated and compact block IDs compare consistently");
+
+  context.requestBlockJump(
+    context.currentPageId, "3e0d2870-a152-8002-bc7a-fd8bf9b021a0");
+  assert.deepEqual(calls.shift(),
+    ["enrich", context.currentPageId, 7, true],
+    "same-page links wait for target metadata without reloading the page");
+  assert.equal(calls.some((call) => Array.isArray(call) && call[0] === "open"), false);
+
+  const targetResult = {targets: [{
+    blockId: "3e0d2870-a152-8002-bc7a-fd8bf9b021a0",
+    blockType: "equation",
+    expression: "\\|A\\|_F"
+  }]};
+  assert.equal(context.applyBlockTargetEnrichment(targetResult), true);
+  assert.equal(displayEquation.attributes["data-notion-block-id"],
+    "3e0d2870a1528002bc7afd8bf9b021a0",
+    "non-editable display equations receive block target metadata");
+  assert.equal(context.tryPendingBlockJump(true), true,
+    "a delayed jump runs when enrichment supplies the block ID");
+  assert.equal(root.scrollTop, 216);
+  assert.equal(context.pendingBlockJump, null);
+
+  calls.length = 0;
+  context.requestBlockJump(
+    "5908cc54-8ef3-42b6-b84e-254fa1785a21",
+    "3e0d2870a1528002bc7afd8bf9b021a0");
+  assert.deepEqual(calls[0], [
+    "open", "5908cc54-8ef3-42b6-b84e-254fa1785a21", "child", false,
+    "3e0d2870a1528002bc7afd8bf9b021a0"
+  ], "cross-page block links retain the target while opening the page");
+}
+assert.match(frontend,
+  /restoreReadingPosition\(\s*pendingBlockJump \? null : page\.position\)/,
+  "an explicit block jump is not overwritten by saved reading position");
+assert.match(frontend,
+  /openPage\(pageId, "child"\);[\s\S]*return false;/,
+  "ordinary page links retain their existing navigation behavior");
 
 const fontReferences = [...katexCss.matchAll(/fonts\/([^)'\"]+\.(?:woff2?|ttf))/g)]
   .map((match) => match[1]);

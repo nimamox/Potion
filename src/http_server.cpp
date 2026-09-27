@@ -712,9 +712,12 @@ void HttpServer::handle_client(int client) noexcept {
       if (!valid_page_id(id)) throw std::runtime_error("Invalid page id");
       std::vector<InlineEquationAnnotation> annotations;
       std::vector<RichTextColorEnrichment> colors;
+      std::vector<BlockTargetEnrichment> targets;
+      const bool include_targets = parameter(request.query, "targets") == "1";
       std::string error;
       if (!notion_.retrieve_page_enrichment(
-              state_.token(), id, annotations, colors, error))
+              state_.token(), id, annotations, colors, targets,
+              include_targets, error))
         throw std::runtime_error(error);
       std::string body = R"({"type":"page-enrichment","equations":[)";
       bool first = true;
@@ -754,6 +757,17 @@ void HttpServer::handle_client(int client) noexcept {
                   R"(,"color":)" + json_escape(range.color) + "}";
         }
         body += "]}";
+      }
+      body += R"(],"targets":[)";
+      first = true;
+      for (const auto &target : targets) {
+        if (!first) body += ',';
+        first = false;
+        body += R"({"blockId":)" + json_escape(target.block_id) +
+                R"(,"blockType":)" + json_escape(target.block_type);
+        if (!target.expression.empty())
+          body += R"(,"expression":)" + json_escape(target.expression);
+        body += "}";
       }
       body += "]}";
       respond(client, 200, "OK", "application/json", body);

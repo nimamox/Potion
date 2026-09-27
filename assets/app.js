@@ -48,6 +48,8 @@
         pendingPageEnrichment = null,
         pageEnrichmentApplyTimer = null,
         pageGeneration = 0,
+        pendingBlockJump = null,
+        pageTargetEnrichmentRequested = false,
         selectionHoldTimer = null,
         selectionHoldActive = false,
         selectionHoldX = 0,
@@ -2896,12 +2898,14 @@
                 id("page-content").getElementsByClassName("child-page"),
             inlineLinks =
                 id("page-content").getElementsByClassName("notion-page-link"),
-            i,
+            i, hasBlockLinks = false,
             openLinkedPage = function() {
-                openPage(
-                    this.getAttribute("data-page-id"),
-                    "child"
-                );
+                var pageId = this.getAttribute("data-page-id"),
+                    blockId = this.getAttribute("data-block-id");
+                if (blockId)
+                    requestBlockJump(pageId, blockId);
+                else
+                    openPage(pageId, "child");
                 return false;
             };
 
@@ -2909,8 +2913,12 @@
             if (links[i].getAttribute("data-page-id"))
                 links[i].onclick = openLinkedPage;
         for (i = 0; i < inlineLinks.length; ++i)
-            if (inlineLinks[i].getAttribute("data-page-id"))
+            if (inlineLinks[i].getAttribute("data-page-id")) {
+                if (inlineLinks[i].getAttribute("data-block-id"))
+                    hasBlockLinks = true;
                 inlineLinks[i].onclick = openLinkedPage;
+            }
+        return hasBlockLinks;
     }
 
     function setPinButton(button, pinned) {
@@ -2948,6 +2956,12 @@
         return page;
     }
 
+    function normalizeNotionBlockId(blockId) {
+        var normalized = String(blockId || "")
+            .replace(/-/g, "").toLowerCase();
+        return /^[0-9a-f]{32}$/.test(normalized) ? normalized : "";
+    }
+
     function comparePageTitles(left, right) {
         var a = left.title || "", b = right.title || "";
         if (a < b) return -1;
@@ -2978,6 +2992,142 @@
         pageList.sort(comparePages);
     }
     /* PAGE_NAVIGATION_LOGIC_END */
+
+    /* BLOCK_LINK_NAVIGATION_BEGIN */
+    function blockTargetElements() {
+        var all = id("page-content").getElementsByTagName("*"),
+            targets = [], i, tag;
+        for (i = 0; i < all.length; ++i) {
+            tag = String(all[i].tagName || "").toUpperCase();
+            if (hasClass(all[i], "potion-block") ||
+                (tag === "ASIDE" && hasClass(all[i], "callout")))
+                targets.push(all[i]);
+        }
+        return targets;
+    }
+
+    function blockTargetMatches(node, target) {
+        var type = target.blockType || "",
+            tag = String(node.tagName || "").toUpperCase();
+        if (type === "paragraph")
+            return tag === "P" || (tag === "DIV" && hasClass(node, "empty-block"));
+        if (type === "code") return tag === "PRE";
+        if (type === "equation")
+            return tag === "DIV" && hasClass(node, "display-math") &&
+                node.getAttribute("data-potion-expression") === target.expression;
+        if (type.indexOf("heading_") === 0)
+            return tag === "H1" || tag === "H2" || tag === "H3" ||
+                tag === "H4" || tag === "BUTTON";
+        if (type === "quote") return tag === "BLOCKQUOTE";
+        if (type === "bulleted_list_item" ||
+            type === "numbered_list_item" || type === "to_do")
+            return tag === "LI";
+        if (type === "image") return tag === "FIGURE";
+        if (type === "divider") return tag === "HR";
+        if (type === "table") return tag === "TABLE";
+        if (type === "callout") return tag === "ASIDE";
+        if (type === "toggle") return tag === "BUTTON";
+        return tag === "DIV";
+    }
+
+    function applyBlockTargetEnrichment(result) {
+        var targets = result && result.targets || [],
+            nodes, i, blockId;
+        if (!targets.length) return true;
+        nodes = blockTargetElements();
+        if (nodes.length !== targets.length) return false;
+        for (i = 0; i < nodes.length; ++i)
+            if (!blockTargetMatches(nodes[i], targets[i])) return false;
+        for (i = 0; i < nodes.length; ++i) {
+            blockId = normalizeNotionBlockId(targets[i].blockId);
+            if (!blockId) return false;
+            nodes[i].setAttribute("data-notion-block-id", blockId);
+            nodes[i].setAttribute(
+                "data-notion-block-type", targets[i].blockType || "");
+        }
+        return true;
+    }
+
+    function findNotionBlock(blockId) {
+        var wanted = normalizeNotionBlockId(blockId),
+            all = id("page-content").getElementsByTagName("*"), i;
+        if (!wanted) return null;
+        for (i = 0; i < all.length; ++i)
+            if (normalizeNotionBlockId(
+                    all[i].getAttribute("data-notion-block-id")) === wanted)
+                return all[i];
+        return null;
+    }
+
+    function revealBlockTarget(target) {
+        var node = target.parentNode, summary, arrows;
+        while (node && node !== id("page-content")) {
+            if (hasClass(node, "toggle-content") && hasClass(node, "hidden")) {
+                show(node);
+                summary = node.previousSibling;
+                while (summary && summary.nodeType !== 1)
+                    summary = summary.previousSibling;
+                if (summary) {
+                    summary.setAttribute("aria-expanded", "true");
+                    arrows = summary.getElementsByClassName("toggle-arrow");
+                    if (arrows.length) arrows[0].innerHTML = "&#9662;";
+                }
+            }
+            node = node.parentNode;
+        }
+    }
+
+    function scrollToNotionBlock(blockId) {
+        var root = id("page-content"), target = findNotionBlock(blockId),
+            maximum;
+        if (!target) return false;
+        revealBlockTarget(target);
+        if (positionRestoreTimer !== null) {
+            window.clearTimeout(positionRestoreTimer);
+            positionRestoreTimer = null;
+        }
+        positionRestoring = false;
+        positionRestoreAnchor = null;
+        root.style.visibility = "";
+        maximum = Math.max(0, root.scrollHeight - root.clientHeight);
+        root.scrollTop = Math.max(
+            0, Math.min(maximum, mathTop(target, root) - 4));
+        updateScroll();
+        transientReadingPosition = currentReadingPosition();
+        scheduleReadingPositionSave();
+        return true;
+    }
+
+    function tryPendingBlockJump(finalAttempt) {
+        if (!pendingBlockJump ||
+            pageIdKey(pendingBlockJump.pageId) !== pageIdKey(currentPageId))
+            return false;
+        if (scrollToNotionBlock(pendingBlockJump.blockId)) {
+            pendingBlockJump = null;
+            return true;
+        }
+        if (finalAttempt) {
+            pendingBlockJump = null;
+            warning("The linked block could not be found on this page.");
+        }
+        return false;
+    }
+
+    function requestBlockJump(pageId, blockId) {
+        blockId = normalizeNotionBlockId(blockId);
+        if (!blockId) {
+            openPage(pageId, "child");
+            return;
+        }
+        if (pageIdKey(pageId) !== pageIdKey(currentPageId)) {
+            openPage(pageId, "child", false, blockId);
+            return;
+        }
+        pendingBlockJump = {pageId: pageId, blockId: blockId};
+        if (!tryPendingBlockJump(false) && !pageTargetEnrichmentRequested)
+            loadEquationEnrichment(currentPageId, pageGeneration, true);
+    }
+    /* BLOCK_LINK_NAVIGATION_END */
 
     function setPagePinned(pageId, pinned, button) {
         if (button) button.disabled = true;
@@ -3299,15 +3449,17 @@
     function applyEquationEnrichment(pageId, result) {
         var root = id("page-content"),
             all, equations, blocks, editableBlocks, content, nodes = [],
-            colorClass, i, j, block, annotation, className;
+            colorClass, i, j, block, annotation, className,
+            equationsMatch = true, targetsApplied;
 
         if (pageId !== currentPageId ||
             id("reader-view").className.indexOf("hidden") >= 0 ||
-            !result || !result.equations)
+            !result)
             return;
 
-        equations = result.equations;
+        equations = result.equations || [];
         blocks = result.blocks || [];
+        targetsApplied = !result.targets || applyBlockTargetEnrichment(result);
         all = root.getElementsByClassName("math");
 
         for (i = 0; i < all.length; ++i) {
@@ -3315,12 +3467,12 @@
                 nodes.push(all[i]);
         }
 
-        /* Never risk applying annotations to the wrong equation. */
-        if (nodes.length !== equations.length) return;
-        for (i = 0; i < nodes.length; ++i) {
+        /* Never risk applying annotations to the wrong inline equation. */
+        if (nodes.length !== equations.length) equationsMatch = false;
+        for (i = 0; equationsMatch && i < nodes.length; ++i) {
             if (nodes[i].getAttribute("data-potion-expression") !==
                 equations[i].expression)
-                return;
+                equationsMatch = false;
         }
 
         editableBlocks = root.getElementsByClassName("potion-editable");
@@ -3341,7 +3493,7 @@
                 applyEnrichedColor(content, block.colors[j]);
         }
 
-        for (i = 0; i < nodes.length; ++i) {
+        for (i = 0; equationsMatch && i < nodes.length; ++i) {
             annotation = equations[i] || {};
             className = equationBaseClassName(nodes[i]);
             colorClass = equationColorClass(annotation.color);
@@ -3364,12 +3516,24 @@
         collectReadingBlocks();
         scheduleMathRepair(0);
         updateScroll();
+        if (result.targets) {
+            if (targetsApplied) {
+                tryPendingBlockJump(true);
+            } else if (pendingBlockJump &&
+                       pageIdKey(pendingBlockJump.pageId) ===
+                           pageIdKey(currentPageId)) {
+                pendingBlockJump = null;
+                warning("The linked block could not be found on this page.");
+            }
+        }
     }
 
-    function loadEquationEnrichment(pageId, generation) {
+    function loadEquationEnrichment(pageId, generation, includeTargets) {
+        if (includeTargets) pageTargetEnrichmentRequested = true;
         request(
             "GET",
-            "/api/pages/" + encodeURIComponent(pageId) + "/enrichment",
+            "/api/pages/" + encodeURIComponent(pageId) + "/enrichment" +
+                (includeTargets ? "?targets=1" : ""),
             null,
             function(error, result) {
                 /* Enrichment is optional; the already-rendered page remains usable. */
@@ -3381,6 +3545,9 @@
                         result: result
                     };
                     schedulePageEnrichmentApply();
+                } else if (includeTargets && pageId === currentPageId &&
+                           generation === pageGeneration) {
+                    pageTargetEnrichmentRequested = false;
                 }
             }
         );
@@ -3416,7 +3583,7 @@
     }
     /* EQUATION_ENRICHMENT_END */
 
-    function openPage(pageId, navigation, positionSaved) {
+    function openPage(pageId, navigation, positionSaved, targetBlockId) {
         if (busy) return;
 
         closeAppearanceSheet();
@@ -3425,14 +3592,19 @@
             currentPageId &&
             id("reader-view").className.indexOf("hidden") < 0) {
             saveCurrentReadingPosition(function() {
-                openPage(pageId, navigation, true);
+                openPage(pageId, navigation, true, targetBlockId);
             });
             return;
         }
 
         var previous = currentPageId,
             readerWasOpen = id("reader-view").className.indexOf("hidden") < 0,
-            generation = ++pageGeneration;
+            generation = ++pageGeneration,
+            normalizedTarget = normalizeNotionBlockId(targetBlockId);
+
+        pendingBlockJump = normalizedTarget ?
+            {pageId: pageId, blockId: normalizedTarget} : null;
+        pageTargetEnrichmentRequested = false;
 
         if (pageEnrichmentApplyTimer !== null) {
             window.clearTimeout(pageEnrichmentApplyTimer);
@@ -3455,6 +3627,9 @@
                 if (error) {
                     setBusy(false);
                     setAppearanceButtonVisible(readerWasOpen);
+                    if (pendingBlockJump &&
+                        pageIdKey(pendingBlockJump.pageId) === pageIdKey(pageId))
+                        pendingBlockJump = null;
                     warning(error);
                     return;
                 }
@@ -3467,6 +3642,8 @@
                     pageHistory = [];
 
                 currentPageId = page.id || pageId;
+                if (pendingBlockJump)
+                    pendingBlockJump.pageId = currentPageId;
                 currentPagePinned = page.pinned === true;
                 updatePageMetadata(
                     currentPageId,
@@ -3500,7 +3677,7 @@
                         SELECTION_DRAG_UPDATE_LARGE_MS :
                         SELECTION_DRAG_UPDATE_NORMAL_MS;
 
-                if (page.position)
+                if (page.position && !pendingBlockJump)
                     id("page-content").style.visibility = "hidden";
 
                 if (page.truncated)
@@ -3513,22 +3690,29 @@
                 updateScroll();
 
                 window.setTimeout(function() {
+                    var hasBlockLinks = false,
+                        needsTargetEnrichment;
                     try {
                         collectMath();
                         prepareImages();
                         prepareToggles();
-                        preparePageLinks();
+                        hasBlockLinks = preparePageLinks();
                         collectReadingBlocks();
                         applyNightPageAppearance();
                         scheduleMathRepair(0);
-                        restoreReadingPosition(page.position);
+                        restoreReadingPosition(
+                            pendingBlockJump ? null : page.position);
                     } finally {
                         setBusy(false);
                         updateScroll();
                     }
 
-                    if (page.equationEnrichment)
-                        loadEquationEnrichment(currentPageId, generation);
+                    needsTargetEnrichment =
+                        hasBlockLinks || pendingBlockJump !== null;
+                    if (page.equationEnrichment || needsTargetEnrichment)
+                        loadEquationEnrichment(
+                            currentPageId, generation,
+                            needsTargetEnrichment);
                 }, 0);
             }
         );

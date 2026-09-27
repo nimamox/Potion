@@ -802,6 +802,10 @@ int main() {
     require(logical_blocks.find("<strong class=\"potion-block") == std::string::npos &&
             logical_blocks.find("<span class=\"potion-block") == std::string::npos,
             "inline formatting is not a logical block");
+    require(logical_blocks.find(
+                "class=\"potion-block math display-math\" "
+                "data-potion-expression=\"x^2\"") != std::string::npos,
+            "display equation exposes stable expression metadata");
     const std::string editable_scope = renderer.render(
       "Paragraph\n- list item\n- [ ] to do\n# Heading\n> Quote\n"
       "```\ncode\n```\n$$\nx\n$$\n![caption](https://example.com/image.png)\n");
@@ -934,6 +938,18 @@ int main() {
     require(inline_notion_page.find(
                 "<a class=\"notion-page-link\" href=\"https://www.notion.so/p/5908cc548ef342b6b84e254fa1785a21?pvs=25\" data-page-id=\"5908cc548ef342b6b84e254fa1785a21\">Morbi</a>") != std::string::npos,
             "relative inline Notion page link remains visible and opens inside Potion");
+    require(inline_notion_page.find("data-block-id=") == std::string::npos,
+            "ordinary Notion page link has no block target");
+    const std::string inline_notion_block = renderer.render(
+      "[This link](/p/5908CC548EF342B6B84E254FA1785A21?pvs=25#"
+      "3E0D2870-A152-8002-BC7A-FD8BF9B021A0)\n");
+    require(inline_notion_block.find(
+                "data-page-id=\"5908cc548ef342b6b84e254fa1785a21\"") !=
+                std::string::npos &&
+            inline_notion_block.find(
+                "data-block-id=\"3e0d2870a1528002bc7afd8bf9b021a0\"") !=
+                std::string::npos,
+            "hyphenated block fragment and page ID are normalized");
     const std::string self_closing_page = renderer.render(
       "<mention-page url=\"https://www.notion.so/5908cc548ef342b6b84e254fa1785a21?pvs=4\"/>\n");
     require(self_closing_page.find("data-page-id=\"5908cc548ef342b6b84e254fa1785a21\"") != std::string::npos &&

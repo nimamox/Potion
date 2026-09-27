@@ -15,7 +15,7 @@ std::string html_escape(const std::string &text) {
   for (char c : text) { if (c == '&') out += "&amp;"; else if (c == '<') out += "&lt;"; else if (c == '>') out += "&gt;"; else if (c == '"') out += "&quot;"; else if (c == '\'') out += "&#39;"; else out += c; }
   return out;
 }
-std::string trim(std::string s) { auto a = s.find_first_not_of(" \t\r"); if (a == std::string::npos) return {}; auto b = s.find_last_not_of(" \t\r"); return s.substr(a, b - a + 1); }
+std::string trim(std::string s) { auto a = s.find_first_not_of(" \t\r\n"); if (a == std::string::npos) return {}; auto b = s.find_last_not_of(" \t\r\n"); return s.substr(a, b - a + 1); }
 struct NotionAttributes { std::size_t start{std::string::npos}; std::string text; bool toggle{}; };
 bool known_notion_attribute(const std::string &name) { return name == "color" || name == "toggle" || name == "underline"; }
 NotionAttributes trailing_notion_attributes(const std::string &source) {
@@ -184,7 +184,25 @@ std::string notion_page_id(const std::string &url) {
   }
   if (id.size() != 32) return {};
   std::reverse(id.begin(), id.end());
+  std::transform(id.begin(), id.end(), id.begin(), [](unsigned char c) {
+    return static_cast<char>(std::tolower(c));
+  });
   return id;
+}
+std::string notion_link_block_id(const std::string &url) {
+  const auto hash = url.find('#');
+  if (hash == std::string::npos) return {};
+  const auto end = url.find_first_of("?&", hash + 1);
+  const std::string fragment = url.substr(
+      hash + 1, end == std::string::npos ? end : end - hash - 1);
+  std::string id;
+  for (const char character : fragment) {
+    if (character == '-') continue;
+    if (!std::isxdigit(static_cast<unsigned char>(character))) return {};
+    id.push_back(static_cast<char>(std::tolower(
+        static_cast<unsigned char>(character))));
+  }
+  return id.size() == 32 ? id : std::string{};
 }
 bool notion_page_url(const std::string &url) {
   if (notion_page_id(url).empty()) return false;
@@ -405,7 +423,7 @@ std::string MarkdownRenderer::inline_html(
         i = end + 1; continue;
       }
     }
-    if (text[i] == '[') { auto mid = text.find("](", i + 1), end = mid == std::string::npos ? mid : markdown_url_end(text, mid + 2); if (mid != std::string::npos && end != std::string::npos) { std::string url = text.substr(mid + 2, end - mid - 2), safe = sanitize_url(url), label = inline_html(text.substr(i + 1, mid - i - 1), image_keys), page_id = notion_page_id(url); if (notion_page_url(url)) out += "<a class=\"notion-page-link\" href=\"" + html_escape(absolute_notion_url(url)) + "\" data-page-id=\"" + page_id + "\">" + label + "</a>"; else out += safe.empty() ? label : "<a href=\"" + safe + "\">" + label + "</a>"; i = end + 1; continue; } }
+    if (text[i] == '[') { auto mid = text.find("](", i + 1), end = mid == std::string::npos ? mid : markdown_url_end(text, mid + 2); if (mid != std::string::npos && end != std::string::npos) { std::string url = text.substr(mid + 2, end - mid - 2), safe = sanitize_url(url), label = inline_html(text.substr(i + 1, mid - i - 1), image_keys), page_id = notion_page_id(url), block_id = notion_link_block_id(url); if (notion_page_url(url)) out += "<a class=\"notion-page-link\" href=\"" + html_escape(absolute_notion_url(url)) + "\" data-page-id=\"" + page_id + "\"" + (block_id.empty() ? std::string{} : " data-block-id=\"" + block_id + "\"") + ">" + label + "</a>"; else out += safe.empty() ? label : "<a href=\"" + safe + "\">" + label + "</a>"; i = end + 1; continue; } }
     struct Marker { const char *open; const char *close; const char *a; const char *b; };
     static const Marker markers[] = {{"***", "***", "<strong><em>", "</em></strong>"}, {"**", "**", "<strong>", "</strong>"}, {"~~", "~~", "<del>", "</del>"}, {"`", "`", "<code>", "</code>"}, {"*", "*", "<em>", "</em>"}, {"$", "$", "", ""}};
     bool matched = false;
@@ -430,7 +448,7 @@ std::string MarkdownRenderer::render(
     if (!line.empty() && line.back() == '\r') line.pop_back();
     std::size_t depth = 0; while (depth < line.size() && line[depth] == '\t') ++depth; std::string body = line.substr(depth); const bool preceding_plain_paragraph = last_plain_paragraph, preceding_image = last_image; last_plain_paragraph = false; last_image = false;
     if (code) { if (starts(body, "```")) { out += "<pre class=\"potion-block\"><code>" + html_escape(code_text) + "</code></pre>"; code = false; code_text.clear(); } else code_text += body + "\n"; continue; }
-    if (equation) { if (trim(body) == "$$") { const std::string expression = trim(equation_text); out += "<div class=\"potion-block math display-math\">" + math_.render(expression, true) + "</div>"; equation = false; equation_text.clear(); } else equation_text += body + "\n"; continue; }
+    if (equation) { if (trim(body) == "$$") { const std::string expression = trim(equation_text); out += "<div class=\"potion-block math display-math\" data-potion-expression=\"" + html_escape(expression) + "\">" + math_.render(expression, true) + "</div>"; equation = false; equation_text.clear(); } else equation_text += body + "\n"; continue; }
     if (!notion_table) close_heading_toggles(depth);
     if (starts(body, "```")) { close_lists(); code = true; continue; }
     if (trim(body) == "$$") { close_lists(); equation = true; continue; }

@@ -24,6 +24,11 @@ struct RichTextColorEnrichment {
   std::string block_text;
   std::vector<RichTextColorRange> ranges;
 };
+struct BlockTargetEnrichment {
+  std::string block_id;
+  std::string block_type;
+  std::string expression;
+};
 struct BinaryResponse { std::string content_type, body; };
 class NotionClient {
 public:
@@ -40,6 +45,8 @@ public:
       const std::string &token, const std::string &page_id,
       std::vector<InlineEquationAnnotation> &annotations,
       std::vector<RichTextColorEnrichment> &colors,
+      std::vector<BlockTargetEnrichment> &targets,
+      bool include_targets,
       std::string &error) const;
   bool format_block_text(const std::string &token, const std::string &page_id,
                          std::size_t editable_index,
