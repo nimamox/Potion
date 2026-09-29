@@ -11,6 +11,37 @@ set(OPENSSL_USE_STATIC_LIBS ON)
 find_package(CURL REQUIRED)
 find_package(OpenSSL REQUIRED)
 
+set(POTION_BUILD_COMMIT "$ENV{POTION_BUILD_COMMIT}")
+if(NOT POTION_BUILD_COMMIT)
+  find_package(Git QUIET)
+  if(GIT_FOUND)
+    execute_process(
+      COMMAND "${GIT_EXECUTABLE}" rev-parse --short=12 HEAD
+      WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+      RESULT_VARIABLE POTION_GIT_RESULT
+      OUTPUT_VARIABLE POTION_BUILD_COMMIT
+      OUTPUT_STRIP_TRAILING_WHITESPACE)
+    if(NOT POTION_GIT_RESULT EQUAL 0)
+      set(POTION_BUILD_COMMIT "unknown")
+    else()
+      execute_process(
+        COMMAND "${GIT_EXECUTABLE}" diff-index --quiet HEAD --
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        RESULT_VARIABLE POTION_GIT_DIRTY)
+      if(NOT POTION_GIT_DIRTY EQUAL 0)
+        string(APPEND POTION_BUILD_COMMIT "-dirty")
+      endif()
+    endif()
+  else()
+    set(POTION_BUILD_COMMIT "unknown")
+  endif()
+endif()
+if(CMAKE_CROSSCOMPILING)
+  set(POTION_BUILD_TYPE "release")
+else()
+  set(POTION_BUILD_TYPE "development")
+endif()
+
 option(POTION_BUILD_TESTS "Build Potion tests" ON)
 option(POTION_BUILD_SIMULATOR "Build the browser-based Kindle simulator" OFF)
 set(POTION_MATH_LIBRARY "" CACHE FILEPATH "Path to the native libpotion_math.a")
@@ -39,13 +70,17 @@ endif()
 
 add_library(potion_core
   src/json.cpp src/app_state.cpp src/orientation.cpp src/reading_positions.cpp src/markdown.cpp
-  src/math_renderer.cpp src/image_cache.cpp src/page_cache.cpp src/notion_client.cpp src/http_server.cpp)
+  src/math_renderer.cpp src/image_cache.cpp src/page_cache.cpp src/notion_client.cpp
+  src/update_checker.cpp src/http_server.cpp)
 target_include_directories(potion_core PUBLIC include)
 target_link_libraries(potion_core PUBLIC potion_math CURL::libcurl OpenSSL::SSL OpenSSL::Crypto Threads::Threads)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
   target_link_libraries(potion_core PUBLIC dl m rt)
 endif()
-target_compile_definitions(potion_core PRIVATE POTION_VERSION="${PROJECT_VERSION}")
+target_compile_definitions(potion_core PRIVATE
+  POTION_VERSION="${PROJECT_VERSION}"
+  POTION_BUILD_COMMIT="${POTION_BUILD_COMMIT}"
+  POTION_BUILD_TYPE="${POTION_BUILD_TYPE}")
 target_compile_options(potion_core PRIVATE -Wall -Wextra -Wpedantic)
 
 add_executable(potiond src/daemon_main.cpp)

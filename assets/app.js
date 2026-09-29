@@ -71,6 +71,7 @@
         SELECTION_DRAG_UPDATE_LARGE_MS = 75,
         SELECTION_DRAG_LARGE_HTML_BYTES = 200000;
     var PAGE_ENRICHMENT_APPLY_DELAY_MS = 120;
+    var UPDATE_CHECK_DELAY_MS = 60000;
     var fontScales = [0.7, 0.8, 0.9, 1, 1.1, 1.25, 1.4, 1.6],
         fontScale = 1,
         codeSize = 18,
@@ -386,11 +387,35 @@
         playAboutLogoAnimation();
     }
 
+    function updateAboutVersion(status) {
+        var output = id("about-version");
+        if (!output || !status || !status.version) return;
+        output.innerHTML = "";
+        output.appendChild(
+            document.createTextNode("Version: " + status.version)
+        );
+    }
+
     function closeAbout() {
         aboutLogoPending = false;
         stopAboutLogoAnimation();
         if (aboutLogoReady) drawAboutLogoClean();
         hide(id("about-dialog"));
+    }
+
+    function checkForUpdate() {
+        request("GET", "/api/update-status", null, function(error, status) {
+            var message;
+            if (error || !status || !status.checked ||
+                    !status.updateAvailable || status.dismissed)
+                return;
+            message = "Version " + status.latestVersion +
+                " is available. You are using version " +
+                status.currentVersion + ". Please consider updating.";
+            id("update-message").innerHTML = "";
+            id("update-message").appendChild(document.createTextNode(message));
+            show(id("update-dialog"));
+        });
     }
 
     function request(method, path, body, done) {
@@ -1279,6 +1304,7 @@
             id("connect-view").className.indexOf("hidden") >= 0 &&
             id("settings-dialog").className.indexOf("hidden") >= 0 &&
             id("logout-dialog").className.indexOf("hidden") >= 0 &&
+            id("update-dialog").className.indexOf("hidden") >= 0 &&
             id("about-dialog").className.indexOf("hidden") >= 0 &&
             !!activeScroll();
     }
@@ -3806,6 +3832,8 @@
                         return;
                     }
 
+                    updateAboutVersion(status);
+
                     pageId =
                         status.startPageId ||
                         requestedPageId();
@@ -4112,6 +4140,20 @@
     id("about").onclick = openAbout;
     id("about-done").onclick = closeAbout;
 
+    id("update-later").onclick = function() {
+        hide(id("update-dialog"));
+    };
+
+    id("update-dismiss").onclick = function() {
+        request("POST", "/api/update-status/dismiss", "", function(error) {
+            if (error) {
+                warning(error);
+                return;
+            }
+            hide(id("update-dialog"));
+        });
+    };
+
     id("close").onclick = function() {
         saveCurrentReadingPosition(function() {
             request(
@@ -4201,4 +4243,5 @@
     };
 
     start();
+    window.setTimeout(checkForUpdate, UPDATE_CHECK_DELAY_MS);
 }());

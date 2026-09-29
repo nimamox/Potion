@@ -7,6 +7,7 @@
 #include "potion/orientation.hpp"
 #include "potion/page_cache.hpp"
 #include "potion/reading_positions.hpp"
+#include "potion/update_checker.hpp"
 #include <curl/curl.h>
 #include <atomic>
 #include <chrono>
@@ -1069,6 +1070,96 @@ int main() {
     char directory[] = "/tmp/potion-test.XXXXXX";
     require(::mkdtemp(directory) != nullptr, "mkdtemp");
 
+    require(potion::update_version_is_newer("0.2.0", "0.1.9") &&
+                potion::update_version_is_newer("1.0.0", "0.99.99") &&
+                !potion::update_version_is_newer("0.1.0", "0.1.0") &&
+                !potion::update_version_is_newer("0.1-beta", "0.1.0"),
+            "strict semantic update version comparison");
+    const std::string update_dir = std::string(directory) + "/update-state";
+    require(::mkdir(update_dir.c_str(), 0700) == 0,
+            "create update checker state directory");
+    std::string first_installation_id;
+    const auto update_device = [] {
+      return potion::DeviceTelemetry{
+          "Test Kindle", "5.test", "3.test", "arm-test"};
+    };
+    const auto successful_update_post =
+        [&](const std::string &endpoint, const std::string &body,
+            std::string &response) {
+          require(endpoint ==
+                      "https://telemetry.nimamo.workers.dev/api/v1/check",
+                  "update checker endpoint");
+          const auto payload = potion::Json::parse(body);
+          require(payload.get("app").string() == "potion" &&
+                      payload.get("appVersion").string() == "0.1.0" &&
+                      payload.get("deviceModel").string() == "Test Kindle" &&
+                      payload.get("firmwareVersion").string() == "5.test" &&
+                      payload.get("kernelVersion").string() == "3.test" &&
+                      payload.get("architecture").string() == "arm-test" &&
+                      payload.get("buildType").string() == "development",
+                  "update checker telemetry payload");
+          const std::string id = payload.get("installationId").string();
+          if (first_installation_id.empty()) first_installation_id = id;
+          else require(id == first_installation_id,
+                       "update checker reuses its app-specific installation ID");
+          response = R"({"checked":true,"currentVersion":"0.1.0","latestVersion":"0.2.0"})";
+          return true;
+        };
+    {
+      potion::UpdateChecker checker({
+          update_dir,
+          "https://telemetry.nimamo.workers.dev/api/v1/check", {},
+          "potion", "0.1.0", "abcdef123456", "development", true,
+          successful_update_post, update_device});
+      checker.start();
+      potion::Json status;
+      for (int i = 0; i < 100; ++i) {
+        status = potion::Json::parse(checker.status_json());
+        if (status.get("checked").boolean()) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      }
+      require(status.get("checked").boolean() &&
+                  status.get("updateAvailable").boolean() &&
+                  !status.get("dismissed").boolean() &&
+                  status.get("latestVersion").string() == "0.2.0",
+              "successful update result is exposed from memory");
+      std::string error;
+      require(checker.dismiss_latest(error) &&
+                  potion::Json::parse(checker.status_json())
+                      .get("dismissed").boolean(),
+              "target-version dismissal is persisted and reflected");
+    }
+    {
+      potion::UpdateChecker checker({
+          update_dir,
+          "https://telemetry.nimamo.workers.dev/api/v1/check", {},
+          "potion", "0.1.0", "abcdef123456", "development", true,
+          successful_update_post, update_device});
+      checker.start();
+      potion::Json status;
+      for (int i = 0; i < 100; ++i) {
+        status = potion::Json::parse(checker.status_json());
+        if (status.get("checked").boolean()) break;
+        std::this_thread::sleep_for(std::chrono::milliseconds(5));
+      }
+      require(status.get("dismissed").boolean(),
+              "dismissal survives an application restart for that version");
+    }
+    {
+      potion::UpdateChecker checker({
+          update_dir,
+          "https://telemetry.nimamo.workers.dev/api/v1/check", {},
+          "potion", "0.1.0", "abcdef123456", "development", true,
+          [](const std::string &, const std::string &, std::string &) {
+            return false;
+          }, update_device});
+      checker.start();
+      checker.stop();
+      require(!potion::Json::parse(checker.status_json())
+                   .get("checked").boolean(),
+              "update network failures remain unavailable and harmless");
+    }
+
     const std::string page_cache_unit_dir =
         std::string(directory) + "/page-cache-unit";
     require(::mkdir(page_cache_unit_dir.c_str(), 0700) == 0,
@@ -1662,6 +1753,9 @@ int main() {
     ::unlink((std::string(directory) + "/token").c_str());
     ::unlink((std::string(directory) + "/state.conf").c_str());
     ::unlink((std::string(directory) + "/pins.conf").c_str());
+    ::unlink((update_dir + "/install-id").c_str());
+    ::unlink((update_dir + "/dismissed-update-version").c_str());
+    ::rmdir(update_dir.c_str());
     const std::string position_test_dirs[] = {
       positions_dir, malformed_dir, expiry_dir, cap_dir
     };

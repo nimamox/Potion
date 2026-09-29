@@ -6,6 +6,7 @@ namespace { void stop_server(int) { potion::HttpServer::request_stop(); } }
 int main(int argc, char **argv) {
   try {
     potion::ServerOptions options;
+    options.update_checks_enabled = true;
     for (int i = 1; i < argc; ++i) {
       std::string arg = argv[i];
       if (arg == "--help" || arg == "-h") {

@@ -28,6 +28,16 @@ const emojiFontDirectory = path.join(vendorDirectory, "noto-emoji", "fonts");
 const emojiFontPath = path.join(emojiFontDirectory, "NotoEmoji-Regular.ttf");
 const emojiFont = fs.readFileSync(emojiFontPath);
 
+assert.match(index,
+  /id="about-version" class="about-version">Version: &hellip;<\/p>[\s\S]*Created by Nima Mohammadi/,
+  "the About dialog reserves a version row above its creator credit");
+assert.match(frontend,
+  /function updateAboutVersion\(status\)[\s\S]*"Version: " \+ status\.version/,
+  "the About version comes from the daemon's build status");
+assert.match(frontend,
+  /updateAboutVersion\(status\);[\s\S]*pageId =\s*status\.startPageId/,
+  "startup populates the About version from its existing status request");
+
 assert.doesNotMatch(frontend, /window\.katex|katex\.render|loadKatex|katexState|data-expr/);
 assert.match(index, /vendor\/katex\/katex\.min\.css\?v=0\.16\.25-native/);
 assert.equal(fs.existsSync(javascriptAsset), false);
@@ -1823,5 +1833,16 @@ assert.match(frontend,
   /window\.onorientationchange = function\(\) \{\s*fitCompactImages\(\);\s*scheduleViewportReadingRestore\(\)/);
 assert.match(frontend,
   /window\.onresize = function\(\) \{\s*fitCompactImages\(\);[\s\S]*scheduleViewportReadingRestore\(\)/);
+
+assert.match(index, /id="update-dialog"[\s\S]*A newer Potion version is available/);
+assert.match(index, /id="update-dismiss"[^>]*>Don't remind me again for this version<\/button>/);
+assert.match(index, /id="update-later"[^>]*>Remind me later<\/button>/);
+assert.match(frontend, /var UPDATE_CHECK_DELAY_MS = 60000/);
+assert.match(frontend,
+  /function checkForUpdate\(\)[\s\S]*"GET", "\/api\/update-status"[\s\S]*status\.updateAvailable[\s\S]*status\.dismissed/);
+assert.match(frontend,
+  /id\("update-dismiss"\)\.onclick[\s\S]*"POST", "\/api\/update-status\/dismiss"/);
+assert.match(frontend,
+  /window\.setTimeout\(checkForUpdate, UPDATE_CHECK_DELAY_MS\)/);
 
 console.log("Potion frontend native-math contract tests passed");

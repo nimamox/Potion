@@ -346,6 +346,12 @@ bool is_immutable_asset_path(const std::string &relative_path) noexcept {
 HttpServer::HttpServer(ServerOptions options)
     : options_(std::move(options)), state_(options_.data_dir), positions_(options_.data_dir),
       notion_("2026-03-11", options_.ca_bundle_path),
+      update_checker_({options_.data_dir,
+                       "https://telemetry.nimamo.workers.dev/api/v1/check",
+                       options_.ca_bundle_path,
+                       "potion", POTION_VERSION, POTION_BUILD_COMMIT,
+                       POTION_BUILD_TYPE, options_.simulator,
+                       options_.update_poster, options_.device_telemetry}),
       image_cache_(options_.image_cache_dir, options_.image_cache_max_bytes,
                    options_.image_cache_max_entries),
       page_cache_(options_.page_cache_dir),
@@ -427,6 +433,7 @@ void HttpServer::stop() noexcept {
   pending_condition_.notify_all();
   image_prefetch_condition_.notify_all();
   wake_listener();
+  update_checker_.stop();
   std::lock_guard<std::mutex> lock(clients_mutex_);
   for (const int client : active_clients_) ::shutdown(client, SHUT_RDWR);
 }
@@ -588,6 +595,18 @@ void HttpServer::handle_client(int client) noexcept {
     }
     else if (request.method == "GET" && request.target == "/api/settings")
       respond(client, 200, "OK", "application/json", state_.settings_json());
+    else if (request.method == "GET" &&
+             request.target == "/api/update-status")
+      respond(client, 200, "OK", "application/json",
+              update_checker_.status_json());
+    else if (request.method == "POST" &&
+             request.target == "/api/update-status/dismiss") {
+      std::string error;
+      if (!update_checker_.dismiss_latest(error))
+        throw std::runtime_error(error);
+      respond(client, 200, "OK", "application/json",
+              update_checker_.status_json());
+    }
     else if (request.method == "POST" && request.target == "/api/settings") {
       const std::string key = parameter(request.body, "key");
       const std::string value = parameter(request.body, "value");
@@ -956,6 +975,7 @@ int HttpServer::run() {
   image_prefetch_worker_ = std::thread(&HttpServer::image_prefetch_loop, this);
   for (std::size_t i = 0; i < std::max<std::size_t>(2, options_.worker_count); ++i)
     workers_.emplace_back(&HttpServer::worker_loop, this);
+  if (options_.update_checks_enabled) update_checker_.start();
   std::cout << "Potion daemon listening at http://127.0.0.1:" << bound_port() << "/\n";
   if (!options_.simulator &&
       !set_setup_firewall_rule(options_.remote_setup_port, false))

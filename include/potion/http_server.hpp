@@ -5,6 +5,7 @@
 #include "potion/notion_client.hpp"
 #include "potion/page_cache.hpp"
 #include "potion/reading_positions.hpp"
+#include "potion/update_checker.hpp"
 #include <atomic>
 #include <condition_variable>
 #include <cstdint>
@@ -36,6 +37,7 @@ struct ServerOptions {
   std::uint16_t port{8766};
   std::uint16_t remote_setup_port{8767};
   bool simulator{};
+  bool update_checks_enabled{};
   std::size_t worker_count{4};
   std::size_t image_cache_max_bytes{32 * 1024 * 1024};
   std::size_t image_cache_max_entries{128};
@@ -47,6 +49,8 @@ struct ServerOptions {
                                          std::string &)> page_searcher;
   ImageDownloadFunction image_downloader;
   ImageRefreshFunction image_refresher;
+  UpdatePostFunction update_poster;
+  DeviceTelemetryFunction device_telemetry;
 };
 class HttpServer {
 public:
@@ -79,6 +83,7 @@ private:
   AppState state_;
   ReadingPositionStore positions_;
   NotionClient notion_;
+  UpdateChecker update_checker_;
   ImageRegistry images_;
   SessionImageCache image_cache_;
   SessionPageCache page_cache_;
