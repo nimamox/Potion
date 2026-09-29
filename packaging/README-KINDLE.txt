@@ -1,4 +1,4 @@
-Potion is a lightweight Notion reader for jailbroken Kindle. Text selected
+Potion is a lightweight Notion reader for Kindle. Text selected
 within one ordinary paragraph or list item can be highlighted, bolded, or
 underlined on Notion when the connection has update-content access.
 

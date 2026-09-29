@@ -2,151 +2,171 @@
 
 # Potion
 
-Potion is a lightweight Notion reader for jailbroken Kindles. A C++17 daemon
-uses Notion's official API, converts Notion-flavored Markdown to sanitized
-HTML, and serves a deliberately lightweight interface to Amazon Mesquite.
+Potion is a lightweight Notion reader optimized for Kindle and
+e-ink hardware. It turns Notion pages into a compact reading interface designed
+for fast navigation, responsive controls, low memory use, and minimal
+background activity on constrained devices.
 
-Potion can validate a connection token, search accessible pages, retrieve page
-metadata/Markdown, and fetch images. Within ordinary paragraphs and list items,
-selected text can be highlighted, bolded, or underlined directly on Notion.
-This formatting requires the integration's update-content capability; Potion
-does not cache page content or keep a local copy of edits.
-On Kindle, hold a word to select it; dragging while holding extends Potion's
-selection when Mesquite supplies drag events. Potion also accepts an ordinary
-WebKit selection when the device provides native selection behavior.
-The reader supports navigable child pages, parent-page Back navigation, regular
-toggles, toggle headings, and Notion text/background highlights. Night mode can
-preserve page colors, adapt them for a dark background, or also invert images.
-The reader toolbar keeps navigation unambiguous: Back follows page history,
-while Pages always returns directly to the main page list.
-The settings dialog also supports normal or reversed Kindle physical page-button
-scrolling and provides contextual help for these display/input choices.
-The Kindle launcher marks Potion's Mesquite window Whisper-Touch capable through
-the firmware's window-manager utility. AwesomeWM then delivers Oasis page
-buttons directly to WebKit as Page Up/Page Down key events; `potiond` does not
-monitor `/dev/input` or expose an input-polling endpoint.
-Authentication and settings are stored by `potiond`, not Mesquite. On Kindle
-the token is `/var/local/potion/token` (mode 0600); on the simulator state is
-kept in `.potion-simulator/`. Both locations are ignored by Git.
+Potion is primarily a reader. It intentionally provides only narrow editing
+support: selected text in supported blocks can be highlighted, bolded, or
+underlined, but Potion is not a general Notion editor.
 
-Notion mathematics is rendered to HTML inside `potiond` by native Rust
-`katex-rs` 0.2.4. Mesquite loads the matching KaTeX 0.16.25 CSS and the
-Mesquite-verified WOFF fonts, but no KaTeX JavaScript and no TeX parser.
-Repeated expressions use a bounded native
-LRU cache, and equations continue to scale with reader text because the result
-uses KaTeX's relative HTML/CSS sizing. Nothing extra is installed on Kindle.
+## Features
+
+- Search, sort, refresh, and navigate the Notion pages accessible to the
+  configured connection.
+- Child-page links, page history and Back navigation, direct return to the
+  Pages screen, and saved reading positions.
+- Paragraphs, headings, numbered and bulleted lists, toggles and toggle
+  headings, tables, code, Notion text/background colors, and other common
+  reading content.
+- Lazy-loaded images with tap-to-expand viewing and a bounded session cache.
+- Native inline and display mathematics with bundled KaTeX fonts.
+- Long-press text selection and highlight, bold, underline, or clear-formatting
+  actions where the selected Notion block and content type support them.
+- Reader font and size controls, word and line spacing, separate code sizing,
+  an experimental Bionic Reading presentation, orientation control, and
+  configurable night modes.
+- Physical Kindle page-button scrolling where the device and firmware provide
+  those buttons. Direction can be reversed in Settings.
+- Manual full e-ink refresh control.
+
+Potion avoids persistent copies of Notion page content. The accessible Pages
+listing and successfully downloaded images may be cached only for the current
+Potion session to improve responsiveness and reduce repeated network use; that
+temporary data is cleared when Potion restarts or the user logs out.
+
+## Platform support
+
+Current releases target **PW2-compatible ARMEL Kindles** with
+Amazon's Mesquite application runtime. Development and real-device behavior in
+this repository are focused on that Kindle firmware family, including Oasis
+page-button integration where available.
+
+The simulator includes profiles for many Kindle screen sizes, but a simulator
+profile is not a claim that the corresponding physical model has been tested.
+There is not yet a comprehensive per-model compatibility matrix. Other e-ink
+platforms are not currently supported; support for additional e-ink devices is
+intended in the future.
+
+## Installation over USB
+
+Download and extract a packaged Potion release on a computer. The archive is
+laid out like the root of the Kindle USB drive. Copy the archive's **contents**
+to the top level of the mounted Kindle drive:
+
+```text
+potion/                  -> /mnt/us/potion
+extensions/Potion/       -> /mnt/us/extensions/Potion
+documents/Potion.sh      -> /mnt/us/documents/Potion.sh
+```
+
+Do not copy an enclosing release or `dist` directory. Safely eject the Kindle,
+then launch Potion from the Library or from KUAL. The direct Library entry
+requires PEKI, the same script-launcher support used by a Library-installed
+`KUAL.sh`; KUAL remains an optional launch route.
 
 ## Connect Notion
 
-Notion does not provide a supported username/password login API. Obtain a
-Notion access token on a computer. The easiest option for an individual user is
-a [personal access token](https://developers.notion.com/guides/get-started/personal-access-tokens).
-An internal integration token from <https://www.notion.so/profile/integrations>
-also works, but the pages must be shared with that integration.
+Potion uses Notion's supported token-based API; it cannot sign in with a Notion
+email address and password. Obtain a
+[personal access token](https://developers.notion.com/guides/get-started/personal-access-tokens)
+or an internal integration token, grant it the required content capabilities,
+and make the desired pages accessible to it. Update-content access is required
+only for Potion's limited text-formatting actions.
 
-To connect without typing the token on a Kindle:
+The token can be entered on the Kindle. While Potion is disconnected, it can
+also show a temporary same-network setup URL so the token can be pasted from a
+phone or computer; that setup page closes after a valid connection is stored.
 
-1. Copy the Potion installation to `/mnt/us/potion` as usual.
-2. On the computer, create `/mnt/us/potion/notion-token.txt` containing only
-   the token. Do not add `Bearer`, quotes, a label, or any other text.
-3. Safely eject the Kindle and launch Potion from the Library or KUAL.
+To import a token through USB instead:
 
-Potion validates the token with Notion, stores it privately as
-`/var/local/potion/token` with mode 0600, and removes `notion-token.txt` after a
-successful import. If validation fails, the file is left in place so it can be
-replaced from a computer, and Potion displays the error on its connection
-screen. A new valid `notion-token.txt` replaces an existing saved token, which
-also provides a simple token-rotation path.
+1. Create `/mnt/us/potion/notion-token.txt` on the mounted Kindle drive.
+2. Put only the token in the file: no `Bearer`, quotes, label, or extra lines.
+3. Safely eject the Kindle and launch Potion.
 
-The USB copy is exposed to any computer connected to the Kindle until it is
-successfully imported, so do not leave it there. `user_pass.txt` is
-intentionally ignored and is not read by Potion.
+Potion validates the token, stores it privately, and removes the USB copy after
+a successful import. If validation fails, the file remains so it can be
+replaced. A new valid import file can also replace an existing saved token.
 
-## Develop with CLion on macOS or Linux
+## Using Potion
 
-Open this directory as the CLion project. Add or edit a local CMake profile and
-set this CMake option:
+The Pages screen shows the content available to the configured connection. Use
+Search to filter it, choose the desired sort order, or explicitly Refresh the
+session snapshot from Notion. Open a page to read it; child-page links continue
+within Potion, Back follows page history, and Pages returns directly to the
+listing.
 
-    -DPOTION_BUILD_SIMULATOR=ON
+Tap images to expand them. Open toggles in place, and use the appearance panel
+to adjust font, size, spacing, code size, and Bionic Reading. Long-press and
+drag to select text; the formatting menu is available only where Potion can
+safely map the selection back to editable Notion content.
 
-Build/run the `potion_simulator` target. It starts `potiond`, opens the default
-browser, and keeps login/settings state between runs. The wrapper defaults to
-Kindle Oasis 8th generation and provides a device selector plus physical-page
-button emulation. Stop the target to stop the daemon.
+## Security and privacy
 
-Command-line equivalent:
+The saved token is stored outside the USB-visible filesystem at
+`/var/local/potion/token` with mode 0600. The temporary USB import file is
+visible to any connected computer until it is successfully imported, so do not
+leave it on the device. Logging out removes the saved token and clears Potion's
+session caches.
 
-    cmake -S . -B cmake-build-debug -DPOTION_BUILD_SIMULATOR=ON
-    cmake --build cmake-build-debug --target potion_simulator
+The normal application API listens only on the Kindle loopback interface. The
+temporary network setup page exists only while Potion has no valid token and is
+closed after connection. Potion fetches only pages shared with the configured
+Notion connection and sanitizes the HTML it renders.
 
-For debugging, append `?page=PAGE_ID` to Potion's URL to open that Notion page
-directly. The packaged Kindle launcher accepts the same page ID as its optional
-first argument (replace the placeholder with the page's 32-hex Notion ID):
+## Technical characteristics
 
-    /mnt/us/potion/potion.sh <32-hex-page-id>
+Potion uses the Kindle's built-in Mesquite browser for display and a compact
+C++17 daemon to access Notion's API and produce sanitized HTML. Mathematics is
+rendered natively before the page reaches the browser; the Kindle does not run
+KaTeX JavaScript or install a TeX engine. Images remain lazy in the interface,
+and page responses do not wait for all images to download.
 
-Normal Library and KUAL launches still open the main Pages view.
+## Building from source
 
-## Build and deploy to Kindle
-
-Both Potion and AnkINK use the same `kindle-dev-builder:local` Docker image and
-the same cache volume, while retaining independent Dockerfiles and scripts.
-Potion's build cross-compiles its small Rust renderer as an ARMv7 static
-library and links it into the C++ `potiond` executable.
-
-    ./build_on_docker.sh
-    ./push_over_ssh.sh root@KINDLE_IP
-
-The build uses local Docker when no argument is supplied. It can optionally use
-Docker on a remote machine instead; the Mac needs `ssh` and `rsync`, while the
-remote machine needs `rsync`, Docker, and access to a working Docker daemon:
-
-    ./build_on_docker.sh user@build-host
-
-Remote mode synchronizes the working tree to the reusable
-`/tmp/kindle-build-$USER/Potion` directory, excluding Git data, credentials,
-`dist/`, simulator state, and local build artifacts. It invokes the same
-`bash build_on_docker.sh` local-build path on the remote machine and copies the
-completed remote `dist/` back only after a successful build. The remote
-directory, fingerprinted Docker image layers, and shared named cache volume are
-retained for subsequent builds; the Docker caches are not stored under `/tmp`.
-
-The build produces a USB-root layout:
-
-```text
-dist/
-├── potion/                 # /mnt/us/potion
-├── extensions/
-│   └── Potion/             # /mnt/us/extensions/Potion (KUAL)
-└── documents/
-    └── Potion.sh           # /mnt/us/documents/Potion.sh (Library)
-```
-
-For a user release, archive the **contents** of `dist/`, preserving those three
-top-level directories. After extracting the archive on a computer, the user
-copies `potion`, `extensions`, and `documents` to the top level of the mounted
-Kindle USB drive and safely ejects it. Copying the enclosing `dist` directory is
-incorrect. Potion can then be launched either from its Library item or KUAL.
-The direct Library item requires PEKI, the same script-launcher support used by
-a Library-installed `KUAL.sh`.
-
-For example, after building:
+With Docker installed and running locally:
 
 ```sh
-tar -C dist -czf Potion-kindle.tar.gz potion extensions documents
+./build_on_docker.sh
 ```
 
-`push_over_ssh.sh` is the developer deployment path. It installs all three
-components at their `/mnt/us` locations; it is not required for normal users.
+To build through an SSH-accessible machine that has Docker:
 
-## License and source
+```sh
+./build_on_docker.sh user@host
+```
+
+The remote form synchronizes the working tree, runs the same Docker build on
+the remote machine, and returns the completed artifacts to the local `dist/`
+directory. In either mode, `dist/` contains the USB-ready `potion`,
+`extensions`, and `documents` entries.
+
+## Deploy over SSH
+
+If the Kindle has SSH access, for example through USBNetwork, the built project
+can optionally be installed with:
+
+```sh
+bash push_over_ssh.sh root@device_ip
+```
+
+This installs the three components under `/mnt/us` but does not relaunch the
+application. Normal users do not need SSH and can use the USB installation
+method above.
+
+For simulator setup, development environment configuration, architecture
+details, cross-compilation internals, and debugging workflows, see
+[DEVELOPMENT.md](DEVELOPMENT.md).
+
+## Project status and license
+
+Potion is an independent, focused 0.x Notion reader under active development.
+It is not affiliated with or endorsed by Notion Labs, Inc. “Notion” is used
+only to identify service compatibility.
 
 Potion is Copyright (C) 2026 Potion contributors and is free software licensed
-under the [GNU Affero General Public License v3.0 or later](LICENSE). The
-official corresponding source is this repository; every binary release must
-identify its exact source tag or commit and provide equivalent access to it.
-See [SOURCE.md](SOURCE.md) and [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)
-for the source and license details of bundled dependencies.
-
-Potion is an independent project and is not affiliated with or endorsed by
-Notion Labs, Inc. “Notion” is used only to identify service compatibility.
+under the [GNU Affero General Public License v3.0 or later](LICENSE). Binary
+releases and redistributions must identify their exact corresponding source and
+preserve the applicable notices. See [SOURCE.md](SOURCE.md) and
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
