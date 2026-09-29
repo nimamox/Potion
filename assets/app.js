@@ -8,7 +8,7 @@
         pageList = [],
         pageListLoaded = false,
         pageListOffset = 0,
-        pageListPageSize = 12,
+        pageListPageSize = 11,
         pageListTotal = 0,
         pageListHasMore = false,
         pageListQuery = "",
