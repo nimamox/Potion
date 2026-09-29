@@ -159,6 +159,16 @@ For simulator setup, development environment configuration, architecture
 details, cross-compilation internals, and debugging workflows, see
 [DEVELOPMENT.md](DEVELOPMENT.md).
 
+## Support Potion
+
+Potion is developed independently and provided as free and open-source software.
+
+Development and real-device testing are currently centered on an **8th-generation Kindle Oasis**, which is the Kindle hardware I currently have available. If you find Potion useful, you can [sponsor the project on GitHub](https://github.com/sponsors/nimamox).
+
+Your support can help fund the purchase of newer Kindle models and other e-ink devices for real-device testing. This would make it possible to investigate compatibility issues, validate Potion on a wider range of hardware, and gradually add support for additional devices and platforms.
+
+Sponsorship is entirely optional. Potion remains free and open-source software.
+
 ## Project status and license
 
 Potion is an independent, focused 0.x Notion reader under active development.
