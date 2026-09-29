@@ -36,4 +36,4 @@ error. Reconnect the Kindle to replace or remove that exposed file.
 Potion is free software under GNU AGPL v3 or later, without warranty. License,
 source, and third-party notices are included in this directory and at:
 
-    https://github.com/nimamox/Potion_Kindle
+    https://github.com/nimamox/Potion

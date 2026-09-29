@@ -1,7 +1,7 @@
 # Corresponding source
 
 Official Potion binaries are built from the tagged source at
-<https://github.com/nimamox/Potion_Kindle>. The repository includes the Docker
+<https://github.com/nimamox/Potion>. The repository includes the Docker
 build definition, cross-build scripts, packaging scripts, UI assets, and all
 Potion source needed to reproduce the Kindle executable and distribution.
 
