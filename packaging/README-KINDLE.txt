@@ -2,6 +2,9 @@ Potion is a lightweight Notion reader for Kindle. Text selected
 within one ordinary paragraph or list item can be highlighted, bolded, or
 underlined on Notion when the connection has update-content access.
 
+This universal package includes ARMEL and ARMHF runtimes. Potion selects the
+matching runtime automatically; users do not need to determine the Kindle ABI.
+
 USB installation
 ================
 

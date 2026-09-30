@@ -1,10 +1,16 @@
 #!/bin/sh
 set -eu
-[ "$#" -eq 3 ] || { echo "Usage: $0 SYSROOT BUILD_DIR OUTPUT" >&2; exit 2; }
-SYSROOT=$1; BUILD=$2; OUTPUT=$3
+[ "$#" -eq 4 ] || { echo "Usage: $0 ABI SYSROOT BUILD_DIR OUTPUT" >&2; exit 2; }
+KINDLE_ABI=$1; SYSROOT=$2; BUILD=$3; OUTPUT=$4
 ROOT=$(CDPATH= cd "$(dirname "$0")/.." && pwd)
-READELF=${CROSS_COMPILE:-arm-linux-gnueabi-}readelf
-STRIP=${CROSS_COMPILE:-arm-linux-gnueabi-}strip
+. "$ROOT/scripts/kindle-abi.sh"
+kindle_abi_configure "$KINDLE_ABI"
+READELF="$KINDLE_SDK_ROOT/bin/$KINDLE_GNU_TRIPLET-readelf"
+STRIP="$KINDLE_SDK_ROOT/bin/$KINDLE_GNU_TRIPLET-strip"
+case "$SYSROOT" in
+  */"$KINDLE_ABI") ;;
+  *) echo "Sysroot $SYSROOT does not match ABI $KINDLE_ABI" >&2; exit 2 ;;
+esac
 [ -x "$BUILD/potiond" ] || { echo "Missing $BUILD/potiond" >&2; exit 1; }
 [ -f "$BUILD/libmesquite-whisper-touch.so" ] || { echo "Missing $BUILD/libmesquite-whisper-touch.so" >&2; exit 1; }
 [ ! -e "$OUTPUT" ] || { echo "Output already exists: $OUTPUT" >&2; exit 1; }

@@ -11,6 +11,11 @@ Potion is primarily a reader. It intentionally provides only narrow editing
 support: selected text in supported blocks can be highlighted, bolded, or
 underlined, but Potion is not a general Notion editor.
 
+**Compatibility notice:** Potion supports both older ARMEL Kindle firmware and
+newer ARMHF/KindleHF firmware. It has been tested on an **8th-generation Kindle
+Oasis** using ARMEL and a **10th-generation Kindle Oasis (Oasis 3)** using
+ARMHF. Other Kindle models remain less well tested, so feedback is welcome.
+
 ## Features
 
 - Search, sort, refresh, and navigate the Notion pages accessible to the
@@ -38,10 +43,18 @@ temporary data is cleared when Potion restarts or the user logs out.
 
 ## Platform support
 
-Current releases target **PW2-compatible ARMEL Kindles** with
-Amazon's Mesquite application runtime. Development and real-device behavior in
-this repository are focused on that Kindle firmware family, including Oasis
-page-button integration where available.
+Current releases contain both Kindle ARM userspace ABIs: ARMEL for older
+firmware (generally before 5.16.3) and ARMHF/KindleHF for newer firmware
+(generally 5.16.3 and later). The launcher detects the installed firmware ABI
+and selects the matching runtime; users install one universal package and do
+not need to determine their ABI.
+
+ARMEL has been tested on an 8th-generation Kindle Oasis, and ARMHF has been
+tested on a 10th-generation Kindle Oasis (Oasis 3). The build also validates
+both ABIs' ELF format, loader, packaged shared-library closure, Rust/C++
+integration, and QEMU user-mode startup. QEMU does not emulate Kindle firmware
+and does not validate Mesquite, Amazon application services, touch/page
+buttons, or e-ink behavior; other physical models remain less well tested.
 
 The simulator includes profiles for many Kindle screen sizes, but a simulator
 profile is not a claim that the corresponding physical model has been tested.
@@ -51,9 +64,9 @@ intended in the future.
 
 ## Installation over USB
 
-Download and extract a packaged Potion release on a computer. The archive is
-laid out like the root of the Kindle USB drive. Copy the archive's **contents**
-to the top level of the mounted Kindle drive:
+Download and extract `Potion-<version>-kindle-universal.tar.gz` (or `.zip`) on
+a computer. The archive is laid out like the root of the Kindle USB drive.
+Copy the archive's **contents** to the top level of the mounted Kindle drive:
 
 ```text
 potion/                  -> /mnt/us/potion
@@ -139,8 +152,9 @@ To build through an SSH-accessible machine that has Docker:
 
 The remote form synchronizes the working tree, runs the same Docker build on
 the remote machine, and returns the completed artifacts to the local `dist/`
-directory. In either mode, `dist/` contains the USB-ready `potion`,
-`extensions`, and `documents` entries.
+directory. The default build produces both native ABIs in one USB-ready
+package. In either mode, `dist/` contains the `potion`, `extensions`, and
+`documents` entries.
 
 ## Deploy over SSH
 

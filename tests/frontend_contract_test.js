@@ -93,9 +93,21 @@ assert.ok(
     index.indexOf('id="appearance-bionic-reading"'),
   "CODE SIZE sits between LINE SPACING and BIONIC READING");
 assert.match(runKindle, /'supportedOrientation','UDLR'/);
-assert.match(runKindle, /LD_PRELOAD=.*libmesquite-whisper-touch\.so \/usr\/bin\/mesquite/);
+assert.match(runKindle, /POTION_USE_WHISPER_TOUCH=0[\s\S]*POTION_ABI" = armel[\s\S]*POTION_USE_WHISPER_TOUCH=1/);
+assert.match(runKindle, /POTION_MESQUITE_ENV="FONTCONFIG_FILE=[\s\S]*POTION_USE_WHISPER_TOUCH" = 1[\s\S]*LD_PRELOAD=\$POTION_PRELOAD/,
+  "Whisper Touch is retained only for the hardware-tested ARMEL path");
 assert.match(runKindle,
   /FONTCONFIG_FILE=\$POTION_ROOT\/etc\/fontconfig-potion\.conf/);
+assert.match(runKindle,
+  /\[ -e \/lib\/ld-linux-armhf\.so\.3 \][\s\S]*POTION_ABI=armhf/);
+assert.match(runKindle,
+  /\[ -e \/lib\/ld-linux\.so\.3 \][\s\S]*POTION_ABI=armel/);
+assert.match(runKindle, /POTION_RUNTIME="\$POTION_ROOT\/\$POTION_ABI"/);
+assert.match(runKindle, /POTION_DAEMON="\$POTION_RUNTIME\/bin\/potiond"/);
+assert.match(runKindle,
+  /POTION_PRELOAD="\$POTION_RUNTIME\/lib\/libmesquite-whisper-touch\.so"/);
+assert.match(runKindle, /POTION_LAUNCHER_TEST_ABI[\s\S]*armel\|armhf/,
+  "launcher has an internal-only ARMEL/ARMHF selection test path");
 assert.match(potionFontconfig, /<include ignore_missing="no">\/etc\/fonts\/fonts\.conf<\/include>/);
 assert.match(potionFontconfig,
   /<dir>\/mnt\/us\/potion\/share\/potion\/vendor\/fast-font\/fonts<\/dir>/);

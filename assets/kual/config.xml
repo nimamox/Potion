@@ -1,1 +1,1 @@
-<?xml version="1.0" encoding="UTF-8"?><extension><information><name>Potion</name><version>0.1.0</version><author>Potion</author><id>Potion</id></information><menus><menu type="json" dynamic="true">menu.json</menu></menus></extension>
+<?xml version="1.0" encoding="UTF-8"?><extension><information><name>Potion</name><version>0.3.0</version><author>Potion</author><id>Potion</id></information><menus><menu type="json" dynamic="true">menu.json</menu></menus></extension>

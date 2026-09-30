@@ -3,7 +3,7 @@ set -euo pipefail
 [ "$#" -eq 1 ] || { echo "Usage: $0 USER@KINDLE_HOST" >&2; exit 2; }
 ROOT=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)
 TARGET=$1; BUNDLE="$ROOT/dist/potion"; EXTENSION="$ROOT/dist/extensions/Potion"; LIBRARY_LAUNCHER="$ROOT/dist/documents/Potion.sh"
-[ -x "$BUNDLE/bin/potiond" ] || { echo "Run ./build_on_docker.sh first." >&2; exit 1; }
+[ -x "$BUNDLE/armel/bin/potiond" ] && [ -x "$BUNDLE/armhf/bin/potiond" ] || { echo "Run ./build_on_docker.sh first to create both Kindle runtimes." >&2; exit 1; }
 [ -f "$EXTENSION/config.xml" ] || { echo "Missing Potion KUAL extension." >&2; exit 1; }
 [ -x "$LIBRARY_LAUNCHER" ] || { echo "Missing Potion Library launcher. Run ./build_on_docker.sh first." >&2; exit 1; }
 ssh "$TARGET" 'if [ -f /var/tmp/potiond.pid ]; then kill "$(cat /var/tmp/potiond.pid)" 2>/dev/null || true; rm -f /var/tmp/potiond.pid; fi; mkdir -p /mnt/us/potion /mnt/us/extensions/Potion /mnt/us/documents'

@@ -95,9 +95,9 @@ The supported release build is:
 
 It builds or reuses the shared `kindle-dev-builder:local` image and
 `ankink-kindle-build-cache` named volume. Potion keeps its own Dockerfile and
-build scripts, cross-compiles its Rust renderer as an ARM static library, and
-links it into the C++ daemon. The build container is short-lived; the source is
-mounted read-only and `dist/` receives the packaged output.
+build scripts, cross-compiles its Rust renderer and C++ daemon separately for
+ARMEL and ARMHF, and packages both runtimes. The build container is short-lived;
+the source is mounted read-only and `dist/` receives the packaged output.
 
 A remote build uses:
 
@@ -118,6 +118,10 @@ The package layout is:
 ```text
 dist/
 ├── potion/
+│   ├── armel/{bin,lib}/
+│   ├── armhf/{bin,lib}/
+│   ├── share/potion/
+│   └── potion.sh
 ├── extensions/Potion/
 └── documents/Potion.sh
 ```
@@ -127,6 +131,19 @@ For a release archive, archive the **contents** of `dist/`:
 ```sh
 tar -C dist -czf Potion-kindle.tar.gz potion extensions documents
 ```
+
+The default build creates both runtimes. `KINDLE_ABI=armel` or
+`KINDLE_ABI=armhf` requests a single-ABI developer build. Native dependencies,
+CMake builds, package staging, and Rust target outputs remain isolated by ABI.
+
+`scripts/validate-kindle-runtime.sh` validates ELF machine/float ABI,
+interpreter and shared-library closure, then uses each packaged loader to run
+`potiond --help` under QEMU user mode. A deeper advisory smoke test starts the
+Rust/C++ daemon and requests `/api/status`. The launcher has an internal test
+override for both ABI paths. None of these checks emulate Kindle firmware.
+Potion has also been tested on an ARMHF Kindle Oasis 3, but other KindleHF
+models and firmware-specific Mesquite, input, e-ink, and suspend/resume behavior
+still require appropriate physical-device testing.
 
 ## Kindle runtime and deployment
 

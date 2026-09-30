@@ -72,12 +72,13 @@ Copyright 2013 Google Inc. All Rights Reserved.
 
 The Kindle bundle includes unmodified runtime files from Debian cross packages:
 
-- glibc 2.41 (`libc6-armel-cross` 2.41-11cross1): `ld-linux.so.3`, `libc.so.6`,
-  and `libm.so.6`; LGPL-2.1-or-later. Source:
+- glibc 2.41 (`libc6-armel-cross` and `libc6-armhf-cross` 2.41-11cross1):
+  the matching ARMEL/ARMHF loaders, `libc.so.6`, and `libm.so.6`;
+  LGPL-2.1-or-later. Source:
   <https://sources.debian.org/src/glibc/2.41-11/>
-- GCC 14.2.0 (`libgcc-s1-armel-cross` and `libstdc++6-armel-cross`
-  14.2.0-19cross1): `libgcc_s.so.1` and `libstdc++.so.6`; GPL-3.0-or-later
-  with GCC Runtime Library Exception 3.1. Source:
+- GCC 14.2.0 (the ARMEL and ARMHF cross-runtime packages, 14.2.0-19cross1):
+  `libgcc_s.so.1` and `libstdc++.so.6`; GPL-3.0-or-later with GCC Runtime
+  Library Exception 3.1. Source:
   <https://sources.debian.org/src/gcc-14/>
 
 The applicable texts are reproduced in `LICENSES/LGPL-2.1-or-later.txt`,
