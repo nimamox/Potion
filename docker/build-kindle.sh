@@ -7,8 +7,10 @@ CACHE=/cache
 REQUESTED_ABI=${KINDLE_ABI:-universal}
 export KINDLE_SDK_ROOT=/opt/kindle-sdk
 export CARGO_HOME="$CACHE/cargo-home"
-export CARGO_TARGET_DIR="$CACHE/potion-math-target"
 . "$WORKSPACE/scripts/kindle-abi.sh"
+. "$WORKSPACE/scripts/kindle-optimization.sh"
+kindle_optimization_configure
+export CARGO_TARGET_DIR="$CACHE/potion-math-target-$KINDLE_OPT_PROFILE"
 
 case "$REQUESTED_ABI" in
   universal|all) BUILD_ABIS="armel armhf" ;;
@@ -17,9 +19,21 @@ case "$REQUESTED_ABI" in
 esac
 mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
 
+# rsync preserves mtimes; cached objects must follow input content as well as flags.
+CMAKE_INPUT_FINGERPRINT=$(
+  {
+    printf '%s\n' "$WORKSPACE/CMakeLists.txt"
+    find "$WORKSPACE/cmake" "$WORKSPACE/include" "$WORKSPACE/src" -type f -print
+  } | LC_ALL=C sort | while IFS= read -r POTION_INPUT; do
+    sha256sum "$POTION_INPUT"
+  done | sha256sum | awk '{print $1}'
+)
+
 for BUILD_ABI in $BUILD_ABIS; do
   kindle_abi_configure "$BUILD_ABI"
-  BUILD="$CACHE/potion-cmake-$KINDLE_ABI"
+  kindle_rust_flags_configure
+  sh "$WORKSPACE/scripts/check-rust-float-abi.sh"
+  BUILD="$CACHE/potion-cmake-$KINDLE_ABI-$KINDLE_OPT_PROFILE"
   ABI_STAGE="$CACHE/potion-package-stage-$KINDLE_ABI"
   RUST_TARGET_ENV=$(printf '%s' "$KINDLE_RUST_TARGET" | tr '[:lower:]-' '[:upper:]_')
   RUST_TARGET_VAR=$(printf '%s' "$KINDLE_RUST_TARGET" | tr '-' '_')
@@ -27,19 +41,30 @@ for BUILD_ABI in $BUILD_ABIS; do
   export "CC_${RUST_TARGET_VAR}=$KINDLE_SDK_ROOT/bin/$KINDLE_GNU_TRIPLET-gcc"
   export "CXX_${RUST_TARGET_VAR}=$KINDLE_SDK_ROOT/bin/$KINDLE_GNU_TRIPLET-g++"
   export "AR_${RUST_TARGET_VAR}=$KINDLE_SDK_ROOT/bin/$KINDLE_GNU_TRIPLET-ar"
-  export "CFLAGS_${RUST_TARGET_VAR}=$KINDLE_ARCH_FLAGS"
-  export "CXXFLAGS_${RUST_TARGET_VAR}=$KINDLE_ARCH_FLAGS"
+  export "CFLAGS_${RUST_TARGET_VAR}=$KINDLE_ARCH_FLAGS -O$KINDLE_CPP_OPT_LEVEL"
+  export "CXXFLAGS_${RUST_TARGET_VAR}=$KINDLE_ARCH_FLAGS -O$KINDLE_CPP_OPT_LEVEL"
 
   echo "Building Potion runtime for $KINDLE_ABI"
   cargo build --locked --release --target "$KINDLE_RUST_TARGET" \
     --manifest-path "$WORKSPACE/backend/math/Cargo.toml"
   MATH_LIBRARY="$CARGO_TARGET_DIR/$KINDLE_RUST_TARGET/release/libpotion_math.a"
   cmake -S "$WORKSPACE" -B "$BUILD" -G Ninja \
-    -DCMAKE_BUILD_TYPE=MinSizeRel \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_C_FLAGS="$KINDLE_ARCH_FLAGS" -DCMAKE_CXX_FLAGS="$KINDLE_ARCH_FLAGS" \
+    -DCMAKE_C_FLAGS_RELEASE="-O$KINDLE_CPP_OPT_LEVEL -DNDEBUG" \
+    -DCMAKE_CXX_FLAGS_RELEASE="-O$KINDLE_CPP_OPT_LEVEL -DNDEBUG" \
+    -DPOTION_ENABLE_IPO="$KINDLE_IPO" -DPOTION_VECTOR_REPORT="$KINDLE_VECTOR_REPORT" \
     -DCMAKE_TOOLCHAIN_FILE="$WORKSPACE/cmake/kindle-toolchain.cmake" \
     -DPOTION_BUILD_TESTS=OFF -DPOTION_BUILD_SIMULATOR=OFF \
     -DPOTION_MATH_LIBRARY="$MATH_LIBRARY"
+  FINGERPRINT_FILE="$BUILD/.potion-cmake-input-fingerprint"
+  if [ ! -f "$FINGERPRINT_FILE" ] ||
+     [ "$(cat "$FINGERPRINT_FILE")" != "$CMAKE_INPUT_FINGERPRINT" ]; then
+    echo "Potion CMake inputs changed; invalidating cached C++ objects."
+    cmake --build "$BUILD" --target clean
+  fi
   cmake --build "$BUILD" --target potiond --parallel
+  printf '%s\n' "$CMAKE_INPUT_FINGERPRINT" > "$FINGERPRINT_FILE"
   rm -rf "$ABI_STAGE"
   "$WORKSPACE/scripts/package-kindle.sh" "$KINDLE_ABI" \
     "$KINDLE_SDK_ROOT/$KINDLE_ABI" "$BUILD" "$ABI_STAGE"

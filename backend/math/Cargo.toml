@@ -11,7 +11,7 @@ crate-type = ["staticlib"]
 katex-rs = { version = "=0.2.4", default-features = false }
 
 [profile.release]
-opt-level = "s"
+opt-level = 2
 lto = "thin"
 codegen-units = 1
 strip = true

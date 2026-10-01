@@ -1091,7 +1091,7 @@ int main() {
                   "update checker endpoint");
           const auto payload = potion::Json::parse(body);
           require(payload.get("app").string() == "potion" &&
-                      payload.get("appVersion").string() == "0.3.0" &&
+                      payload.get("appVersion").string() == "0.3.1" &&
                       payload.get("deviceModel").string() == "Test Kindle" &&
                       payload.get("firmwareVersion").string() == "5.test" &&
                       payload.get("kernelVersion").string() == "3.test" &&
@@ -1102,14 +1102,14 @@ int main() {
           if (first_installation_id.empty()) first_installation_id = id;
           else require(id == first_installation_id,
                        "update checker reuses its app-specific installation ID");
-          response = R"({"checked":true,"currentVersion":"0.3.0","latestVersion":"0.4.0"})";
+          response = R"({"checked":true,"currentVersion":"0.3.1","latestVersion":"0.4.0"})";
           return true;
         };
     {
       potion::UpdateChecker checker({
           update_dir,
           "https://telemetry.nimamo.workers.dev/api/v1/check", {},
-          "potion", "0.3.0", "abcdef123456", "development", true,
+          "potion", "0.3.1", "abcdef123456", "development", true,
           successful_update_post, update_device});
       checker.start();
       potion::Json status;
@@ -1133,7 +1133,7 @@ int main() {
       potion::UpdateChecker checker({
           update_dir,
           "https://telemetry.nimamo.workers.dev/api/v1/check", {},
-          "potion", "0.3.0", "abcdef123456", "development", true,
+          "potion", "0.3.1", "abcdef123456", "development", true,
           successful_update_post, update_device});
       checker.start();
       potion::Json status;
@@ -1149,7 +1149,7 @@ int main() {
       potion::UpdateChecker checker({
           update_dir,
           "https://telemetry.nimamo.workers.dev/api/v1/check", {},
-          "potion", "0.3.0", "abcdef123456", "development", true,
+          "potion", "0.3.1", "abcdef123456", "development", true,
           [](const std::string &, const std::string &, std::string &) {
             return false;
           }, update_device});
