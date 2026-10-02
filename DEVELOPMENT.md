@@ -153,7 +153,8 @@ For an SSH-accessible development Kindle:
 bash push_over_ssh.sh root@device_ip
 ```
 
-The script prefers `rsync` and falls back to `scp`. It updates the app,
+The script uses `rsync` when available on both machines and falls back to
+`scp` otherwise. It updates the app,
 KUAL extension, and Library launcher, but does not restart Potion.
 
 On launch, the script stops stale Potion UI/backend instances, starts `potiond`

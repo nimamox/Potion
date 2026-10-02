@@ -959,25 +959,22 @@ for (const family of ["KaTeX_AMS", "KaTeX_Main", "KaTeX_Math",
   assert.match(katexCss, new RegExp(`font-family:[\"']?${family}[\"']?`));
 }
 
-// Mesquite repairs: reconstruct only ordinary scripts, then restore every
-// native KaTeX two-row vlist baseline generically instead of rebuilding
-// fractions, operator limits, radicals, or matrices one at a time.
-assert.match(frontend, /function repairKindleScripts\(root\)/);
+// Mesquite repairs preserve all native geometry and correct only the encoded
+// two-row baseline. Nested scripts must never be rebuilt with fixed offsets.
+assert.doesNotMatch(frontend, /repairKindleScripts|positionedContents|potion-script/);
 assert.doesNotMatch(frontend, /function repairKindleFractions\(root\)/);
 assert.doesNotMatch(frontend, /function repairKindleLimits\(root\)/);
 assert.doesNotMatch(frontend, /function repairKindleOperatorBaselines\(root\)/);
 assert.doesNotMatch(frontend, /function repairKindleFractionBaselines\(root\)/);
 assert.doesNotMatch(frontend, /function repairKindleNestedVlistBaselines/);
 assert.doesNotMatch(frontend, /getElementsByClassName\("op-limits"\)/);
-assert.match(frontend, /function isInsideMathStructure\(node, className\)/);
-assert.match(frontend, /repairKindleScripts\(root\)[\s\S]*?isInsideMathStructure\(node, "mfrac"\)/);
 assert.match(frontend, /function repairKindleVlistBaselines\(root\)/);
 assert.match(frontend, /getElementsByClassName\("vlist-t2"\)/);
 assert.match(frontend, /\.style\.verticalAlign = "-" \+ depth \+ "em"/);
 assert.match(frontend, /Mesquite ignores the second row when deriving the baseline/);
 assert.doesNotMatch(frontend, /repairKindleFractionClearance/);
-assert.match(frontend, /function repairKindleMath\(root\)[\s\S]*?repairKindleScripts\(root\);[\s\S]*?repairKindleVlistBaselines\(root\);[\s\S]*?\n\s*}/);
-assert.doesNotMatch(appCss, /potion-(?:fraction|frac-|op-)/);
+assert.match(frontend, /function repairKindleMath\(root\)[\s\S]*?repairKindleVlistBaselines\(root\);[\s\S]*?\n\s*}/);
+assert.doesNotMatch(appCss, /potion-(?:script|fraction|frac-|op-)/);
 assert.match(appCss, /\.katex \.mfrac \.frac-line\s*{\s*border-bottom-width:\s*2px;/);
 assert.doesNotMatch(appCss, /\.mfrac \.frac-line[\s\S]*?!important/);
 assert.match(frontend, /function repairMathNearViewport\(\)/);

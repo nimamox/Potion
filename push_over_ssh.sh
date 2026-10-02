@@ -7,13 +7,15 @@ TARGET=$1; BUNDLE="$ROOT/dist/potion"; EXTENSION="$ROOT/dist/extensions/Potion";
 [ -f "$EXTENSION/config.xml" ] || { echo "Missing Potion KUAL extension." >&2; exit 1; }
 [ -x "$LIBRARY_LAUNCHER" ] || { echo "Missing Potion Library launcher. Run ./build_on_docker.sh first." >&2; exit 1; }
 ssh "$TARGET" 'if [ -f /var/tmp/potiond.pid ]; then kill "$(cat /var/tmp/potiond.pid)" 2>/dev/null || true; rm -f /var/tmp/potiond.pid; fi; mkdir -p /mnt/us/potion /mnt/us/extensions/Potion /mnt/us/documents'
-if command -v rsync >/dev/null; then
+if command -v rsync >/dev/null && ssh "$TARGET" 'command -v rsync >/dev/null 2>&1'; then
   rsync -az --delete --exclude notion-token.txt --no-owner --no-group "$BUNDLE/" "$TARGET:/mnt/us/potion/"
   rsync -az --delete --no-owner --no-group "$EXTENSION/" "$TARGET:/mnt/us/extensions/Potion/"
   rsync -az --no-owner --no-group "$LIBRARY_LAUNCHER" "$TARGET:/mnt/us/documents/Potion.sh"
 else
-  scp -pr "$BUNDLE/." "$TARGET:/mnt/us/potion/"
-  scp -pr "$EXTENSION/." "$TARGET:/mnt/us/extensions/Potion/"
+  # Copy the contents explicitly: older SCP servers reject a directory named '.'.
+  shopt -s dotglob
+  scp -pr "$BUNDLE/"* "$TARGET:/mnt/us/potion/"
+  scp -pr "$EXTENSION/"* "$TARGET:/mnt/us/extensions/Potion/"
   scp -p "$LIBRARY_LAUNCHER" "$TARGET:/mnt/us/documents/Potion.sh"
 fi
 echo "Installed Potion at $TARGET:/mnt/us/potion"

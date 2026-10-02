@@ -2355,19 +2355,15 @@
     /*
      * Mesquite math compatibility
      *
-     * KaTeX relies heavily on inline-table vertical lists. Mesquite has two
-     * relevant layout problems:
+     * Preserve KaTeX's native script/stack geometry, including nested font
+     * sizes, italic corrections and the dimensions reserved by fractions,
+     * radicals, operator limits and matrices. Script direction cannot be
+     * inferred from vlist-t2: it encodes depth, and may belong to a nested
+     * script or to a complex superscript's own contents.
      *
-     *  1. Ordinary msupsub scripts are not positioned correctly.
-     *  2. For two-row .vlist-t2 structures, Mesquite does not include the
-     *     final depth row when determining the inline-table baseline.
-     *
-     * Ordinary scripts outside fractions are reconstructed below. Native
-     * scripts inside fractions remain intact because changing their dimensions
-     * after KaTeX has laid out the fraction can invalidate the surrounding
-     * fraction geometry.
-     *
-     * All intact .vlist-t2 structures are handled generically afterwards.
+     * Mesquite's inline-table baseline omits the final depth row. Correcting
+     * that baseline alone also fixes side scripts on the tested firmwares;
+     * reconstructing msupsub with fixed offsets corrupts nested layouts.
      */
 
     function directSpans(node) {
@@ -2399,118 +2395,6 @@
                 result.push(spans[i]);
 
         return result;
-    }
-
-    function positionedContents(vlist) {
-        var result = [],
-            children = directSpans(vlist),
-            i, parts;
-
-        for (i = 0; i < children.length; ++i) {
-            parts = directSpans(children[i]);
-
-            if (parts.length > 1)
-                result.push({
-                    position: children[i],
-                    content: parts[parts.length - 1],
-                    top: parseFloat(children[i].style.top || "0")
-                });
-        }
-
-        return result;
-    }
-
-    function isInsideMathStructure(node, className) {
-        while (node) {
-            if (hasClass(node, className))
-                return true;
-            node = node.parentNode;
-        }
-
-        return false;
-    }
-
-    function repairKindleScripts(root) {
-        var live = root.getElementsByClassName("msupsub"),
-            nodes = [],
-            i, node, vlists, positions, isSub,
-            sup, sub, wrapper, width;
-
-        /*
-         * Snapshot the live collection before modifying any of its members.
-         */
-        for (i = 0; i < live.length; ++i)
-            nodes.push(live[i]);
-
-        for (i = 0; i < nodes.length; ++i) {
-            node = nodes[i];
-
-            /*
-             * Do not reconstruct scripts inside fractions.
-             *
-             * The surrounding KaTeX fraction has already reserved dimensions
-             * for the native script box. Rebuilding it afterwards changes the
-             * box geometry without re-running KaTeX's fraction layout.
-             *
-             * The generic vlist baseline repair handles these native nested
-             * scripts safely.
-             */
-            if (isInsideMathStructure(node, "mfrac"))
-                continue;
-
-            vlists = node.getElementsByClassName("vlist");
-            if (!vlists.length)
-                continue;
-
-            positions = positionedContents(vlists[0]);
-
-            if (!positions.length || positions.length > 2)
-                continue;
-
-            isSub = node.getElementsByClassName("vlist-t2").length > 0;
-
-            sub = positions.length === 2 || isSub ?
-                positions[0] :
-                null;
-
-            sup = positions.length === 2 ?
-                positions[1] :
-                (!isSub ? positions[0] : null);
-
-            clear(node);
-            node.className += " potion-script";
-
-            if (sub && sup) {
-                node.className += " potion-script-both";
-
-                wrapper = document.createElement("span");
-                wrapper.className = "potion-script-sup";
-                wrapper.appendChild(sup.content);
-                node.appendChild(wrapper);
-                sup = wrapper;
-
-                wrapper = document.createElement("span");
-                wrapper.className = "potion-script-sub";
-                wrapper.appendChild(sub.content);
-                node.appendChild(wrapper);
-                sub = wrapper;
-
-                width = Math.max(sup.offsetWidth, sub.offsetWidth);
-                node.style.width = width + "px";
-
-                sup.style.left =
-                    Math.max(0, (width - sup.offsetWidth) / 2) + "px";
-
-                sub.style.left =
-                    Math.max(0, (width - sub.offsetWidth) / 2) + "px";
-            } else if (sub) {
-                node.className += " potion-script-sub-only";
-                node.appendChild(sub.content);
-            } else if (sup) {
-                node.className += " potion-script-sup-only";
-                node.appendChild(sup.content);
-            }
-        }
     }
 
     /*
@@ -2571,17 +2455,7 @@
         if (!kindleMathLayout())
             return;
 
-        /*
-         * Reconstruct only ordinary scripts for which Mesquite cannot
-         * reproduce KaTeX's positioning correctly.
-         */
-        repairKindleScripts(root);
-
-        /*
-         * Then repair every remaining native two-row KaTeX vertical list.
-         * This replaces the previous fraction/operator/radical/matrix
-         * special-case baseline fixes.
-         */
+        /* Change only the baseline; never move or resize native contents. */
         repairKindleVlistBaselines(root);
     }
 

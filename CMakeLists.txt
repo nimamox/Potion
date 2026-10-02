@@ -138,6 +138,14 @@ if(POTION_BUILD_TESTS)
   add_test(NAME potion_tests COMMAND potion_tests)
   find_program(POTION_NODE_EXECUTABLE node)
   if(POTION_NODE_EXECUTABLE)
+    add_executable(potion_math_fixtures tests/math_fixtures.cpp)
+    target_link_libraries(potion_math_fixtures PRIVATE potion_core)
+    add_test(NAME potion_math_layout_tests
+      COMMAND "${POTION_NODE_EXECUTABLE}"
+              "${CMAKE_SOURCE_DIR}/tests/math_layout_test.js"
+              "${CMAKE_SOURCE_DIR}/assets/app.js"
+              "$<TARGET_FILE:potion_math_fixtures>"
+              "${CMAKE_SOURCE_DIR}/tests/math_cases.json")
     add_test(NAME potion_frontend_contract_tests
       COMMAND "${POTION_NODE_EXECUTABLE}"
               "${CMAKE_SOURCE_DIR}/tests/frontend_contract_test.js"

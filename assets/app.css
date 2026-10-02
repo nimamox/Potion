@@ -914,34 +914,6 @@ button:focus {
 .potion-box-frame .katex-display {
   margin: 0;
 }
-.potion-script {
-  display: inline-block;
-  line-height: 1;
-}
-.potion-script-sub-only {
-  margin-right: 0.05em;
-  vertical-align: -0.3em;
-}
-.potion-script-sup-only {
-  margin-right: 0.05em;
-  vertical-align: 0.55em;
-}
-.potion-script-both {
-  position: relative;
-  height: 1em;
-  margin-right: 0.05em;
-  vertical-align: middle;
-}
-.potion-script-both .potion-script-sup,
-.potion-script-both .potion-script-sub {
-  position: absolute;
-}
-.potion-script-both .potion-script-sup {
-  top: -0.45em;
-}
-.potion-script-both .potion-script-sub {
-  top: 0.5em;
-}
 .notion-color {
   padding: 1px 3px;
 }
