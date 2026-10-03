@@ -333,22 +333,31 @@ button:focus {
   right: 0;
   bottom: 0;
   left: 0;
-  display: table;
   width: 100%;
   height: 72px;
-  table-layout: fixed;
   border-top: 2px solid #111;
   background: #fff;
 }
 .page-pagination button,
 .page-pagination span {
-  display: table-cell;
+  position: absolute;
+  top: 0;
   width: 33.333%;
   height: 70px;
   padding: 0 8px;
-  vertical-align: middle;
   text-align: center;
   font: bold 18px "Amazon Ember", Arial, sans-serif;
+}
+#pages-previous {
+  left: 0;
+}
+#pages-pagination-status {
+  left: 33.333%;
+  line-height: 70px;
+  white-space: nowrap;
+}
+#pages-next {
+  right: 0;
 }
 .page-pagination button {
   border: 0;
@@ -1052,6 +1061,13 @@ button:focus {
 }
 #scroll-down {
   bottom: 22px;
+}
+.pages-scroll-controls .scroll-button {
+  right: 1%;
+  margin-right: 79px;
+}
+.pages-scroll-controls #scroll-down {
+  bottom: 94px;
 }
 .overlay {
   position: fixed;

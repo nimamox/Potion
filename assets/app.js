@@ -8,7 +8,7 @@
         pageList = [],
         pageListLoaded = false,
         pageListOffset = 0,
-        pageListPageSize = 11,
+        pageListPageSize = 19,
         pageListTotal = 0,
         pageListHasMore = false,
         pageListQuery = "",
@@ -1268,18 +1268,25 @@
         return null;
     }
 
+    function canScroll(target, direction) {
+        if (!target) return false;
+        return direction > 0 ?
+            target.scrollTop + target.clientHeight < target.scrollHeight - 6 :
+            target.scrollTop > 6;
+    }
+
     function updateScroll() {
-        var target = activeScroll(),
-            max;
+        var target = activeScroll();
+        id("scroll-controls").className = target === id("pages") ?
+            "pages-scroll-controls" : "";
         if (!target) {
             hide(id("scroll-up"));
             hide(id("scroll-down"));
             return;
         }
-        max = Math.max(0, target.scrollHeight - target.clientHeight);
-        if (target.scrollTop > 6) show(id("scroll-up"));
+        if (canScroll(target, -1)) show(id("scroll-up"));
         else hide(id("scroll-up"));
-        if (target.scrollTop < max - 6) show(id("scroll-down"));
+        if (canScroll(target, 1)) show(id("scroll-down"));
         else hide(id("scroll-down"));
     }
 
@@ -1311,11 +1318,19 @@
         pageButtonDownAt = 0;
 
     function handlePageButtonAction(action) {
-        var down;
+        var down, target, direction;
         if (!readyForInput()) return;
         down = (pageButtonMode === "normal" && action === "forward") ||
             (pageButtonMode === "reversed" && action === "backward");
-        pageScroll(down ? 1 : -1);
+        direction = down ? 1 : -1;
+        target = activeScroll();
+        if (target !== id("pages")) {
+            pageScroll(direction);
+            return;
+        }
+        if (pageSortSaveBusy) return;
+        if (canScroll(target, direction)) pageScroll(direction);
+        else changePageList(direction);
     }
 
     function pageButtonKeyDown(event) {
@@ -2876,6 +2891,14 @@
         id("pages-next").disabled = !pageListHasMore;
     }
 
+    function changePageList(direction) {
+        if (busy || pageSortSaveBusy) return;
+        if (direction > 0) {
+            if (!pageListHasMore || id("pages-next").disabled) return;
+        } else if (pageListOffset === 0 || id("pages-previous").disabled) return;
+        loadPages(false, Math.max(0, pageListOffset + direction * pageListPageSize));
+    }
+
     function choosePageSort(mode) {
         var previous;
         if (busy || pageSortSaveBusy || mode === pageSortMode ||
@@ -3484,12 +3507,11 @@
     };
 
     id("pages-previous").onclick = function() {
-        loadPages(false, Math.max(0, pageListOffset - pageListPageSize));
+        changePageList(-1);
     };
 
     id("pages-next").onclick = function() {
-        if (pageListHasMore)
-            loadPages(false, pageListOffset + pageListPageSize);
+        changePageList(1);
     };
 
     id("sort-opened").onclick = function() {

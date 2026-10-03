@@ -422,10 +422,13 @@ assert.equal(CODE_SIZE_LOGIC_TESTS, true);
   assert.ok(match, "missing direct page-button handler");
   const calls = [];
   const listeners = {};
+  const reader = {}, pages = {};
   const context = {
     Date,
     pageButtonMode: "normal",
     readyForInput: function() { return true; },
+    activeScroll: function() { return reader; },
+    id: function() { return pages; },
     pageScroll: function(direction) { calls.push(direction); },
     document: {addEventListener: function(name, listener) { listeners[name] = listener; }},
     window: {event: null, location: {protocol: "file:"}}
@@ -466,6 +469,20 @@ assert.match(appCss, /\.section-heading h2\s*{[\s\S]*display:\s*table-cell;[\s\S
 assert.match(appCss, /\.search-row\s*{[\s\S]*display:\s*table-cell;[\s\S]*width:\s*auto;/);
 assert.match(appCss, /\.page-sort button\.active\s*{[\s\S]*background:\s*#111;[\s\S]*color:\s*#fff;/);
 assert.match(appCss, /\.page-list\s*{[\s\S]*top:\s*74px;/);
+assert.match(appCss, /\.page-list\s*{[^}]*bottom:\s*72px;/,
+  "list reserves the existing pagination area");
+assert.match(appCss, /\.page-pagination\s*{[^}]*height:\s*72px;/);
+assert.match(appCss, /\.page-pagination button,\s*\.page-pagination span\s*{[^}]*position:\s*absolute;[^}]*top:\s*0;[^}]*width:\s*33\.333%;/,
+  "three equal columns use positions that work on old Mesquite button elements");
+assert.match(appCss, /#pages-previous\s*{\s*left:\s*0;/);
+assert.match(appCss, /#pages-pagination-status\s*{\s*left:\s*33\.333%;[^}]*line-height:\s*70px;/);
+assert.match(appCss, /#pages-next\s*{\s*right:\s*0;/);
+assert.match(appCss, /#scroll-down\s*{\s*bottom:\s*22px;/,
+  "reader arrow retains its existing position");
+assert.match(appCss, /\.pages-scroll-controls #scroll-down\s*{\s*bottom:\s*94px;/,
+  "list arrow has a 22px gap above the 72px pagination bar");
+assert.match(appCss, /\.pages-scroll-controls \.scroll-button\s*{\s*right:\s*1%;\s*margin-right:\s*79px;/,
+  "both list arrows leave the 60px pin column, its 7px inset and a 12px gap clear");
 assert.match(appCss, /\.page-row\s*{[\s\S]*position:\s*relative;/);
 assert.match(appCss, /\.page-pin\s*{[\s\S]*position:\s*absolute;[\s\S]*font:\s*39px/);
 assert.match(frontend, /pageSortMode = "opened"/);
@@ -630,8 +647,140 @@ assert.match(index, /id="pages-refresh"[\s\S]*id="pages-previous"[\s\S]*id="page
 assert.match(frontend, /id\("search-button"\)\.onclick = function\(\)[\s\S]*loadPages\(false, 0\)/);
 assert.match(frontend, /id\("search"\)\.onkeydown = function\(event\)[\s\S]*event\.keyCode === 13[\s\S]*loadPages\(false, 0\)/);
 assert.match(frontend, /id\("pages-refresh"\)\.onclick[\s\S]*loadPages\(true,/);
-assert.match(frontend, /id\("pages-previous"\)\.onclick[\s\S]*pageListOffset - pageListPageSize/);
-assert.match(frontend, /id\("pages-next"\)\.onclick[\s\S]*pageListOffset \+ pageListPageSize/);
+assert.match(frontend, /id\("pages-previous"\)\.onclick = function\(\) \{\s*changePageList\(-1\)/);
+assert.match(frontend, /id\("pages-next"\)\.onclick = function\(\) \{\s*changePageList\(1\)/);
+assert.match(frontend, /pageListPageSize = 19\b/);
+{
+  // Execute the real scroll, pagination, input and loading paths together.
+  const scrolling = frontend.slice(frontend.indexOf("    function activeScroll()"),
+    frontend.indexOf("    function saveSetting(key, value)"));
+  const pagination = frontend.slice(frontend.indexOf("    function renderPagePagination()"),
+    frontend.indexOf("    function choosePageSort(mode)"));
+  const loading = "function loadPages(refreshSnapshot, requestedOffset) {" + loadSource + "\n}";
+  const touch = frontend.slice(frontend.indexOf('    id("pages-previous").onclick'),
+    frontend.indexOf('    id("sort-opened").onclick'));
+  const nodes = {};
+  for (const name of ["pages", "page-content", "reader-view", "pages-view", "scroll-up",
+    "scroll-down", "scroll-controls", "selection-menu", "appearance-sheet", "connect-view",
+    "settings-dialog", "logout-dialog", "update-dialog", "about-dialog", "pages-previous",
+    "pages-next", "pages-pagination-status", "search", "status", "settings"])
+    nodes[name] = {className: "hidden", scrollTop: 0, scrollHeight: 2000,
+      clientHeight: 600, disabled: false, value: ""};
+  nodes["pages-view"].className = "view";
+  const requests = [], positions = [];
+  const context = {
+    Date, busy: false, pageSortSaveBusy: false, pageButtonMode: "normal",
+    pageListOffset: 0, pageListPageSize: 19, pageListTotal: 45,
+    pageListHasMore: true, pageListQuery: "", pageListLoaded: true,
+    id: name => nodes[name],
+    show: node => { node.className = node.className.replace(/hidden/g, ""); },
+    hide: node => { node.className += " hidden"; },
+    setBusy: value => { context.busy = value; },
+    warning: () => {}, setAppearanceButtonVisible: () => {}, setSortButtons: () => {},
+    scheduleTransientReadingPositionUpdate: () => positions.push("transient"),
+    scheduleReadingPositionSave: () => positions.push("save"),
+    renderSortedPages: reset => {
+      if (reset) nodes.pages.scrollTop = 0;
+      context.renderPagePagination(); context.updateScroll();
+    },
+    request: (method, path, body, done) => requests.push({method, path, done}),
+    document: {addEventListener: () => {}},
+    window: {location: {protocol: "http:"}}
+  };
+  vm.createContext(context);
+  vm.runInContext(scrolling + pagination + loading + touch, context);
+  const list = nodes.pages;
+  function reset(offset = 19, more = true, height = 600) {
+    requests.length = 0; context.busy = false; context.pageSortSaveBusy = false;
+    context.pageButtonMode = "normal"; context.pageListOffset = offset;
+    context.pageListTotal = 45; context.pageListHasMore = more;
+    nodes["pages-view"].className = "view"; nodes["reader-view"].className = "hidden";
+    list.clientHeight = height; list.scrollHeight = height + 1400; list.scrollTop = 0;
+    context.renderPagePagination(); context.updateScroll();
+  }
+  function finish(offset, more) {
+    requests.at(-1).done(null, {pages: [], offset, pageSize: 19, total: 45, hasMore: more});
+    assert.equal(context.busy, false);
+  }
+  reset();
+  assert.equal(nodes["pages-pagination-status"].innerHTML, "Page 2 of 3");
+  for (const height of [450, 900, 1250]) {
+    reset(19, true, height);
+    context.handlePageButtonAction("forward");
+    assert.equal(list.scrollTop, Math.floor(height * .8));
+    assert.equal(requests.length, 0, "forward scrolls before requesting the next slice");
+    list.scrollTop = 1393; // Seven pixels still count as meaningful room.
+    context.handlePageButtonAction("forward");
+    assert.equal(list.scrollTop, 1400);
+    assert.equal(requests.length, 0);
+    context.handlePageButtonAction("forward");
+    assert.match(requests[0].path, /offset=38&pageSize=19$/);
+    context.handlePageButtonAction("forward"); nodes["pages-next"].onclick();
+    assert.equal(requests.length, 1, "busy state blocks repeated physical and touch pagination");
+    finish(38, false);
+    assert.equal(nodes["pages-pagination-status"].innerHTML, "Page 3 of 3");
+    assert.equal(list.scrollTop, 0, "new slice starts at the top");
+    list.scrollTop = 1400;
+    context.handlePageButtonAction("backward");
+    assert.equal(list.scrollTop, 1400 - Math.floor(height * .8));
+    assert.equal(requests.length, 1, "backward scrolls before requesting the previous slice");
+    list.scrollTop = 7;
+    context.handlePageButtonAction("backward");
+    assert.equal(list.scrollTop, 0);
+    assert.equal(requests.length, 1);
+    context.handlePageButtonAction("backward");
+    assert.match(requests[1].path, /offset=19&pageSize=19$/);
+    finish(19, true);
+  }
+  reset(); list.scrollTop = 1394;
+  context.handlePageButtonAction("forward");
+  assert.equal(requests.length, 1, "six-pixel boundary tolerance agrees with the scroll arrow");
+  reset(); list.scrollTop = 6;
+  context.handlePageButtonAction("backward");
+  assert.match(requests[0].path, /offset=0&pageSize=19$/);
+  reset(0); context.handlePageButtonAction("backward"); nodes["pages-previous"].onclick();
+  assert.equal(requests.length, 0, "first page cannot paginate backward");
+  reset(38, false); list.scrollTop = 1400;
+  context.handlePageButtonAction("forward"); nodes["pages-next"].onclick();
+  assert.equal(requests.length, 0, "last page cannot paginate forward");
+  reset(); nodes["pages-next"].disabled = true; list.scrollTop = 1400;
+  context.handlePageButtonAction("forward"); assert.equal(requests.length, 0);
+  reset(); nodes["pages-previous"].disabled = true;
+  context.handlePageButtonAction("backward"); assert.equal(requests.length, 0);
+  reset(); context.pageButtonMode = "reversed"; list.scrollTop = 1400;
+  context.handlePageButtonAction("backward");
+  assert.match(requests[0].path, /offset=38&pageSize=19$/);
+  finish(38, false); context.handlePageButtonAction("forward");
+  assert.match(requests[1].path, /offset=19&pageSize=19$/);
+  reset(); context.pageButtonMode = "reversed";
+  context.handlePageButtonAction("backward"); assert.equal(list.scrollTop, 480);
+  context.handlePageButtonAction("forward"); assert.equal(list.scrollTop, 0);
+  assert.equal(requests.length, 0);
+  reset(); context.pageSortSaveBusy = true;
+  context.handlePageButtonAction("forward"); nodes["pages-next"].onclick();
+  assert.equal(list.scrollTop, 0); assert.equal(requests.length, 0);
+  reset(); nodes["settings-dialog"].className = "overlay";
+  context.handlePageButtonAction("forward"); assert.equal(list.scrollTop, 0);
+  nodes["settings-dialog"].className = "hidden";
+  reset(); list.scrollHeight = list.clientHeight;
+  context.handlePageButtonAction("forward"); assert.equal(requests.length, 1,
+    "a slice that fits the viewport paginates immediately");
+  requests[0].done("Notion unavailable"); assert.equal(context.busy, false);
+  assert.equal(context.pageListOffset, 19, "failure preserves the current slice");
+  context.pageListTotal = 0; context.pageListOffset = 0; context.pageListHasMore = false;
+  context.renderPagePagination();
+  assert.equal(nodes["pages-pagination-status"].innerHTML, "Page 1 of 1");
+  assert.equal(nodes["pages-previous"].disabled, true);
+  assert.equal(nodes["pages-next"].disabled, true);
+  reset(); assert.equal(nodes["scroll-controls"].className, "pages-scroll-controls");
+  nodes["pages-view"].className = "hidden"; nodes["reader-view"].className = "view";
+  const reader = nodes["page-content"];
+  reader.scrollTop = reader.scrollHeight - reader.clientHeight;
+  context.handlePageButtonAction("forward"); assert.equal(requests.length, 0,
+    "reader never paginates at its scroll boundary");
+  context.handlePageButtonAction("backward"); assert.equal(reader.scrollTop, 920);
+  assert.equal(nodes["scroll-controls"].className, "", "reader retains its existing arrow placement");
+}
 assert.match(frontend,
   /updatePageMetadata\([\s\S]*currentPageId,[\s\S]*"opened",[\s\S]*Math\.floor\(new Date\(\)\.getTime\(\) \/ 1000\)/);
 
