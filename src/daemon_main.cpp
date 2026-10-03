@@ -12,8 +12,15 @@ int main(int argc, char **argv) {
       if (arg == "--help" || arg == "-h") {
         std::cout << "Usage: potiond [--assets DIR] [--data-dir DIR] [--port PORT] "
                      "[--token-import FILE] [--ca-bundle FILE] "
-                     "[--start-page PAGE_ID] "
+                     "[--start-page PAGE_ID] [--recover-display] "
                      "[--simulator --simulator-assets DIR]\n";
+        return 0;
+      }
+      if (arg == "--recover-display") {
+        kindle_display::Controller display({false, options.display_journal, {}});
+        const auto state = display.state();
+        if (!state.available) throw std::runtime_error(state.error);
+        std::cout << "Display recovery complete: " << state.backend << " " << (state.night ? "night" : "day") << '\n';
         return 0;
       }
       if (arg == "--simulator") { options.simulator = true; continue; }

@@ -474,61 +474,6 @@ assert.match(frontend, /\/api\/pages\/" \+ encodeURIComponent\(pageId\) \+ "\/pi
 assert.match(frontend, /page\.pinned === true/);
 assert.doesNotMatch(frontend, /localStorage/);
 
-// Mesquite retains !important declarations in the live CSSStyleDeclaration
-// after removeAttribute("style"). Verify that night-palette restoration clears
-// the live properties/cssText as well as restoring the original attribute.
-const nightPaletteMatch = frontend.match(
-  /\/\* NIGHT_PALETTE_LOGIC_BEGIN \*\/([\s\S]*?)\/\* NIGHT_PALETTE_LOGIC_END \*\//);
-assert.ok(nightPaletteMatch, "missing night-palette test boundary");
-function nightPaletteElement(originalStyle) {
-  let cssText = originalStyle === null ? "" : originalStyle;
-  const attributes = {};
-  if (originalStyle !== null) attributes.style = originalStyle;
-  const style = {
-    removeProperty: function(property) {
-      const pattern = new RegExp("(?:^|;)\\s*" + property + "\\s*:[^;]*;?", "ig");
-      cssText = cssText.replace(pattern, "");
-    },
-    setProperty: function(property, value, priority) {
-      cssText += (cssText ? ";" : "") + property + ":" + value +
-        (priority ? " !" + priority : "");
-    }
-  };
-  Object.defineProperty(style, "cssText", {
-    get: function() { return cssText; },
-    set: function(value) { cssText = String(value); }
-  });
-  return {
-    style,
-    getAttribute: function(name) {
-      return Object.prototype.hasOwnProperty.call(attributes, name) ?
-        attributes[name] : null;
-    },
-    setAttribute: function(name, value) { attributes[name] = value; },
-    // Deliberately leave style.cssText untouched, matching the Mesquite defect.
-    removeAttribute: function(name) { delete attributes[name]; }
-  };
-}
-{
-  const context = {nightStyledElements: [], window: {}};
-  vm.createContext(context);
-  vm.runInContext(nightPaletteMatch[1], context);
-
-  const classStyledHighlight = nightPaletteElement(null);
-  context.setNightStyle(classStyledHighlight, "background-color", "rgb(55,55,55)");
-  assert.match(classStyledHighlight.style.cssText, /background-color/);
-  context.restoreNightPalette({});
-  assert.equal(classStyledHighlight.style.cssText, "",
-    "day mode clears Mesquite's retained temporary highlight color");
-  assert.equal(classStyledHighlight.getAttribute("style"), null);
-
-  const inlineStyled = nightPaletteElement("font-weight:bold");
-  context.setNightStyle(inlineStyled, "color", "rgb(190,190,190)");
-  context.restoreNightPalette({});
-  assert.equal(inlineStyled.style.cssText, "font-weight:bold",
-    "day mode restores unrelated original inline styles exactly");
-}
-
 // Rotation uses the WAF device API when present, persists through potiond,
 // locks the exact current direction where window.orientation exposes it, and
 // remains harmless in the desktop simulator.
@@ -734,14 +679,12 @@ assert.match(equationEnrichmentLogic[1],
   const context = {
     currentPageId: "page-one",
     night: false,
-    nightPageMode: "standard",
     id: function(name) {
       return name === "page-content" ? root : reader;
     },
     collectReadingBlocks: function() {},
     scheduleMathRepair: function() {},
     updateScroll: function() {},
-    applyNightPageAppearance: function() {},
     logicalNodeText: function(node) { return node.logicalText; },
     encodeURIComponent,
     request: function() {}
@@ -1169,7 +1112,6 @@ function optimisticContext() {
       context.selectionState = null;
     },
     collectReadingBlocks: function() { calls.push("blocks"); },
-    applyNightPageAppearance: function() { calls.push("night"); },
     updateScroll: function() { calls.push("scroll"); },
     schedulePageEnrichmentApply: function() { calls.push("enrichment"); },
     setSelectionButtonsDisabled: function(value) { calls.push("disabled:" + value); },
@@ -1265,8 +1207,6 @@ assert.match(appCss, /background-position:\s*left bottom;[\s\S]*?background-repe
 assert.match(appCss, /\.page-content a\s*{\s*color:\s*#111;/);
 assert.doesNotMatch(appCss, /\.page-content u\s*{[^}]*color:/);
 assert.match(appCss, /\.page-content a u\s*{[^}]*padding-bottom:\s*0;[^}]*background-image:\s*none;/);
-assert.match(appCss, /\.night-mode \.page-content a\s*{\s*color:\s*#eee;/);
-assert.match(appCss, /\.night-mode \.page-content a u\s*{[^}]*background-image:\s*none;/);
 assert.match(config, /<kindle:param name="tap" value="no"\/>/);
 assert.match(config, /<kindle:param name="multi_tap" value="no"\/>/);
 assert.match(config, /<kindle:param name="hold" value="no"\/>/);
@@ -1791,7 +1731,6 @@ assert.ok(imageRetryLogic, "missing recoverable image retry lifecycle");
     armReadingRestoreQuietPeriod: function() {},
     maintainReadingRestore: function() {},
     fitCompactImage: function() {},
-    invertNightImage: function() {},
     updateScroll: function() {},
     scheduleMathRepair: function() {},
     scheduleImageLoad: function(delay) {

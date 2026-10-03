@@ -88,7 +88,7 @@ if(TARGET potion_math_build)
 endif()
 
 add_library(potion_core
-  src/json.cpp src/app_state.cpp src/orientation.cpp src/reading_positions.cpp src/markdown.cpp
+  src/json.cpp src/app_state.cpp src/orientation.cpp src/kindle_display.cpp src/reading_positions.cpp src/markdown.cpp
   src/math_renderer.cpp src/image_cache.cpp src/page_cache.cpp src/notion_client.cpp
   src/update_checker.cpp src/http_server.cpp)
 target_include_directories(potion_core PUBLIC include)
@@ -129,6 +129,14 @@ if(POTION_BUILD_SIMULATOR)
 endif()
 
 if(POTION_BUILD_TESTS)
+  add_executable(potion_native_night_api_tests tests/native_night_api_test.cpp)
+  target_compile_definitions(potion_native_night_api_tests PRIVATE DISPLAY_TEST_POTION)
+  target_link_libraries(potion_native_night_api_tests PRIVATE potion_core Threads::Threads)
+  add_test(NAME potion_native_night_api_tests COMMAND potion_native_night_api_tests)
+  add_executable(potion_display_tests tests/kindle_display_test.cpp src/kindle_display.cpp)
+  target_include_directories(potion_display_tests PRIVATE include)
+  target_link_libraries(potion_display_tests PRIVATE Threads::Threads)
+  add_test(NAME potion_display_tests COMMAND potion_display_tests)
   add_executable(potion_motion_hint_tests tests/motion_hint_test.c)
   add_test(NAME potion_motion_hint_tests COMMAND potion_motion_hint_tests)
   add_executable(potion_tests tests/potion_test.cpp)
@@ -138,6 +146,9 @@ if(POTION_BUILD_TESTS)
   add_test(NAME potion_tests COMMAND potion_tests)
   find_program(POTION_NODE_EXECUTABLE node)
   if(POTION_NODE_EXECUTABLE)
+      add_test(NAME potion_native_night_frontend_tests
+        COMMAND "${POTION_NODE_EXECUTABLE}" "${CMAKE_SOURCE_DIR}/tests/native_night_frontend_test.js"
+                "${CMAKE_SOURCE_DIR}/assets/app.js" "potion")
     add_executable(potion_math_fixtures tests/math_fixtures.cpp)
     target_link_libraries(potion_math_fixtures PRIVATE potion_core)
     add_test(NAME potion_math_layout_tests

@@ -40,3 +40,11 @@ Potion is free software under GNU AGPL v3 or later, without warranty. License,
 source, and third-party notices are included in this directory and at:
 
     https://github.com/nimamox/Potion
+
+Night Mode
+----------
+The moon/sun button inverts the whole Kindle display, including the status bar
+and images, followed by a stock Kindle full refresh. FBInk is not required.
+Close restores the previous display state. Close one app before opening the
+other; returning to Home may leave the backend running. Old night content-mode
+settings are ignored. Unsupported display control reports an error.

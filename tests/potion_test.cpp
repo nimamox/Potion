@@ -1527,8 +1527,6 @@ int main() {
       require(state.set_setting("wordSpacing", "plusplusplus", error) &&
                   state.set_setting("lineSpacing", "plusplusplus", error),
               "save maximum reader spacing");
-      require(state.set_setting("nightPageMode", "palette-images", error), "save night page mode");
-      require(state.settings_json().find("\"nightPageMode\":\"palette-images\"") != std::string::npos, "night page mode JSON");
       require(state.set_setting("pageButtonMode", "reversed", error), "save page button mode");
       require(state.settings_json().find("\"pageButtonMode\":\"reversed\"") != std::string::npos, "page button mode JSON");
       require(state.settings().page_sort_mode == "opened", "opened sort is default");

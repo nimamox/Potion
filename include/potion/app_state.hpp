@@ -12,7 +12,6 @@ struct Settings {
   std::string word_spacing{"normal"};
   std::string line_spacing{"normal"};
   bool night_mode{};
-  std::string night_page_mode{"standard"};
   std::string page_button_mode{"normal"};
   std::string page_sort_mode{"opened"};
   std::string rotation_mode{"auto"};

@@ -1,4 +1,5 @@
 #pragma once
+#include "kindle_display.hpp"
 #include "potion/app_state.hpp"
 #include "potion/image_cache.hpp"
 #include "potion/markdown.hpp"
@@ -37,6 +38,8 @@ struct ServerOptions {
   std::uint16_t port{8766};
   std::uint16_t remote_setup_port{8767};
   bool simulator{};
+  std::string display_journal{"/var/local/kindledev-night-mode.restore"};
+  std::shared_ptr<kindle_display::Device> display_device;
   bool update_checks_enabled{};
   std::size_t worker_count{4};
   std::size_t image_cache_max_bytes{32 * 1024 * 1024};
@@ -79,7 +82,11 @@ private:
   std::string remote_setup_path() const;
   void publish_remote_setup(std::string path, std::string url);
   void clear_remote_setup();
+  std::string effective_settings_json();
+  std::string set_night_mode(const std::string &value, bool &ok);
   ServerOptions options_;
+  kindle_display::Controller display_;
+  std::mutex display_settings_mutex_;
   AppState state_;
   ReadingPositionStore positions_;
   NotionClient notion_;

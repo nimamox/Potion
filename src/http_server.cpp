@@ -344,7 +344,8 @@ bool is_immutable_asset_path(const std::string &relative_path) noexcept {
 }
 
 HttpServer::HttpServer(ServerOptions options)
-    : options_(std::move(options)), state_(options_.data_dir), positions_(options_.data_dir),
+    : options_(std::move(options)),
+      display_({options_.simulator, options_.display_journal, options_.display_device}), state_(options_.data_dir), positions_(options_.data_dir),
       notion_("2026-03-11", options_.ca_bundle_path),
       update_checker_({options_.data_dir,
                        "https://telemetry.nimamo.workers.dev/api/v1/check",
@@ -415,6 +416,26 @@ HttpServer::~HttpServer() {
     std::string ignored;
     apply_kindle_rotation("auto", ignored);
   }
+}
+std::string HttpServer::effective_settings_json() {
+  std::lock_guard<std::mutex> guard(display_settings_mutex_);
+  return display_.settings_json(state_.settings_json());
+}
+std::string HttpServer::set_night_mode(const std::string &value, bool &ok) {
+  std::lock_guard<std::mutex> guard(display_settings_mutex_);
+  std::string error;
+  ok = value == "0" || value == "1";
+  if (!ok) error = "Night Mode requires explicit value 0 or 1";
+  else
+    ok = display_.set(value == "1", error);
+  if (ok) ok = state_.set_setting("nightMode", value, error);
+  auto json = display_.settings_json(state_.settings_json());
+  if (!ok) {
+    std::cerr << "Night Mode request: " << error << '\n';
+    json.pop_back();
+    json += ",\"message\":" + json_escape(error) + "}";
+  }
+  return json;
 }
 void HttpServer::request_stop() noexcept {
   stop_requested = 1;
@@ -594,7 +615,7 @@ void HttpServer::handle_client(int client) noexcept {
       respond(client, 200, "OK", "application/json", body + "}");
     }
     else if (request.method == "GET" && request.target == "/api/settings")
-      respond(client, 200, "OK", "application/json", state_.settings_json());
+      respond(client, 200, "OK", "application/json", effective_settings_json());
     else if (request.method == "GET" &&
              request.target == "/api/update-status")
       respond(client, 200, "OK", "application/json",
@@ -607,7 +628,12 @@ void HttpServer::handle_client(int client) noexcept {
       respond(client, 200, "OK", "application/json",
               update_checker_.status_json());
     }
-    else if (request.method == "POST" && request.target == "/api/settings") {
+    else if (request.method == "POST" && (request.target == "/api/night-mode" ||
+        (request.target == "/api/settings" && parameter(request.body, "key") == "nightMode"))) {
+      bool ok;
+      const auto body = set_night_mode(parameter(request.body, "value"), ok);
+      respond(client, ok ? 200 : 503, ok ? "OK" : "Service Unavailable", "application/json", body);
+    } else if (request.method == "POST" && request.target == "/api/settings") {
       const std::string key = parameter(request.body, "key");
       const std::string value = parameter(request.body, "value");
       const std::string previous_rotation = state_.settings().rotation_mode;
@@ -620,7 +646,7 @@ void HttpServer::handle_client(int client) noexcept {
         state_.set_setting("rotationMode", previous_rotation, rollback_error);
         throw std::runtime_error(error);
       }
-      respond(client, 200, "OK", "application/json", state_.settings_json());
+      respond(client, 200, "OK", "application/json", effective_settings_json());
     } else if (request.method == "POST" && request.target == "/api/auth/token") {
       const std::string token = trim(parameter(request.body, "token")); std::string error;
       if (token.empty()) throw std::runtime_error("A Notion access token is required");
@@ -915,14 +941,8 @@ void HttpServer::handle_client(int client) noexcept {
       else respond(client, 200, "OK", image.content_type, image.body,
                    CachePolicy::proxied_image);
     } else if (request.method == "POST" && request.target == "/api/refresh") {
-      if (!options_.simulator) {
-        const int result = std::system(
-          "if [ -x /usr/bin/fbink ]; then /usr/bin/fbink -q -f -s; "
-          "elif [ -x /mnt/us/extensions/MRInstaller/bin/PW2/fbink ]; then "
-          "/mnt/us/extensions/MRInstaller/bin/PW2/fbink -q -f -s; else exit 1; fi "
-          ">/dev/null 2>&1");
-        if (result != 0) throw std::runtime_error("FBInk is unavailable");
-      }
+      std::string error;
+      if (!display_.refresh(error)) throw std::runtime_error(error);
       respond(client, 200, "OK", "application/json", R"({"type":"refreshed"})");
     } else if (request.method == "POST" && request.target == "/api/quit") {
       respond(client, 200, "OK", "application/json", R"({"type":"quitting"})"); stop();

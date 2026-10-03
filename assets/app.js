@@ -22,8 +22,7 @@
         imageNodes = [],
         imageLoadTimer = null,
         imageLoads = 0,
-        imageGeneration = 0,
-        nightStyledElements = [];
+        imageGeneration = 0;
     var aboutLogoTimer = null,
         aboutLogoReady = false,
         aboutLogoPending = false;
@@ -81,10 +80,10 @@
         wordSpacing = "normal",
         lineSpacing = "normal",
         night = false,
-        nightPageMode = "standard",
+        nightKnown = false,
+        nightRequestInFlight = false,
         pageButtonMode = "normal",
-        rotationMode = "auto",
-        brandLogoDaySrc = null;
+        rotationMode = "auto";
     var fontNames = [
         "Amazon Ember", "Baskerville", "Bookerly", "Caecilia",
         "Caecilia Condensed", "Futura", "Helvetica", "OpenDyslexic",
@@ -210,9 +209,9 @@
             sector = Math.PI / 3,
             aperture = radii[irisFrame],
             angle, i, j, point,
-            background = night ? "#000" : "#fff",
-            bladeA = night ? "#eee" : "#111",
-            bladeB = night ? "#aaa" : "#666";
+            background = "#fff",
+            bladeA = "#111",
+            bladeB = "#666";
         if (!canvas || !canvas.getContext) return;
         context = canvas.getContext("2d");
         context.fillStyle = background;
@@ -1151,7 +1150,6 @@
 
     function refreshAfterLocalFormatting() {
         collectReadingBlocks();
-        applyNightPageAppearance();
         updateScroll();
     }
 
@@ -1516,7 +1514,6 @@
     function applyAppearance(persist) {
         clearSelectionMenu(true);
         var root = id("page-content");
-        restoreNightPalette(root);
         root.style.fontFamily = fonts[pageFont];
         root.style.fontSize = Math.round(30 * fontScale) + "px";
         root.className = root.className.replace(
@@ -1527,24 +1524,6 @@
         applySpacingClasses(root);
         applyCodeSizeClass(root);
 
-        if (night) {
-            if (document.documentElement.className.indexOf("night-mode") < 0)
-                document.documentElement.className += " night-mode";
-            id("night").innerHTML = "&#9788;";
-        } else {
-            document.documentElement.className =
-                document.documentElement.className.replace(/(^|\s)night-mode(?=\s|$)/g, "");
-            id("night").innerHTML = "&#9789;";
-        }
-
-        var brandLogo = id("brand-logo"), brandNightSrc;
-        if (brandLogo) {
-            if (!brandLogoDaySrc) brandLogoDaySrc = brandLogo.getAttribute("src");
-            brandNightSrc = brandLogo.getAttribute("data-night-src");
-            if (brandNightSrc)
-                brandLogo.src = night ? brandNightSrc : brandLogoDaySrc;
-        }
-
         updateAppearanceSheet();
 
         if (persist) {
@@ -1552,10 +1531,8 @@
             saveSetting("cardFont", pageFont);
             saveSetting("wordSpacing", wordSpacing);
             saveSetting("lineSpacing", lineSpacing);
-            saveSetting("nightMode", night ? "1" : "0");
         }
 
-        applyNightPageAppearance();
         scheduleMathRepair();
         scheduleImageLoad();
     }
@@ -1627,266 +1604,6 @@
         if (position) beginReadingRestore(position, false);
         else updateScroll();
         saveSetting(settingKey, value);
-    }
-
-    /* NIGHT_PALETTE_LOGIC_BEGIN */
-    function parsedColor(value) {
-        var match, hex, alpha;
-        value = String(value || "").replace(/^\s+|\s+$/g, "").toLowerCase();
-        if (!value || value === "transparent") return null;
-
-        match = value.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)(?:\s*,\s*([\d.]+))?\s*\)$/);
-        if (match) {
-            alpha = typeof match[4] === "undefined" ? 1 : parseFloat(match[4]);
-            if (alpha === 0) return null;
-            return [
-                parseInt(match[1], 10),
-                parseInt(match[2], 10),
-                parseInt(match[3], 10)
-            ];
-        }
-
-        match = value.match(/^#([0-9a-f]{3}|[0-9a-f]{6})$/);
-        if (!match) return null;
-
-        hex = match[1];
-        if (hex.length === 3)
-            hex =
-                hex.charAt(0) + hex.charAt(0) +
-                hex.charAt(1) + hex.charAt(1) +
-                hex.charAt(2) + hex.charAt(2);
-
-        return [
-            parseInt(hex.substring(0, 2), 16),
-            parseInt(hex.substring(2, 4), 16),
-            parseInt(hex.substring(4, 6), 16)
-        ];
-    }
-
-    function colorText(rgb) {
-        return "rgb(" +
-            Math.round(rgb[0]) + "," +
-            Math.round(rgb[1]) + "," +
-            Math.round(rgb[2]) + ")";
-    }
-
-    function nightFriendlyColor(value, background) {
-        var rgb = parsedColor(value),
-            luminance, factor;
-        if (!rgb) return null;
-
-        luminance = .299 * rgb[0] + .587 * rgb[1] + .114 * rgb[2];
-
-        if (background) {
-            if (luminance <= 55) return null;
-            factor = 55 / luminance;
-            return colorText([
-                rgb[0] * factor,
-                rgb[1] * factor,
-                rgb[2] * factor
-            ]);
-        }
-
-        if (luminance >= 190) return null;
-
-        factor = (190 - luminance) / (255 - luminance);
-        return colorText([
-            rgb[0] + (255 - rgb[0]) * factor,
-            rgb[1] + (255 - rgb[1]) * factor,
-            rgb[2] + (255 - rgb[2]) * factor
-        ]);
-    }
-
-    function saveNightStyle(element) {
-        if (element._potionNightStyleSaved) return;
-        element._potionNightStyleSaved = true;
-        element._potionNightOriginalStyle = element.getAttribute("style");
-        nightStyledElements.push(element);
-    }
-
-    function clearNightStyleProperties(element) {
-        var style = element.style;
-        if (!style) return;
-
-        if (style.removeProperty) {
-            style.removeProperty("color");
-            style.removeProperty("background-color");
-        } else {
-            style.color = "";
-            style.backgroundColor = "";
-        }
-    }
-
-    function restoreNightPalette(root) {
-        var elements = nightStyledElements,
-            i, element;
-        nightStyledElements = [];
-
-        for (i = 0; i < elements.length; ++i) {
-            element = elements[i];
-            if (!element._potionNightStyleSaved) continue;
-
-            /*
-             * Mesquite can keep !important declarations in its old
-             * CSSStyleDeclaration after removeAttribute("style"). Clear the
-             * properties and cssText first so day-mode class colors win again.
-             */
-            clearNightStyleProperties(element);
-
-            if (element.style &&
-                typeof element.style.cssText !== "undefined")
-                element.style.cssText =
-                    element._potionNightOriginalStyle === null ?
-                        "" : element._potionNightOriginalStyle;
-
-            if (element._potionNightOriginalStyle === null) {
-                element.removeAttribute("style");
-            } else if (!element.style ||
-                       typeof element.style.cssText === "undefined") {
-                element.setAttribute("style", element._potionNightOriginalStyle);
-            }
-
-            try {
-                delete element._potionNightStyleSaved;
-                delete element._potionNightOriginalStyle;
-            } catch (ignored) {
-                element._potionNightStyleSaved = false;
-                element._potionNightOriginalStyle = null;
-            }
-        }
-    }
-
-    function setNightStyle(element, property, value) {
-        if (!value) return;
-
-        saveNightStyle(element);
-
-        if (element.style.setProperty)
-            element.style.setProperty(property, value, "important");
-        else
-            element.style[property === "background-color" ? "backgroundColor" : property] = value;
-    }
-
-    function applyNightPalette(root) {
-        var elements = [root],
-            descendants = root.getElementsByTagName("*"),
-            i, element, computed, parentComputed, foreground, background;
-
-        for (i = 0; i < descendants.length; ++i)
-            elements.push(descendants[i]);
-
-        for (i = 0; i < elements.length; ++i) {
-            element = elements[i];
-
-            if (element.tagName === "IMG" || element.tagName === "CANVAS")
-                continue;
-
-            computed = window.getComputedStyle ?
-                window.getComputedStyle(element, null) :
-                element.currentStyle;
-
-            if (!computed) continue;
-
-            parentComputed =
-                element.parentNode &&
-                element.parentNode.nodeType === 1 &&
-                window.getComputedStyle ?
-                    window.getComputedStyle(element.parentNode, null) :
-                    null;
-
-            if (!parentComputed || computed.color !== parentComputed.color) {
-                foreground = nightFriendlyColor(computed.color, false);
-                setNightStyle(element, "color", foreground);
-            }
-
-            background = nightFriendlyColor(computed.backgroundColor, true);
-            setNightStyle(element, "background-color", background);
-        }
-    }
-    /* NIGHT_PALETTE_LOGIC_END */
-
-    function restoreNightImage(image) {
-        var original;
-        if (!image._potionNightImageInverted) return;
-
-        original = image._potionNightOriginalSource;
-        image._potionNightImageInverted = false;
-        image._potionNightOriginalSource = null;
-
-        if (original)
-            image.setAttribute("src", original);
-    }
-
-    function invertNightImage(image) {
-        var width, height, scale, canvas, context, pixels, data, i, source;
-
-        if (!night ||
-            nightPageMode !== "palette-images" ||
-            image._potionNightImageInverted ||
-            image._potionNightImageBusy)
-            return;
-
-        width = image.naturalWidth || image.width;
-        height = image.naturalHeight || image.height;
-        source = image.getAttribute("src") || "";
-
-        if (!width || !height || !source) return;
-
-        scale = Math.min(1, 1600 / Math.max(width, height));
-        width = Math.max(1, Math.round(width * scale));
-        height = Math.max(1, Math.round(height * scale));
-        image._potionNightImageBusy = true;
-
-        try {
-            canvas = document.createElement("canvas");
-            canvas.width = width;
-            canvas.height = height;
-
-            context = canvas.getContext("2d");
-            context.drawImage(image, 0, 0, width, height);
-
-            pixels = context.getImageData(0, 0, width, height);
-            data = pixels.data;
-
-            for (i = 0; i < data.length; i += 4) {
-                data[i] = 255 - data[i];
-                data[i + 1] = 255 - data[i + 1];
-                data[i + 2] = 255 - data[i + 2];
-            }
-
-            context.putImageData(pixels, 0, 0);
-
-            image._potionNightOriginalSource = source;
-            image._potionNightImageInverted = true;
-            image.setAttribute("src", canvas.toDataURL("image/png"));
-        } catch (ignored) {
-            image._potionNightImageInverted = false;
-            image._potionNightOriginalSource = null;
-        }
-
-        image._potionNightImageBusy = false;
-        updateScroll();
-    }
-
-    function applyNightPageAppearance() {
-        var root = id("page-content"),
-            images, i;
-
-        if (!root) return;
-
-        restoreNightPalette(root);
-
-        if (night && nightPageMode !== "standard")
-            applyNightPalette(root);
-
-        images = root.getElementsByTagName("img");
-
-        for (i = 0; i < images.length; ++i) {
-            if (night && nightPageMode === "palette-images")
-                invertNightImage(images[i]);
-            else
-                restoreNightImage(images[i]);
-        }
     }
 
     function selectedRadio(name, value) {
@@ -2629,7 +2346,6 @@
         if (loaded) {
             image._potionImageNextAttemptAt = 0;
             fitCompactImage(image);
-            invertNightImage(image);
             commitLoadedImagePaint(image);
             updateScroll();
             scheduleMathRepair();
@@ -2754,7 +2470,6 @@
             if (source && images[i].complete) {
                 if (images[i].naturalWidth) {
                     fitCompactImage(images[i]);
-                    invertNightImage(images[i]);
                 } else
                     images[i]._potionImageRequested = false;
             }
@@ -3431,8 +3146,6 @@
             nodes[i].className = className;
         }
 
-        if (night && nightPageMode !== "standard")
-            applyNightPageAppearance();
         collectReadingBlocks();
         scheduleMathRepair(0);
         updateScroll();
@@ -3573,7 +3286,6 @@
                 updatePageMetadata(currentPageId, "pinned", currentPagePinned);
                 setPinButton(id("page-pin"), currentPagePinned);
 
-                restoreNightPalette(id("page-content"));
                 pendingPageEnrichment = null;
                 resetMathRepair();
                 resetImageLoading();
@@ -3618,7 +3330,6 @@
                         prepareToggles();
                         hasBlockLinks = preparePageLinks();
                         collectReadingBlocks();
-                        applyNightPageAppearance();
                         scheduleMathRepair(0);
                         restoreReadingPosition(
                             pendingBlockJump ? null : page.position);
@@ -3667,12 +3378,8 @@
                     settings.lineSpacing === "plusplusplus" ?
                         settings.lineSpacing : "normal";
 
-                night = settings.nightMode === true;
-                nightPageMode = settings.nightPageMode;
-
-                if (nightPageMode !== "palette" &&
-                    nightPageMode !== "palette-images")
-                    nightPageMode = "standard";
+                syncNightState(settings);
+                if (settings.nightNative && settings.nightError) warning(settings.nightError);
 
                 pageButtonMode =
                     settings.pageButtonMode === "reversed" ?
@@ -3878,10 +3585,40 @@
         adjustCodeSize(CODE_SIZE_STEP);
     };
 
-    id("night").onclick = function() {
-        night = !night;
-        applyAppearance(true);
-    };
+    /* NATIVE_NIGHT_MODE_BEGIN */
+    function updateNightButton() {
+        var button = id("night");
+        button.innerHTML = nightKnown ? (night ? "&#9788;" : "&#9789;") : "?";
+        button.title = nightKnown ? (night ? "Day mode" : "Night mode") : "Display state unavailable";
+        button.setAttribute("aria-pressed", nightKnown && night ? "true" : "false");
+    }
+    function syncNightState(settings) {
+        if (!settings || typeof settings.nightKnown !== "boolean") return;
+        nightKnown = settings.nightKnown === true;
+        night = settings.nightMode === true;
+        updateNightButton();
+    }
+    function toggleNightMode() {
+        if (nightRequestInFlight) return;
+        nightRequestInFlight = true;
+        id("night").disabled = true;
+        request("GET", "/api/settings", null, function(readError, settings) {
+            if (readError || !settings || !settings.nightKnown) {
+                syncNightState(settings);
+                nightRequestInFlight = false; id("night").disabled = false;
+                warning(readError || (settings && settings.nightError) || "Display state is unavailable.");
+                return;
+            }
+            syncNightState(settings);
+            request("POST", "/api/night-mode", "value=" + (night ? "0" : "1"), function(error, result) {
+                nightRequestInFlight = false; id("night").disabled = false;
+                syncNightState(result);
+                if (error) warning(error);
+            });
+        });
+    }
+    id("night").onclick = toggleNightMode;
+    /* NATIVE_NIGHT_MODE_END */
 
     id("rotation").onclick = function() {
         chooseRotationMode(rotationMode === "auto" ? "locked" : "auto", true);
@@ -3901,7 +3638,6 @@
     id("settings").onclick = function() {
         closeAppearanceSheet();
         selectedRadio("page-buttons", pageButtonMode);
-        selectedRadio("night-page-mode", nightPageMode);
         hideSettingsTooltip();
         show(id("settings-dialog"));
     };
@@ -3912,23 +3648,6 @@
         hideSettingsTooltip();
         hide(id("settings-dialog"));
     };
-
-    (function() {
-        var choices =
-                document.getElementsByName("night-page-mode"),
-            i;
-
-        for (i = 0; i < choices.length; ++i)
-            choices[i].onclick = function() {
-                clearSelectionMenu(true);
-                nightPageMode = this.value;
-                saveSetting(
-                    "nightPageMode",
-                    nightPageMode
-                );
-                applyNightPageAppearance();
-            };
-    }());
 
     (function() {
         var choices =

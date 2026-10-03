@@ -31,7 +31,7 @@ ARMHF. Other Kindle models remain less well tested, so feedback is welcome.
   actions where the selected Notion block and content type support them.
 - Reader font and size controls, word and line spacing, separate code sizing,
   an experimental Bionic Reading presentation, orientation control, and
-  configurable night modes.
+  Kindle display Night Mode.
 - Physical Kindle page-button scrolling where the device and firmware provide
   those buttons. Direction can be reversed in Settings.
 - Manual full e-ink refresh control.
@@ -114,6 +114,27 @@ Tap images to expand them. Open toggles in place, and use the appearance panel
 to adjust font, size, spacing, code size, and Bionic Reading. Long-press and
 drag to select text; the formatting menu is available only where Potion can
 safely map the selection back to editable Notion content.
+
+## Night Mode
+
+The moon/sun button uses Kindle hardware/display inversion for the entire
+screen, including the system status bar, dialogs and images. Content stays in
+its ordinary colors; there is no CSS palette conversion or software image
+inversion. Images intentionally invert with the rest of the display.
+
+On firmware with effective native Dark Mode control, the app uses verified
+`epdcMode`. Older compatible Kindles use framebuffer grayscale inversion;
+Oasis 1 supports this even though Amazon does not offer Dark Mode in its UI.
+Each actual polarity change is followed by one stock Kindle full refresh.
+FBInk is not required. Unsupported display control is reported as an error.
+
+Startup reflects the actual display state rather than forcing the last saved
+preference. Close restores the state that existed before the app changed it,
+including Night Mode enabled outside the app. Close one app before opening
+another because display state is global; returning to Home can leave its
+backend running. Host simulators do not emulate Night Mode or access the
+framebuffer. Emulator checks validate firmware controls, while physical panel
+behavior requires a real Kindle.
 
 ## Security and privacy
 
